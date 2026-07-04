@@ -1,0 +1,4 @@
+# Place real PX4 .ulg files here for integration tests.
+# Files are excluded from git via .gitignore (*.ulg pattern with an exception for this dir).
+# Minimum recommended: one healthy log, one log with oscillation, one with GPS loss.
+# Run integration tests with: pytest -m integration

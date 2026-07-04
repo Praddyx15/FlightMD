@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: flightmd-api
+    env: python
+    region: singapore
+    plan: free
+    buildCommand: |
+      pip install -r api/requirements.txt
+      pip install -e .
+    startCommand: cd api && uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: MAX_FILE_SIZE_MB
+        value: "50"
+      - key: RATE_LIMIT_PER_HOUR
+        value: "10"
+      - key: CLAUDE_FAST_MODEL
+        value: claude-haiku-4-5
+      - key: CLAUDE_SUMMARY_MODEL
+        value: claude-sonnet-4-6
+      - key: CORS_ORIGINS
+        value: "https://flightmd.vercel.app,http://localhost:3000"
+    healthCheckPath: /health

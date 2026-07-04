@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-primary:   #080D1A;
+  --bg-card:      #0E1428;
+  --bg-elevated:  #141C35;
+  --accent:       #E8A020;
+  --border:       rgba(255,255,255,0.08);
+  --text-primary: #E8EDF5;
+  --text-muted:   #7A8BA8;
+  --mono:         'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Monospace for all numbers and param names */
+.mono { font-family: var(--mono); }
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-primary); }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
+
+/* Severity text colours */
+.text-critical { color: #FF3D3D; }
+.text-warning  { color: #FF7A2F; }
+.text-info     { color: #3A9CF8; }
+.text-good     { color: #0DD97C; }
+
+/* Animated progress bar */
+@keyframes progress-shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+.progress-shimmer {
+  background: linear-gradient(90deg, #E8A020 0%, #FFD080 50%, #E8A020 100%);
+  background-size: 200% auto;
+  animation: progress-shimmer 1.5s linear infinite;
+}
+
+/* Score circle animation */
+@keyframes draw-circle {
+  from { stroke-dashoffset: var(--circumference); }
+  to   { stroke-dashoffset: var(--offset); }
+}
+.score-ring {
+  animation: draw-circle 0.8s ease-out forwards;
+}

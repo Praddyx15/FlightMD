@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FlightMD Report — {{ report.report_id[:8] }}</title>
+<style>
+  /* Base styles injected by PDFGenerator._base_css() via WeasyPrint CSS arg */
+  string-set: report-id "{{ report.report_id[:8] }}";
+</style>
+</head>
+<body>
+
+<!-- ── HEADER ──────────────────────────────────────────────────────────────── -->
+<div class="header">
+  <div>
+    <div class="logo">✈ FLIGHTMD</div>
+    <div class="tagline">Your drone's flight log, decoded.</div>
+    <div style="font-size:8pt;color:#999;margin-top:4px;">
+      Report ID: <span style="font-family:monospace;">{{ report.report_id }}</span><br>
+      Generated: {{ generated_at }}<br>
+      File: {{ report.file_name }} ({{ (report.file_size_bytes / 1024)|round(1) }} KB)
+    </div>
+  </div>
+  <div class="score-block">
+    <div class="score-number" style="color: {{ report.overall_score | score_colour }}">
+      {{ report.overall_score | round(0) | int }}
+    </div>
+    <div class="score-label" style="color: {{ report.overall_score | score_colour }}">
+      {{ report.score_label }}
+    </div>
+    <div style="font-size:7pt;color:#888;margin-top:2px;">Health Score / 100</div>
+  </div>
+</div>
+
+<!-- ── FLIGHT METADATA ─────────────────────────────────────────────────────── -->
+<h2>Flight Information</h2>
+<div class="meta-grid">
+  <div class="meta-item">
+    <div class="meta-label">Duration</div>
+    <div class="meta-value">
+      {% set mins = (report.metadata.duration_seconds / 60)|int %}
+      {% set secs = (report.metadata.duration_seconds % 60)|int %}
+      {{ "%02d:%02d"|format(mins, secs) }}
+    </div>
+  </div>
+  <div class="meta-item">
+    <div class="meta-label">Arm Events</div>
+    <div class="meta-value">{{ report.metadata.arm_count }}</div>
+  </div>
+  <div class="meta-item">
+    <div class="meta-label">Flight Modes</div>
+    <div class="meta-value">{{ report.metadata.flight_modes_used|join(", ") or "—" }}</div>
+  </div>
+  {% if report.metadata.max_altitude_m %}
+  <div class="meta-item">
+    <div class="meta-label">Max Altitude</div>
+    <div class="meta-value">{{ report.metadata.max_altitude_m }} m</div>
+  </div>
+  {% endif %}
+  {% if report.metadata.max_speed_ms %}
+  <div class="meta-item">
+    <div class="meta-label">Max Speed</div>
+    <div class="meta-value">{{ report.metadata.max_speed_ms }} m/s</div>
+  </div>
+  {% endif %}
+  {% if report.metadata.firmware_version %}
+  <div class="meta-item">
+    <div class="meta-label">Firmware</div>
+    <div class="meta-value">{{ report.metadata.firmware_version }}</div>
+  </div>
+  {% endif %}
+  {% if report.metadata.hardware_id %}
+  <div class="meta-item">
+    <div class="meta-label">Hardware</div>
+    <div class="meta-value">{{ report.metadata.hardware_id }}</div>
+  </div>
+  {% endif %}
+  <div class="meta-item">
+    <div class="meta-label">Processing Time</div>
+    <div class="meta-value">{{ (report.processing_time_ms / 1000)|round(1) }}s</div>
+  </div>
+  <div class="meta-item">
+    <div class="meta-label">Schema Version</div>
+    <div class="meta-value">{{ report.schema_version }}</div>
+  </div>
+</div>
+
+<!-- ── EXECUTIVE SUMMARY ───────────────────────────────────────────────────── -->
+<h2>Executive Summary</h2>
+<div class="executive-summary">
+  {{ report.executive_summary }}
+</div>
+
+<!-- ── FINDINGS ────────────────────────────────────────────────────────────── -->
+<h2>Findings ({{ report.findings|length }} total)</h2>
+
+{% if not report.findings %}
+<p style="color:#0DD97C;font-weight:600;">✓ No significant issues detected in this flight log.</p>
+{% endif %}
+
+{% for finding in report.findings %}
+<div class="finding">
+  <div class="finding-header">
+    <span class="severity-badge" style="background:{{ finding.severity | severity_colour }}">
+      {{ finding.severity | upper }}
+    </span>
+    <span class="finding-title">{{ finding.title }}</span>
+    <span style="margin-left:auto;font-size:8pt;color:#888;">
+      {{ finding.category | upper }}
+      &nbsp;·&nbsp; confidence {{ (finding.confidence * 100)|round(0)|int }}%
+      {% if finding.timestamp_start_ms %}
+        &nbsp;·&nbsp; t={{ finding.timestamp_start_ms | format_ms }}
+      {% endif %}
+    </span>
+  </div>
+  <div class="finding-body">
+    <p class="finding-plain">{{ finding.plain_english }}</p>
+    <div class="finding-rec">
+      <strong>Action:</strong> {{ finding.recommendation }}
+    </div>
+    <div class="tech-detail">
+      {{ finding.technical_summary }}
+    </div>
+
+    {% if finding.param_changes %}
+    <table class="param-table" style="margin-top:10px;">
+      <thead>
+        <tr>
+          <th>Parameter</th>
+          <th>Current</th>
+          <th>Suggested</th>
+          <th>Change</th>
+          <th>Reason</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for pc in finding.param_changes %}
+        <tr>
+          <td class="param-name">{{ pc.param_name }}</td>
+          <td class="param-val">{{ pc.current_value }}</td>
+          <td class="param-val" style="color:#E8A020;font-weight:bold;">{{ pc.suggested_value }}</td>
+          <td style="text-transform:capitalize;">{{ pc.change_direction }}</td>
+          <td>{{ pc.reason }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
+
+<!-- ── PARAMETER CHANGE SHEET ──────────────────────────────────────────────── -->
+{% if report.param_change_sheet %}
+<h2>Parameter Change Sheet</h2>
+<p style="font-size:9pt;color:#555;margin-bottom:8px;">
+  All recommended parameter changes from this report, deduplicated. 
+  Apply using Mission Planner, QGroundControl, or PX4 parameter uploader.
+</p>
+<table class="param-table">
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Parameter</th>
+      <th>Current Value</th>
+      <th>Suggested Value</th>
+      <th>Unit</th>
+      <th>Direction</th>
+      <th>Reason</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for rec in report.param_change_sheet %}
+    <tr>
+      <td style="color:#888;">{{ loop.index }}</td>
+      <td class="param-name">{{ rec.param_name }}</td>
+      <td class="param-val">{{ rec.current_value }}</td>
+      <td class="param-val" style="color:#E8A020;font-weight:bold;">{{ rec.suggested_value }}</td>
+      <td style="color:#888;">{{ rec.unit or "—" }}</td>
+      <td style="text-transform:capitalize;">{{ rec.change_direction }}</td>
+      <td>{{ rec.reason }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<!-- ── ANALYSER SUMMARY TABLE ──────────────────────────────────────────────── -->
+<h2>Module Summary</h2>
+<table class="param-table">
+  <thead>
+    <tr>
+      <th>Module</th>
+      <th>Status</th>
+      <th>Score</th>
+      <th>Findings</th>
+      <th>Processing</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for ar in report.analyser_results %}
+    <tr>
+      <td style="font-weight:600;">{{ ar.display_name }}</td>
+      <td>
+        {% if ar.skipped %}
+          <span style="color:#888;">Skipped</span>
+        {% else %}
+          <span style="color:#0DD97C;">✓ Ran</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if not ar.skipped %}
+          <span style="color:{{ ar.health_score | score_colour }};font-weight:bold;">
+            {{ ar.health_score|round(0)|int }}/100
+          </span>
+        {% else %}—{% endif %}
+      </td>
+      <td>{{ ar.findings|length }}</td>
+      <td style="font-family:monospace;font-size:8.5pt;color:#666;">
+        {{ ar.processing_ms }}ms
+        {% if ar.skip_reason %}
+          <br><span style="color:#aaa;font-size:7.5pt;">{{ ar.skip_reason }}</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<!-- ── SIGNATURE / COMPLIANCE BLOCK ────────────────────────────────────────── -->
+<div class="signature-block">
+  <div class="sig-title">DGCA Compliance Record — Operator Acknowledgement</div>
+  <div class="sig-line">
+    <div>
+      <div class="sig-field">&nbsp;</div>
+      <div class="sig-label">Remote Pilot Name (Print)</div>
+    </div>
+    <div>
+      <div class="sig-field">&nbsp;</div>
+      <div class="sig-label">DGCA Remote Pilot Licence Number</div>
+    </div>
+  </div>
+  <div class="sig-line">
+    <div>
+      <div class="sig-field">&nbsp;</div>
+      <div class="sig-label">Operator Signature</div>
+    </div>
+    <div>
+      <div class="sig-field">&nbsp;</div>
+      <div class="sig-label">Date of Review (DD/MM/YYYY)</div>
+    </div>
+  </div>
+  <div class="sig-line">
+    <div>
+      <div class="sig-field">&nbsp;</div>
+      <div class="sig-label">UAS Registration Number</div>
+    </div>
+    <div>
+      <div class="sig-field">&nbsp;</div>
+      <div class="sig-label">Flight Location / Site</div>
+    </div>
+  </div>
+  <p style="font-size:8.5pt;margin-top:8px;">
+    I confirm that I have reviewed this automated flight log analysis report and taken 
+    appropriate corrective action for any findings marked WARNING or CRITICAL before 
+    the next flight operation.
+  </p>
+  <div class="disclaimer">
+    This report was generated automatically by FlightMD v{{ report.schema_version }} 
+    (Sixty Motion Aerospace). It is provided for informational purposes and to assist 
+    with pre-flight and post-flight safety review. It does not replace the judgement 
+    of a qualified drone engineer or airworthiness inspector. AI explanations generated 
+    using Anthropic Claude ({{ report.claude_model_findings }} / {{ report.claude_model_summary }}).
+  </div>
+</div>
+
+</body>
+</html>

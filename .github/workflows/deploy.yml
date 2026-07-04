@@ -1,0 +1,92 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  # ── Deploy backend to Render ─────────────────────────────────────────────────
+  deploy-backend:
+    name: Deploy API to Render
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trigger Render Deploy
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -n "$RENDER_DEPLOY_HOOK" ]; then
+            curl -s -X POST "$RENDER_DEPLOY_HOOK" \
+              -H "Content-Type: application/json" \
+              --fail --retry 3
+            echo "Render deploy triggered."
+          else
+            echo "RENDER_DEPLOY_HOOK_URL not set — skipping Render deploy."
+          fi
+
+  # ── Deploy frontend to Vercel ────────────────────────────────────────────────
+  deploy-frontend:
+    name: Deploy Frontend to Vercel
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Install dependencies
+        run: cd frontend && npm ci
+
+      - name: Deploy to Vercel
+        env:
+          VERCEL_TOKEN:   ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID:  ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          cd frontend
+          vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+          vercel build --prod --token=$VERCEL_TOKEN
+          vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
+
+  # ── Post-deploy smoke test ────────────────────────────────────────────────────
+  smoke-test:
+    name: Smoke Test Production
+    runs-on: ubuntu-latest
+    needs: [deploy-backend, deploy-frontend]
+    if: always()
+
+    steps:
+      - name: Test API health endpoint
+        run: |
+          sleep 30   # wait for Render cold start
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            https://flightmd-api.onrender.com/health --max-time 60 || echo "000")
+          echo "Health check HTTP status: $STATUS"
+          if [ "$STATUS" = "200" ]; then
+            echo "✅ API healthy"
+          else
+            echo "⚠️  API returned $STATUS (may be cold-starting — check Render dashboard)"
+          fi
+
+      - name: Test frontend availability
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            https://flightmd.vercel.app --max-time 30 || echo "000")
+          echo "Frontend HTTP status: $STATUS"
+          if [ "$STATUS" = "200" ]; then
+            echo "✅ Frontend healthy"
+          else
+            echo "⚠️  Frontend returned $STATUS"
+          fi

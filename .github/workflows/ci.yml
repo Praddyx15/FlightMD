@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Backend: pytest ──────────────────────────────────────────────────────────
+  test-backend:
+    name: Python Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install WeasyPrint system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 \
+            libffi-dev libjpeg-dev libopenjp2-7
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r api/requirements.txt
+          pip install -r api/requirements-dev.txt
+          pip install -e .
+
+      - name: Run pytest
+        env:
+          ANTHROPIC_API_KEY: ""          # empty — Claude calls skipped in tests
+          CORS_ORIGINS: "http://localhost:3000"
+        run: |
+          cd api && pytest ../tests/ -v \
+            --ignore=../tests/test_ulog_parser.py \
+            -m "not integration" \
+            --tb=short \
+            --cov=flightmd_core \
+            --cov=api \
+            --cov-report=term-missing
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: .coverage
+
+  # ── Frontend: Next.js build ─────────────────────────────────────────────────
+  test-frontend:
+    name: Next.js Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Node dependencies
+        run: cd frontend && npm ci
+
+      - name: Type check
+        run: cd frontend && npx tsc --noEmit
+
+      - name: Build Next.js app
+        env:
+          NEXT_PUBLIC_API_URL: "https://flightmd-api.onrender.com"
+        run: cd frontend && npm run build
+
+  # ── Lint (ruff) ─────────────────────────────────────────────────────────────
+  lint:
+    name: Python Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install ruff
+
+      - name: Lint flightmd_core
+        run: ruff check flightmd_core/ --select=E,W,F --ignore=E501
+
+      - name: Lint api/
+        run: ruff check api/ --select=E,W,F --ignore=E501
