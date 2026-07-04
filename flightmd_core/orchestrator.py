@@ -1,5 +1,6 @@
 """
-FlightMD Orchestrator — coordinates ULog parsing, analysis, Claude AI, and report assembly.
+FlightMD Orchestrator — coordinates log parsing, analysis, explanation
+generation, and report assembly.
 
 This is the single entry point for the flightmd_core package.
 Call run_analysis() from:
@@ -8,8 +9,9 @@ Call run_analysis() from:
   - CLI tools
   - Tests
 
-Design: CPU-bound analysis runs in thread pool to avoid blocking the asyncio event loop.
-Claude API calls are fully async and concurrent.
+Design: CPU-bound analysis runs in thread pool to avoid blocking the asyncio
+event loop. All diagnostics are deterministic and require no network access;
+an optional AI enhancer may be supplied to polish the executive summary.
 """
 
 import asyncio
@@ -18,10 +20,15 @@ import time
 from typing import Optional
 
 from flightmd_core.models.findings import FlightMDReport
+from flightmd_core.services.ai_enhancer import AIEnhancer
 from flightmd_core.services.ulog_parser     import ULogParser
+from flightmd_core.services.ardupilot_parser import ArduPilotBinParser
+from flightmd_core.services.mavlink_telemetry_parser import MavlinkTelemetryParser
+from flightmd_core.services.format_detector import detect_format, UnsupportedFormatError
 from flightmd_core.services.explanation_engine import ExplanationEngine
 from flightmd_core.services.score_calculator import ScoreCalculator
 from flightmd_core.services.report_builder  import ReportBuilder
+from flightmd_core.services.weather_lookup import fetch_weather
 from flightmd_core.analysers import (
     OscillationAnalyser,
     VibrationAnalyser,
@@ -52,20 +59,24 @@ async def run_analysis(
     ulog_path: str,
     file_name: str,
     file_size: int,
-    anthropic_api_key: str,
-    use_claude: bool = True,
     progress_callback: Optional[callable] = None,
+    ai_enhancer: Optional[AIEnhancer] = None,
 ) -> FlightMDReport:
     """
     Full analysis pipeline.
 
     Args:
-        ulog_path:          Path to the .ulg file on disk
+        ulog_path:          Path to the log file on disk. Format is
+                             auto-detected: PX4 ULog (.ulg), ArduPilot
+                             dataflash (.bin), or MAVLink telemetry (.tlog).
         file_name:          Original file name (stored in report)
         file_size:          File size in bytes (stored in report)
-        anthropic_api_key:  Anthropic API key for Claude
-        use_claude:         If False, skip Claude and use technical_summary as plain_english
         progress_callback:  Optional async callable(progress: int, message: str)
+        ai_enhancer:        Optional AIEnhancer. When omitted (default), behaviour
+                             is identical to fully offline/deterministic operation.
+                             When supplied and configured, only the executive
+                             summary is polished — every finding's plain_english
+                             and recommendation stay rule-based and reproducible.
 
     Returns:
         FlightMDReport (fully populated)
@@ -81,21 +92,82 @@ async def run_analysis(
                 pass
         logger.info(f"[{pct}%] {msg}")
 
-    # ── Step 1: Parse ULog ───────────────────────────────────────────────────
+    # ── Step 1: Detect format and parse ──────────────────────────────────────
     await progress(5, "Parsing flight log…")
+    try:
+        log_format = await loop.run_in_executor(None, lambda: detect_format(ulog_path))
+    except UnsupportedFormatError as e:
+        logger.error(f"Unsupported log format: {e}")
+        raise ValueError(str(e)) from e
+
+    parser = {
+        "px4_ulog": ULogParser,
+        "ardupilot_bin": ArduPilotBinParser,
+        "mavlink_tlog": MavlinkTelemetryParser,
+    }[log_format]()
+
     try:
         topics, params, metadata = await loop.run_in_executor(
             None,
-            lambda: ULogParser().parse(ulog_path),
+            lambda: parser.parse(ulog_path),
         )
     except Exception as e:
-        logger.error(f"ULog parse failed: {e}")
-        raise ValueError(f"Failed to parse ULog file: {e}") from e
+        logger.error(f"Log parse failed ({log_format}): {e}")
+        raise ValueError(f"Failed to parse {log_format} file: {e}") from e
+
+    logger.info(f"Detected format: {log_format}")
 
     logger.info(
         f"Log parsed: {metadata.duration_seconds:.1f}s, "
         f"{len(topics)} topics, {len(params)} params"
     )
+
+    # ── Step 1.5: Extract GPS Coordinates, GPS Path, and Weather ─────────────
+    lat = None
+    lon = None
+    gps_path = None
+
+    if "vehicle_gps_position" in topics:
+        gps_df = topics["vehicle_gps_position"]
+        if "lat" in gps_df.columns and "lon" in gps_df.columns:
+            # Filter out 0 or invalid coords
+            valid_gps = gps_df[(gps_df["lat"] != 0) & (gps_df["lon"] != 0)]
+            if not valid_gps.empty:
+                # Initial position
+                lat = float(valid_gps["lat"].iloc[0] / 1e7)
+                lon = float(valid_gps["lon"].iloc[0] / 1e7)
+
+                alt_col = next((c for c in ["alt", "alt_ellipsoid", "amsl"] if c in valid_gps.columns), None)
+                # downsample gps_path
+                step = max(1, len(valid_gps) // 500)
+                path_subset = valid_gps.iloc[::step]
+
+                path_points = []
+                for _, row in path_subset.iterrows():
+                    r_lat = float(row["lat"] / 1e7)
+                    r_lon = float(row["lon"] / 1e7)
+                    r_alt = float(row[alt_col] / 1000.0) if alt_col else 0.0 # convert mm to m
+                    path_points.append([r_lat, r_lon, r_alt])
+
+                gps_path = path_points
+
+    metadata.gps_path = gps_path
+
+    # Run weather fetch in an executor so we don't block
+    if lat and lon:
+        await progress(15, "Fetching weather context…")
+        metadata.weather = await loop.run_in_executor(
+            None,
+            lambda: fetch_weather(lat, lon, metadata.log_start_utc)
+        )
+    else:
+        metadata.weather = {
+            "temperature_max_c": None,
+            "temperature_min_c": None,
+            "wind_speed_max_ms": None,
+            "rain_sum_mm": None,
+            "description": "No GPS position data in log",
+        }
 
     # ── Step 2: Instantiate analysers ────────────────────────────────────────
     all_analysers = [
@@ -139,12 +211,12 @@ async def run_analysis(
 
     # ── Step 4: Collect findings ─────────────────────────────────────────────
     all_findings = [f for r in results for f in r.findings]
-    logger.info(f"Total findings before Claude: {len(all_findings)}")
+    logger.info(f"Total findings: {len(all_findings)}")
 
     # ── Step 5: Generate score (needed for executive summary prompt) ─────────
     await progress(80, "Calculating health score…")
     score_calc = ScoreCalculator()
-    overall_score, score_label = score_calc.calculate(results)
+    overall_score, score_label, letter_grade = score_calc.calculate(results)
 
     # ── Step 6: Deterministic explanations ───────────────────────────────────
     await progress(88, f"Generating deterministic explanations for {len(all_findings)} findings…")
@@ -166,13 +238,24 @@ async def run_analysis(
                 f.recommendation = "Consult a PX4 expert for this finding."
         executive_summary = _fallback_summary(overall_score, score_label, all_findings)
 
+    # ── Step 6.5: Optional AI polish (executive summary only) ───────────────
+    # Findings' plain_english/recommendation are never touched here — they
+    # stay deterministic and reproducible regardless of this step.
+    if ai_enhancer is not None and ai_enhancer.is_configured:
+        await progress(92, "Polishing summary…")
+        executive_summary = await ai_enhancer.polish_summary(
+            base_summary=executive_summary,
+            findings=all_findings,
+            metadata=metadata,
+        )
+
     # ── Step 7: Assemble final report ────────────────────────────────────────
     await progress(96, "Assembling report…")
     report = ReportBuilder().build(
         results=results,
         findings=all_findings,
         metadata=metadata,
-        score=(overall_score, score_label),
+        score=(overall_score, score_label, letter_grade),
         executive_summary=executive_summary,
         file_name=file_name,
         file_size=file_size,

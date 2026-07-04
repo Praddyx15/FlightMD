@@ -167,7 +167,6 @@ class ULogParser:
         # Firmware / hardware
         fw_version  = ulog.msg_info_dict.get("ver_sw", None)
         hw_id       = ulog.msg_info_dict.get("ver_hw", None)
-        sys_id      = ulog.msg_info_dict.get("sys_name", None)
         px4_version = ulog.msg_info_dict.get("ver_sw_release", None)
 
         # Airframe
