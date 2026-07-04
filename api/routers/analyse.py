@@ -1,5 +1,6 @@
 """
-POST /analyse — accepts a .ulg file, validates it, kicks off background analysis.
+POST /analyse — accepts a PX4 (.ulg), ArduPilot (.bin), or MAVLink telemetry
+(.tlog) flight log, validates it, kicks off background analysis.
 """
 
 import asyncio
@@ -15,16 +16,24 @@ from slowapi.util import get_remote_address
 from api.config import get_settings
 from api.storage import job_store
 from flightmd_core.orchestrator import run_analysis
+from flightmd_core.services.ai_enhancer import AIEnhancer
+from flightmd_core.services.format_detector import (
+    detect_format_from_header,
+    UnsupportedFormatError,
+)
 
 logger   = logging.getLogger(__name__)
 router   = APIRouter()
 limiter  = Limiter(key_func=get_remote_address)
 settings = get_settings()
 
-# PX4 ULog magic bytes: "ULog" = 0x55 0x4C 0x6F 0x67
-ULOG_MAGIC = b"\x55\x4C\x6F\x67"
-
 RATE_LIMIT = f"{settings.rate_limit_per_hour}/hour"
+
+FORMAT_SUFFIX = {
+    "px4_ulog": ".ulg",
+    "ardupilot_bin": ".bin",
+    "mavlink_tlog": ".tlog",
+}
 
 
 @router.post("/analyse")
@@ -34,7 +43,8 @@ async def analyse_log(
     file: UploadFile = File(...),
 ) -> dict:
     """
-    Accept a PX4 .ulg file and begin asynchronous analysis.
+    Accept a PX4 .ulg, ArduPilot .bin, or MAVLink .tlog flight log and begin
+    asynchronous analysis.
 
     Returns immediately with a report_id and estimated processing time.
     Poll GET /status/{report_id} for progress.
@@ -52,20 +62,20 @@ async def analyse_log(
     if file_size < 8:
         raise HTTPException(
             status_code=400,
-            detail="Invalid file. Must be a PX4 ULog (.ulg) file.",
+            detail="Invalid file. Must be a PX4 ULog (.ulg), ArduPilot (.bin), "
+                   "or MAVLink telemetry (.tlog) file.",
         )
 
-    # ── ULog magic bytes check ───────────────────────────────────────────────
-    if content[:4] != ULOG_MAGIC:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid file. Must be a PX4 ULog (.ulg) file.",
-        )
+    # ── Format detection ─────────────────────────────────────────────────────
+    file_name = file.filename or "flight.ulg"
+    try:
+        log_format = detect_format_from_header(content[:8], file_name)
+    except UnsupportedFormatError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     # ── Create job ───────────────────────────────────────────────────────────
     report_id = str(uuid.uuid4())
-    job = job_store.create(report_id)
-    file_name = file.filename or "flight.ulg"
+    job_store.create(report_id)
 
     # ── Kick off background task ─────────────────────────────────────────────
     asyncio.create_task(
@@ -74,12 +84,13 @@ async def analyse_log(
             content=content,
             file_name=file_name,
             file_size=file_size,
+            log_format=log_format,
         )
     )
 
     logger.info(
         f"Analysis job {report_id} created for {file_name} "
-        f"({file_size/1024:.1f}KB)"
+        f"({log_format}, {file_size/1024:.1f}KB)"
     )
 
     return {
@@ -94,27 +105,36 @@ async def _run_analysis_task(
     content: bytes,
     file_name: str,
     file_size: int,
+    log_format: str,
 ) -> None:
     """
     Background task: write file to temp disk, run analysis, update job store.
     """
     tmp_path = None
     try:
-        # Write to a temp file (pyulog needs a real file path)
-        with tempfile.NamedTemporaryFile(suffix=".ulg", delete=False) as tmp:
+        # Write to a temp file with a suffix matching the detected format —
+        # the underlying parsers read binary content directly and don't
+        # depend on the extension, but a matching suffix avoids surprises.
+        suffix = FORMAT_SUFFIX.get(log_format, ".ulg")
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
             tmp.write(content)
             tmp_path = tmp.name
 
         async def on_progress(progress: int, message: str):
             job_store.update_progress(report_id, progress, message)
 
+        ai_enhancer = AIEnhancer(
+            provider=settings.ai_provider,
+            groq_api_key=settings.groq_api_key,
+            anthropic_api_key=settings.anthropic_api_key,
+        )
+
         report = await run_analysis(
             ulog_path=tmp_path,
             file_name=file_name,
             file_size=file_size,
-            anthropic_api_key=get_settings().anthropic_api_key,
-            use_claude=bool(get_settings().anthropic_api_key),
             progress_callback=on_progress,
+            ai_enhancer=ai_enhancer,
         )
 
         # Override the report_id with our assigned one (orchestrator generates its own)
