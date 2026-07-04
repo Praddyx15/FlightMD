@@ -20,7 +20,9 @@ export function DropZone({ onFile, disabled }: Props) {
   const { getRootProps, getInputProps, isDragActive, acceptedFiles, fileRejections } =
     useDropzone({
       onDrop,
-      accept: { "application/octet-stream": [".ulg"] },
+      accept: {
+        "application/octet-stream": [".ulg", ".ulog", ".bin", ".tlog"],
+      },
       maxFiles: 1,
       maxSize: 50 * 1024 * 1024,
       disabled,
@@ -52,12 +54,12 @@ export function DropZone({ onFile, disabled }: Props) {
           <div className="text-4xl mb-4">{isDragActive ? "📂" : "📁"}</div>
           <p className="text-white/70 font-medium">
             {isDragActive
-              ? "Drop your ULog file here…"
-              : "Drag & drop your .ulg file here"}
+              ? "Drop your flight log here…"
+              : "Drag & drop your flight log here"}
           </p>
           <p className="text-white/40 text-sm mt-1">or click to browse</p>
           <p className="text-white/25 text-xs mt-4">
-            PX4 ULog format · Max 50MB
+            PX4 (.ulg) · ArduPilot (.bin) · MAVLink telemetry (.tlog) · Max 50MB
           </p>
         </div>
       )}

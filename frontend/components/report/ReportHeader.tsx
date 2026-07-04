@@ -1,8 +1,9 @@
 "use client";
 
+import { motion } from "framer-motion";
 import type { FlightMDReport } from "@/lib/types";
 import { ScoreCircle } from "@/components/shared/ScoreCircle";
-import { formatDuration, formatFileSize } from "@/lib/utils";
+import { formatDuration, formatFileSize, gradeColour } from "@/lib/utils";
 
 export function ReportHeader({ report }: { report: FlightMDReport }) {
   const m = report.metadata;
@@ -10,7 +11,10 @@ export function ReportHeader({ report }: { report: FlightMDReport }) {
   const warnings  = report.findings.filter((f) => f.severity === "warning").length;
 
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, ease: "easeOut" }}
       className="rounded-xl border p-6 sm:p-8"
       style={{ background: "#0E1428", borderColor: "rgba(255,255,255,0.08)" }}
     >
@@ -34,6 +38,14 @@ export function ReportHeader({ report }: { report: FlightMDReport }) {
 
           {/* Severity counts */}
           <div className="flex flex-wrap gap-3 mb-4">
+            <span className="text-xs font-bold px-3 py-1 rounded-full"
+              style={{
+                color: gradeColour(report.letter_grade),
+                background: `${gradeColour(report.letter_grade)}22`,
+                border: `1px solid ${gradeColour(report.letter_grade)}55`,
+              }}>
+              GRADE {report.letter_grade}
+            </span>
             {criticals > 0 && (
               <span className="text-xs font-bold px-3 py-1 rounded-full"
                 style={{ color: "#FF3D3D", background: "#FF3D3D22", border: "1px solid #FF3D3D55" }}>
@@ -70,6 +82,9 @@ export function ReportHeader({ report }: { report: FlightMDReport }) {
             {m.hardware_id && (
               <MetaItem label="Hardware"  value={m.hardware_id} mono />
             )}
+            {m.weather && m.weather.description && (
+              <MetaItem label="Weather" value={m.weather.description} />
+            )}
             <MetaItem
               label="Flight Modes"
               value={m.flight_modes_used.join(", ") || "—"}
@@ -81,7 +96,7 @@ export function ReportHeader({ report }: { report: FlightMDReport }) {
           </div>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 

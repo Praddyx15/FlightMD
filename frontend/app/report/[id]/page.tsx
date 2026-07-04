@@ -9,6 +9,8 @@ import { ReportHeader } from "@/components/report/ReportHeader";
 import { FindingsList } from "@/components/report/FindingsList";
 import { ParamSheet } from "@/components/report/ParamSheet";
 import { ExportBar } from "@/components/report/ExportBar";
+import PathPlotter from "@/components/report/PathPlotter";
+import QAAssistant from "@/components/report/QAAssistant";
 
 const STATUS_MESSAGES: Record<number, string> = {
   0:  "Preparing analysis…",
@@ -19,7 +21,7 @@ const STATUS_MESSAGES: Record<number, string> = {
   62: "Assessing battery…",
   72: "Reviewing GPS quality…",
   80: "Inspecting parameters & motors…",
-  88: "Generating AI explanations…",
+  88: "Generating explanations…",
   96: "Assembling report…",
   100: "Complete!",
 };
@@ -136,7 +138,9 @@ export default function ReportPage() {
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
       <ReportHeader report={report} />
+      <PathPlotter report={report} />
       <FindingsList findings={report.findings} />
+      <QAAssistant report={report} />
       {report.param_change_sheet.length > 0 && (
         <ParamSheet params={report.param_change_sheet} />
       )}
@@ -152,5 +156,5 @@ export default function ReportPage() {
   );
 }
 
-const STEP_LABELS = ["Parse", "Oscillation", "Vibration", "EKF", "Battery", "GPS", "Params", "AI"];
-const STEP_ICONS  = ["📄", "〰️", "📳", "🔭", "🔋", "📡", "⚙️", "🤖"];
+const STEP_LABELS = ["Parse", "Oscillation", "Vibration", "EKF", "Battery", "GPS", "Params", "Explain"];
+const STEP_ICONS  = ["📄", "〰️", "📳", "🔭", "🔋", "📡", "⚙️", "📝"];

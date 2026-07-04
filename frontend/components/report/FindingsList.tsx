@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { motion } from "framer-motion";
 import type { Finding, Severity, Category } from "@/lib/types";
 import { FindingCard } from "./FindingCard";
 
@@ -78,8 +79,15 @@ export function FindingsList({ findings }: Props) {
       </div>
 
       <div className="space-y-3">
-        {filtered.map((f) => (
-          <FindingCard key={f.id} finding={f} />
+        {filtered.map((f, idx) => (
+          <motion.div
+            key={f.id}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25, delay: Math.min(idx * 0.05, 0.5) }}
+          >
+            <FindingCard finding={f} />
+          </motion.div>
         ))}
       </div>
     </section>

@@ -33,7 +33,7 @@ export function ExportBar({ reportId, fileName }: Props) {
           style={{ background: "#1A3A5C", color: "#E8EDF5", border: "1px solid #2A5A8C" }}
         >
           📄 Download PDF
-          <span className="text-xs opacity-50">DGCA compliant</span>
+          <span className="text-xs opacity-50">printable record</span>
         </a>
 
         {/* JSON */}
