@@ -225,10 +225,15 @@ class ParameterAnalyser(BaseAnalyser):
             else:
                 rhs_val = rhs
 
-            if op == ">"  and not (lhs >  rhs_val): return False
-            if op == "<"  and not (lhs <  rhs_val): return False
-            if op == ">=" and not (lhs >= rhs_val): return False
-            if op == "<=" and not (lhs <= rhs_val): return False
-            if op == "==" and not (lhs == rhs_val): return False
+            if op == ">"  and not (lhs >  rhs_val):
+                return False
+            if op == "<"  and not (lhs <  rhs_val):
+                return False
+            if op == ">=" and not (lhs >= rhs_val):
+                return False
+            if op == "<=" and not (lhs <= rhs_val):
+                return False
+            if op == "==" and not (lhs == rhs_val):
+                return False
 
         return True

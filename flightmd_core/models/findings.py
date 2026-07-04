@@ -45,8 +45,8 @@ class Finding(BaseModel):
     severity: Severity
     title: str
     technical_summary: str       # raw numbers, timestamps, axis labels
-    plain_english: str           # Claude-generated, 2-4 sentences
-    recommendation: str          # Claude-generated, 1-2 sentences, specific action
+    plain_english: str           # rule-engine-generated, 2-4 sentences (optionally AI-polished)
+    recommendation: str          # rule-engine-generated, 1-2 sentences, specific action
     confidence: float            # 0.0–1.0
     timestamp_start_ms: Optional[int] = None
     timestamp_end_ms: Optional[int] = None
@@ -66,17 +66,16 @@ class AnalyserResult(BaseModel):
 
 class FlightMDReport(BaseModel):
     report_id: str
-    schema_version: str = "1.0"          # bump when data contract changes — UAOP checks this
+    schema_version: str = "1.2"          # bump when data contract changes — UAOP checks this
     overall_score: float
     score_label: str                     # Excellent/Good/Caution/Warning/Critical
-    executive_summary: str               # Claude-generated, 2-3 sentences
+    letter_grade: str                    # A-F grade based on overall_score
+    executive_summary: str               # rule-engine-generated, 2-3 sentences (optionally AI-polished)
     metadata: "FlightMetadata"           # forward ref resolved at bottom
     findings: list[Finding]              # ALL findings, sorted severity desc
     param_change_sheet: list[ParamRecommendation]  # deduplicated across all analysers
     analyser_results: list[AnalyserResult]
     processing_time_ms: int
-    claude_model_findings: str
-    claude_model_summary: str
     file_name: str
     file_size_bytes: int
 

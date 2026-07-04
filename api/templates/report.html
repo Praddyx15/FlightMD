@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>FlightMD Report — {{ report.report_id[:8] }}</title>
+<title>FlightMD Flight Analysis Report — {{ report.report_id[:8] }}</title>
 <style>
   /* Base styles injected by PDFGenerator._base_css() via WeasyPrint CSS arg */
   string-set: report-id "{{ report.report_id[:8] }}";
@@ -227,50 +227,39 @@
   </tbody>
 </table>
 
-<!-- ── SIGNATURE / COMPLIANCE BLOCK ────────────────────────────────────────── -->
+<!-- ── REVIEW BLOCK ────────────────────────────────────────────────────────── -->
 <div class="signature-block">
-  <div class="sig-title">DGCA Compliance Record — Operator Acknowledgement</div>
+  <div class="sig-title">Internal Review Record</div>
   <div class="sig-line">
     <div>
       <div class="sig-field">&nbsp;</div>
-      <div class="sig-label">Remote Pilot Name (Print)</div>
+      <div class="sig-label">Reviewed By (Print Name)</div>
     </div>
     <div>
       <div class="sig-field">&nbsp;</div>
-      <div class="sig-label">DGCA Remote Pilot Licence Number</div>
+      <div class="sig-label">Date of Review</div>
     </div>
   </div>
   <div class="sig-line">
     <div>
       <div class="sig-field">&nbsp;</div>
-      <div class="sig-label">Operator Signature</div>
+      <div class="sig-label">Signature</div>
     </div>
     <div>
       <div class="sig-field">&nbsp;</div>
-      <div class="sig-label">Date of Review (DD/MM/YYYY)</div>
-    </div>
-  </div>
-  <div class="sig-line">
-    <div>
-      <div class="sig-field">&nbsp;</div>
-      <div class="sig-label">UAS Registration Number</div>
-    </div>
-    <div>
-      <div class="sig-field">&nbsp;</div>
-      <div class="sig-label">Flight Location / Site</div>
+      <div class="sig-label">Flight Location / Site (Optional)</div>
     </div>
   </div>
   <p style="font-size:8.5pt;margin-top:8px;">
-    I confirm that I have reviewed this automated flight log analysis report and taken 
-    appropriate corrective action for any findings marked WARNING or CRITICAL before 
-    the next flight operation.
+    This section is provided as an optional internal recordkeeping aid for tracking
+    who reviewed this report and what corrective action, if any, was taken on
+    findings marked WARNING or CRITICAL before the next flight.
   </p>
   <div class="disclaimer">
-    This report was generated automatically by FlightMD v{{ report.schema_version }} 
-    (Sixty Motion Aerospace). It is provided for informational purposes and to assist 
-    with pre-flight and post-flight safety review. It does not replace the judgement 
-    of a qualified drone engineer or airworthiness inspector. AI explanations generated 
-    using Anthropic Claude ({{ report.claude_model_findings }} / {{ report.claude_model_summary }}).
+    This report was generated automatically by FlightMD v{{ report.schema_version }}.
+    It is an engineering analysis tool intended to assist with pre-flight and
+    post-flight review — it is not a regulatory or compliance document, and does
+    not replace the judgement of a qualified drone engineer.
   </div>
 </div>
 

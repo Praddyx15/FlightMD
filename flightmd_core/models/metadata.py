@@ -21,3 +21,5 @@ class FlightMetadata(BaseModel):
     total_distance_m: Optional[float] = None
     px4_version: Optional[str] = None
     available_topics: list[str] = []
+    weather: Optional[dict] = None
+    gps_path: Optional[list[list[float]]] = None

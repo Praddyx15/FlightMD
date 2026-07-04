@@ -1,9 +1,9 @@
 """
-PDFGenerator — renders FlightMDReport to a printable, signable PDF.
+PDFGenerator — renders FlightMDReport to a printable flight analysis report.
 
-Uses WeasyPrint (HTML→PDF) with a Jinja2 template.
-The PDF is suitable for DGCA compliance records — it can be printed and
-physically signed by the operator.
+Uses WeasyPrint (HTML→PDF) with a Jinja2 template. The PDF is an engineering
+analysis document for internal review and maintenance tracking — it is not a
+regulatory or compliance instrument.
 """
 
 import logging

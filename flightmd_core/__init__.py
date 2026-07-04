@@ -1,5 +1,6 @@
 """
-flightmd_core — PX4 ULog analysis engine.
+flightmd_core — multi-format drone flight log analysis engine (PX4 ULog,
+ArduPilot dataflash, MAVLink telemetry logs).
 
 Public API:
     run_analysis(...)  → FlightMDReport
@@ -8,13 +9,16 @@ Public API:
     Finding            — individual finding
     Severity / Category — enums
 
+All diagnostics are produced by a deterministic rule engine — no network
+access or API key is required. An optional AI enhancer can be passed in to
+polish the executive summary; the platform is fully functional without it.
+
 Usage:
     from flightmd_core import run_analysis, FlightMDReport
     report = await run_analysis(
         ulog_path="flight.ulg",
         file_name="flight.ulg",
         file_size=1234567,
-        anthropic_api_key="sk-ant-...",
     )
 """
 

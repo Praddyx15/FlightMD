@@ -113,3 +113,23 @@ class TestBatteryAnalyser:
         })
         result = BatteryAnalyser().safe_analyse({"battery_status": df}, {})
         assert result.skipped
+
+    def test_capacity_fade_detected(self):
+        """Test that capacity fade is detected when estimated capacity is well below rated capacity."""
+        # Rated capacity is 2000 mAh
+        df = make_battery_df(n=1000, peak_current=12.0)  # low current/draw
+        # Overwrite remaining and current to force estimated capacity of ~1111 mAh
+        # 1000 points over 300s -> dt = 0.3s
+        # Total current integrated = average_current * duration = 12A * 300s = 3600 A*s = 1000 mAh
+        df["current_a"] = 12.0
+        # Let's say remaining goes from 1.0 to 0.1 (used_fraction = 0.9).
+        # Estimated capacity = 1000 mAh / 0.9 = 1111 mAh
+        df["remaining"] = np.linspace(1.0, 0.1, len(df))
+        df["capacity"] = 2000.0  # Rated capacity 2000 mAh
+        
+        result = BatteryAnalyser().safe_analyse({"battery_status": df}, {})
+        assert not result.skipped
+        fade_findings = [f for f in result.findings if "capacity fade" in f.title.lower()]
+        assert len(fade_findings) == 1
+        assert fade_findings[0].severity == Severity.WARNING
+

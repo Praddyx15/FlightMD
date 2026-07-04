@@ -142,7 +142,7 @@ class OscillationAnalyser(BaseAnalyser):
                 severity=severity,
                 title=f"{axis_name.capitalize()}-Axis Oscillation at {dominant_hz:.1f} Hz",
                 technical_summary=technical_summary,
-                plain_english=technical_summary,   # overwritten by Claude
+                plain_english=technical_summary,   # overwritten by the explanation engine
                 recommendation=f"Reduce {param_name} from {current_p} to {suggested_p}.",
                 confidence=float(np.clip(norm_amp, 0.0, 1.0)),
                 chart_data={

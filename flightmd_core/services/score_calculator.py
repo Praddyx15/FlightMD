@@ -32,12 +32,12 @@ SCORE_LABELS = [
 
 
 class ScoreCalculator:
-    def calculate(self, results: list[AnalyserResult]) -> tuple[float, str]:
+    def calculate(self, results: list[AnalyserResult]) -> tuple[float, str, str]:
         """
-        Calculate overall health score and label.
+        Calculate overall health score, label, and letter grade.
 
         Returns:
-            (score, label) where score ∈ [0, 100]
+            (score, label, letter_grade) where score ∈ [0, 100]
         """
         total_weight = 0.0
         weighted_sum = 0.0
@@ -73,7 +73,22 @@ class ScoreCalculator:
 
         overall = round(max(0.0, min(100.0, overall)), 1)
         label   = self._label(overall)
-        return overall, label
+        grade   = self.get_letter_grade(overall)
+        return overall, label, grade
+
+    def get_letter_grade(self, score: float) -> str:
+        if score >= 90:
+            return "A"
+        elif score >= 80:
+            return "B"
+        elif score >= 70:
+            return "C"
+        elif score >= 60:
+            return "D"
+        elif score >= 50:
+            return "E"
+        else:
+            return "F"
 
     def _label(self, score: float) -> str:
         for threshold, label in SCORE_LABELS:

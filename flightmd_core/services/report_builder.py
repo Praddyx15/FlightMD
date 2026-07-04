@@ -27,9 +27,6 @@ SEVERITY_ORDER = {
     Severity.GOOD:     3,
 }
 
-CLAUDE_FAST_MODEL    = "claude-haiku-4-5"
-CLAUDE_SUMMARY_MODEL = "claude-sonnet-4-6"
-
 
 class ReportBuilder:
     def build(
@@ -37,13 +34,13 @@ class ReportBuilder:
         results: list[AnalyserResult],
         findings: list[Finding],
         metadata: FlightMetadata,
-        score: tuple[float, str],         # (score, label) from ScoreCalculator
+        score: tuple[float, str, str],         # (score, label, letter_grade) from ScoreCalculator
         executive_summary: str,
         file_name: str,
         file_size: int,
         start_time_ms: Optional[int] = None,
     ) -> FlightMDReport:
-        overall_score, score_label = score
+        overall_score, score_label, letter_grade = score
 
         # Sort findings: CRITICAL → WARNING → INFO → GOOD, then by confidence desc
         sorted_findings = sorted(
@@ -60,17 +57,16 @@ class ReportBuilder:
 
         return FlightMDReport(
             report_id=str(uuid.uuid4()),
-            schema_version="1.0",
+            schema_version="1.2",
             overall_score=overall_score,
             score_label=score_label,
+            letter_grade=letter_grade,
             executive_summary=executive_summary,
             metadata=metadata,
             findings=sorted_findings,
             param_change_sheet=param_sheet,
             analyser_results=results,
             processing_time_ms=proc_ms,
-            claude_model_findings=CLAUDE_FAST_MODEL,
-            claude_model_summary=CLAUDE_SUMMARY_MODEL,
             file_name=file_name,
             file_size_bytes=file_size,
         )

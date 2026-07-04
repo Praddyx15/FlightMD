@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 from flightmd_core.models.findings import Finding, Category, Severity
 from flightmd_core.models.metadata import FlightMetadata
 
