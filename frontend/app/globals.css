@@ -18,12 +18,20 @@
 html, body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
-  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', system-ui, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
 /* Monospace for all numbers and param names */
 .mono { font-family: var(--mono); }
+
+/* Distinctive display face for headings — avoids the generic
+   Inter/system-font-everywhere look while keeping body text on the fast,
+   readable system stack. */
+h1, h2, h3 {
+  font-family: var(--font-display), system-ui, sans-serif;
+  letter-spacing: -0.01em;
+}
 
 /* Custom scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -55,4 +63,24 @@ html, body {
 }
 .score-ring {
   animation: draw-circle 0.8s ease-out forwards;
+}
+
+/* Radix Collapsible — smooth expand/collapse using the height custom
+   property Radix exposes on the content element. */
+@keyframes collapsible-down {
+  from { height: 0; }
+  to   { height: var(--radix-collapsible-content-height); }
+}
+@keyframes collapsible-up {
+  from { height: var(--radix-collapsible-content-height); }
+  to   { height: 0; }
+}
+.collapsible-content {
+  overflow: hidden;
+}
+.collapsible-content[data-state="open"] {
+  animation: collapsible-down 220ms ease-out;
+}
+.collapsible-content[data-state="closed"] {
+  animation: collapsible-up 220ms ease-out;
 }

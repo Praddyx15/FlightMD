@@ -1,17 +1,27 @@
 import type { Metadata } from "next";
+import { Space_Grotesk } from "next/font/google";
+import { SmoothScroll } from "@/components/shared/SmoothScroll";
 import "./globals.css";
+
+const spaceGrotesk = Space_Grotesk({
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
+  variable: "--font-display",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "FlightMD — Your drone's flight log, decoded.",
   description:
-    "Upload a PX4 ULog file and receive an AI-powered diagnostic report in 20 seconds. " +
+    "Upload a PX4, ArduPilot, or MAVLink telemetry flight log and receive a " +
+    "deterministic diagnostic report in seconds — no AI required. " +
     "Oscillation detection, vibration analysis, EKF health, battery assessment, GPS quality, " +
     "parameter anomaly detection, and motor balance — all in plain English.",
-  keywords: ["PX4", "ULog", "drone", "flight log", "analysis", "UAV", "diagnostics", "FlightMD"],
+  keywords: ["PX4", "ArduPilot", "MAVLink", "ULog", "drone", "UAV", "flight log", "analysis", "diagnostics", "FlightMD"],
   authors: [{ name: "Sixty Motion Aerospace", url: "https://sixtymotion.aero" }],
   openGraph: {
     title: "FlightMD — Your drone's flight log, decoded.",
-    description: "AI-powered PX4 flight log diagnostics.",
+    description: "Deterministic drone flight log diagnostics for PX4, ArduPilot, and MAVLink.",
     type: "website",
   },
 };
@@ -22,8 +32,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" className={spaceGrotesk.variable}>
       <body className="min-h-screen">
+        <SmoothScroll />
         <nav className="border-b border-white/8 px-6 py-3 flex items-center justify-between sticky top-0 z-50"
           style={{ background: "rgba(8,13,26,0.92)", backdropFilter: "blur(12px)" }}>
           <a href="/" className="flex items-center gap-2 no-underline">

@@ -17,6 +17,7 @@ const config: Config = {
       },
       fontFamily: {
         mono: ["JetBrains Mono", "Fira Code", "Cascadia Code", "Consolas", "monospace"],
+        display: ["var(--font-display)", "system-ui", "sans-serif"],
       },
     },
   },
