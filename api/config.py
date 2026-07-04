@@ -2,19 +2,24 @@
 FastAPI app configuration — loaded from environment variables.
 """
 
-import os
 from functools import lru_cache
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    anthropic_api_key: str = ""
-    claude_fast_model: str = "claude-haiku-4-5"
-    claude_summary_model: str = "claude-sonnet-4-6"
     max_file_size_mb: int = 50
     rate_limit_per_hour: int = 10
     cors_origins: str = "http://localhost:3000,http://localhost:3001"
     app_version: str = "1.0.0"
+
+    # Optional — enables AI-polished executive summaries and the AI Q&A
+    # assistant. The platform is fully functional without any of this set.
+    # "groq" is the recommended default: a free tier with no cost to whoever
+    # runs this instance. "anthropic" is available for those who want Claude
+    # and have a key.
+    ai_provider: str = "groq"
+    groq_api_key: str = ""
+    anthropic_api_key: str = ""
 
     class Config:
         env_file = ".env"

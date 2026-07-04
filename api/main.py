@@ -32,8 +32,6 @@ limiter = Limiter(key_func=get_remote_address)
 async def lifespan(app: FastAPI):
     logger.info(f"FlightMD API v{settings.app_version} starting up")
     logger.info(f"CORS origins: {settings.cors_origins_list}")
-    logger.info(f"Claude fast model: {settings.claude_fast_model}")
-    logger.info(f"Claude summary model: {settings.claude_summary_model}")
     logger.info(f"Max file size: {settings.max_file_size_mb}MB")
     yield
     logger.info("FlightMD API shutting down")
@@ -41,7 +39,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="FlightMD API",
-    description="PX4 ULog flight log analyser — AI-powered diagnostic reports",
+    description="PX4 ULog flight log analyser — deterministic diagnostic reports",
     version=settings.app_version,
     lifespan=lifespan,
     docs_url="/docs",
