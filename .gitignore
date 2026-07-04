@@ -44,6 +44,11 @@ node_modules/
 .next/
 out/
 .vercel/
+next-env.d.ts
+*.tsbuildinfo
+
+# Local preview server config
+.claude/
 
 # OS
 .DS_Store
