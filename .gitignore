@@ -60,9 +60,11 @@ Thumbs.db
 *.swp
 *.swo
 
-# ULog files (large binaries — only sample_logs are committed)
+# Flight log binaries (large, often confidential — only sample_logs are committed)
 *.ulg
-!tests/sample_logs/*.ulg
+*.bin
+*.tlog
+!tests/sample_logs/*
 
 # Temporary files
 tmp/
@@ -71,3 +73,6 @@ temp/
 
 # WeasyPrint
 *.pdf
+
+# Runtime job storage (user-uploaded report data — never source, never committed)
+api/data/
