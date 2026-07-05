@@ -1,4 +1,6 @@
 import type {
+  AirframeConfigResponse,
+  AlertRule,
   AnalyseResponse,
   DiffResponse,
   FlightMDReport,
@@ -92,6 +94,10 @@ export function jsonExportUrl(reportId: string): string {
   return `${API_URL}/export/json/${reportId}`;
 }
 
+export function airframeRecordPdfUrl(airframeLabel: string): string {
+  return `${API_URL}/export/airframe/${encodeURIComponent(airframeLabel)}/pdf`;
+}
+
 export interface ReportSummary {
   report_id: string;
   file_name: string;
@@ -151,5 +157,52 @@ export async function askAI(
     body: JSON.stringify({ question }),
   });
   if (!res.ok) throw new Error(`AI assistant error: ${res.status}`);
+  return res.json();
+}
+
+// ── Airframe config: maintenance, checklist, alerts ───────────────────────────
+
+export async function getAirframeConfig(airframeLabel: string): Promise<AirframeConfigResponse> {
+  const res = await fetch(`${API_URL}/airframe/${encodeURIComponent(airframeLabel)}/config`);
+  if (!res.ok) throw new Error(`Airframe config fetch error: ${res.status}`);
+  return res.json();
+}
+
+export interface AirframeConfigUpdate {
+  checklist_items?: string[];
+  maintenance_interval_hours?: number | null;
+  alert_rules?: AlertRule[];
+  webhook_url?: string | null;
+}
+
+export async function updateAirframeConfig(
+  airframeLabel: string,
+  update: AirframeConfigUpdate
+): Promise<AirframeConfigResponse> {
+  const res = await fetch(`${API_URL}/airframe/${encodeURIComponent(airframeLabel)}/config`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(update),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `Airframe config update error: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function addMaintenanceEntry(
+  airframeLabel: string,
+  entry: { date: string; maintenance_type: string; notes?: string }
+): Promise<AirframeConfigResponse> {
+  const res = await fetch(`${API_URL}/airframe/${encodeURIComponent(airframeLabel)}/maintenance`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(entry),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `Maintenance entry error: ${res.status}`);
+  }
   return res.json();
 }

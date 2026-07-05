@@ -71,6 +71,8 @@ export interface FlightMetadata {
     description: string;
   } | null;
   gps_path?: [number, number, number][] | null;
+  gps_path_wind_speed_ms?: (number | null)[] | null;
+  gps_path_hdop?: (number | null)[] | null;
 }
 
 export interface FlightMDReport {
@@ -159,4 +161,32 @@ export interface DiffResponse {
     new: string[];
     persisting_categories: DiffPersistingCategory[];
   };
+}
+
+// ── Airframe config: maintenance, checklist, alerts ───────────────────────────
+
+export interface MaintenanceEntry {
+  date: string;
+  maintenance_type: string;
+  notes: string;
+}
+
+export interface AlertRule {
+  metric: string;
+  comparison: "lt" | "gt";
+  threshold: number;
+  label: string;
+}
+
+export interface AirframeConfigResponse {
+  airframe_label: string;
+  checklist_items: string[];
+  maintenance_log: MaintenanceEntry[];
+  maintenance_interval_hours: number | null;
+  alert_rules: AlertRule[];
+  webhook_url: string | null;
+  total_flight_hours: number;
+  hours_since_maintenance: number;
+  maintenance_due: boolean;
+  flight_count: number;
 }

@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { getTrends } from "@/lib/api";
-import type { TrendsResponse } from "@/lib/types";
+import { getTrends, getAirframeConfig } from "@/lib/api";
+import type { TrendsResponse, AirframeConfigResponse } from "@/lib/types";
 import { scoreColour } from "@/lib/utils";
 import { MODULE_LABELS, humaniseMetricKey } from "@/lib/metricLabels";
 import { TrendLineChart, type TrendSeriesPoint } from "@/components/charts/TrendLineChart";
+import { MaintenancePanel } from "@/components/airframe/MaintenancePanel";
+import { AlertsPanel } from "@/components/airframe/AlertsPanel";
 import { TrendingUp, ArrowLeftRight, ExternalLink } from "lucide-react";
 
 export default function AirframeTrendsPage() {
@@ -15,6 +17,7 @@ export default function AirframeTrendsPage() {
   const label = decodeURIComponent(params?.label as string);
 
   const [data, setData] = useState<TrendsResponse | null>(null);
+  const [config, setConfig] = useState<AirframeConfigResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
@@ -22,8 +25,12 @@ export default function AirframeTrendsPage() {
   useEffect(() => {
     async function load() {
       try {
-        const trends = await getTrends(label);
+        const [trends, airframeConfig] = await Promise.all([
+          getTrends(label),
+          getAirframeConfig(label),
+        ]);
         setData(trends);
+        setConfig(airframeConfig);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load trend data.");
       } finally {
@@ -61,17 +68,25 @@ export default function AirframeTrendsPage() {
 
   if (!data || data.flight_count === 0) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-20 text-center space-y-3">
-        <TrendingUp className="w-10 h-10 mx-auto text-white/20" />
-        <h2 className="text-xl font-bold text-slate-100">No tagged flights yet for &quot;{label}&quot;</h2>
-        <p className="text-white/50 text-sm max-w-md mx-auto">
-          Trend history only includes flights you tag with an airframe label at upload
-          time — everything else stays ephemeral and expires after an hour, as always.
-          Upload a flight and give it this label to start building history.
-        </p>
-        <a href="/" className="inline-block mt-2 text-sm underline" style={{ color: "#E8A020" }}>
-          ← Upload a flight
-        </a>
+      <div className="max-w-3xl mx-auto px-4 py-12 space-y-8">
+        <div className="text-center space-y-3">
+          <TrendingUp className="w-10 h-10 mx-auto text-white/20" />
+          <h2 className="text-xl font-bold text-slate-100">No tagged flights yet for &quot;{label}&quot;</h2>
+          <p className="text-white/50 text-sm max-w-md mx-auto">
+            Trend history only includes flights you tag with an airframe label at upload
+            time — everything else stays ephemeral and expires after an hour, as always.
+            Upload a flight and give it this label to start building history.
+          </p>
+          <a href="/" className="inline-block mt-2 text-sm underline" style={{ color: "#E8A020" }}>
+            ← Upload a flight
+          </a>
+        </div>
+        {config && (
+          <>
+            <MaintenancePanel airframeLabel={label} config={config} onUpdated={setConfig} />
+            <AlertsPanel airframeLabel={label} config={config} onUpdated={setConfig} />
+          </>
+        )}
       </div>
     );
   }
@@ -165,6 +180,14 @@ export default function AirframeTrendsPage() {
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* Maintenance & alerts */}
+      {config && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+          <MaintenancePanel airframeLabel={label} config={config} onUpdated={setConfig} />
+          <AlertsPanel airframeLabel={label} config={config} onUpdated={setConfig} />
         </div>
       )}
 
