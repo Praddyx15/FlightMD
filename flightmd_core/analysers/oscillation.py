@@ -152,11 +152,17 @@ class OscillationAnalyser(BaseAnalyser):
                 param_changes=param_changes,
             ))
 
+        key_metrics = {}
+        for axis_name, data in all_chart_data.items():
+            key_metrics[f"{axis_name}_peak_hz"]  = round(data["peak_hz"], 3)
+            key_metrics[f"{axis_name}_norm_amp"] = round(data["norm_amp"], 3)
+
         return AnalyserResult(
             analyser=self.name,
             display_name=self.display_name,
             findings=findings,
             health_score=health_score,
+            key_metrics=key_metrics,
         )
 
     # ── helpers ─────────────────────────────────────────────────────────────

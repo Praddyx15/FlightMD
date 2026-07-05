@@ -57,6 +57,7 @@ class VibrationAnalyser(BaseAnalyser):
 
         # Per-IMU analysis
         imu_rms_values: list[float] = []   # primary-axis combined RMS per IMU
+        imu_clip_counts: list[int] = []
         chart_data = {"instances": {}}
 
         for imu_name, df in imu_dfs:
@@ -85,6 +86,7 @@ class VibrationAnalyser(BaseAnalyser):
                              np.sum(np.abs(z) > CLIP_THRESHOLD))
 
             imu_rms_values.append(combined_rms)
+            imu_clip_counts.append(clip_count)
 
             # Build downsampled chart data (max 500 points)
             ts = df["timestamp"].values[:min_len] if "timestamp" in df.columns else np.arange(min_len)
@@ -177,11 +179,18 @@ class VibrationAnalyser(BaseAnalyser):
                     chart_data=chart_data,
                 ))
 
+        key_metrics = {}
+        if imu_rms_values:
+            key_metrics["max_imu_rms"] = round(max(imu_rms_values), 3)
+        if imu_clip_counts:
+            key_metrics["total_clip_count"] = float(sum(imu_clip_counts))
+
         return AnalyserResult(
             analyser=self.name,
             display_name=self.display_name,
             findings=findings,
             health_score=health_score,
+            key_metrics=key_metrics,
         )
 
     def _find_col(self, df: pd.DataFrame, candidates: list[str]) -> Optional[str]:

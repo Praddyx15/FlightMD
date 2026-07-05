@@ -31,6 +31,17 @@ class TestOscillationAnalyser:
         assert len(result.findings) == 0
         assert result.health_score == 100.0
 
+    def test_key_metrics_populated_even_without_findings(self, clean_angular_velocity):
+        """key_metrics must be populated regardless of whether a Finding
+        fired — that's what lets trend analysis show drift before a
+        threshold is ever crossed."""
+        result = OscillationAnalyser().safe_analyse(
+            make_topics(clean_angular_velocity), make_params()
+        )
+        assert len(result.findings) == 0
+        assert "roll_peak_hz" in result.key_metrics
+        assert "roll_norm_amp" in result.key_metrics
+
     def test_oscillating_signal_finds_issue(self, oscillating_angular_velocity):
         result = OscillationAnalyser().safe_analyse(
             make_topics(oscillating_angular_velocity), make_params()

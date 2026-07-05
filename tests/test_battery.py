@@ -48,6 +48,14 @@ class TestBatteryAnalyser:
         # Small sag → no finding
         assert len(result.findings) == 0
 
+    def test_sag_per_cell_key_metric_populated_below_threshold(self, healthy_battery):
+        """sag_per_cell_v must be surfaced even when it's too small to raise
+        a finding — that's the number trend analysis charts across flights
+        to catch a pack degrading before it crosses the WARNING threshold."""
+        result = BatteryAnalyser().safe_analyse({"battery_status": healthy_battery}, {})
+        assert len(result.findings) == 0
+        assert "sag_per_cell_v" in result.key_metrics
+
     def test_high_sag_warning(self):
         """0.6V sag per cell (2.4V total for 4S) → WARNING."""
         df = make_battery_df(idle_v=16.8, loaded_v=14.4)  # 2.4V sag on 4S

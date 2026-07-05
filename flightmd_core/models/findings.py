@@ -62,11 +62,16 @@ class AnalyserResult(BaseModel):
     skipped: bool = False
     skip_reason: Optional[str] = None
     processing_ms: int = 0
+    key_metrics: dict[str, float] = {}
+    # Headline raw numbers computed regardless of whether a Finding fired
+    # (e.g. oscillation peak Hz, battery sag per cell, max HDOP). Lets trend
+    # analysis show gradual drift across flights before a threshold is ever
+    # crossed — a health_score of 100 can still hide a metric creeping up.
 
 
 class FlightMDReport(BaseModel):
     report_id: str
-    schema_version: str = "1.2"          # bump when data contract changes — UAOP checks this
+    schema_version: str = "1.3"          # bump when data contract changes — UAOP checks this
     overall_score: float
     score_label: str                     # Excellent/Good/Caution/Warning/Critical
     letter_grade: str                    # A-F grade based on overall_score

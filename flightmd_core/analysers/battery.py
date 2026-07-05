@@ -78,7 +78,7 @@ class BatteryAnalyser(BaseAnalyser):
         n_cells = max(1, round(peak_v / 4.2))
 
         # ── 1. Voltage sag analysis ─────────────────────────────────────────
-        sag_findings, sag_penalty = self._analyse_sag(
+        sag_findings, sag_penalty, sag_per_cell = self._analyse_sag(
             voltage, current, remaining, n_cells, ts_s
         )
         findings.extend(sag_findings)
@@ -150,11 +150,16 @@ class BatteryAnalyser(BaseAnalyser):
             if f.chart_data is None:
                 f.chart_data = chart_data
 
+        key_metrics = {}
+        if sag_per_cell is not None:
+            key_metrics["sag_per_cell_v"] = round(sag_per_cell, 4)
+
         return AnalyserResult(
             analyser=self.name,
             display_name=self.display_name,
             findings=findings,
             health_score=health_score,
+            key_metrics=key_metrics,
         )
 
     # ── private helpers ──────────────────────────────────────────────────────
@@ -172,7 +177,7 @@ class BatteryAnalyser(BaseAnalyser):
         remaining: np.ndarray,
         n_cells: int,
         ts_s: np.ndarray,
-    ) -> tuple[list[Finding], float]:
+    ) -> tuple[list[Finding], float, Optional[float]]:
         findings: list[Finding] = []
         penalty = 0.0
 
@@ -180,7 +185,7 @@ class BatteryAnalyser(BaseAnalyser):
         loaded_mask = current > LOADED_CURRENT_THRESH
 
         if not idle_mask.any() or not loaded_mask.any():
-            return findings, penalty
+            return findings, penalty, None
 
         idle_v   = float(np.percentile(voltage[idle_mask], 50))
         loaded_v = float(np.percentile(voltage[loaded_mask], 10))   # worst 10%
@@ -196,7 +201,7 @@ class BatteryAnalyser(BaseAnalyser):
             penalty = 15.0
             label   = "WARNING — high internal resistance"
         else:
-            return findings, penalty
+            return findings, penalty, sag_per_cell
 
         tech = (
             f"Voltage sag under load: idle voltage {idle_v:.2f}V, "
@@ -220,7 +225,7 @@ class BatteryAnalyser(BaseAnalyser):
             ),
             confidence=min(1.0, sag_per_cell / SAG_CRITICAL_PER_CELL),
         ))
-        return findings, penalty
+        return findings, penalty, sag_per_cell
 
     def _analyse_capacity(
         self,

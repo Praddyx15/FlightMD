@@ -189,6 +189,10 @@ class ParameterAnalyser(BaseAnalyser):
             display_name=self.display_name,
             findings=findings,
             health_score=health_score,
+            key_metrics={
+                "param_count": float(len(params)),
+                "anomaly_count": float(len(findings)),
+            },
         )
 
     # ── helpers ──────────────────────────────────────────────────────────────

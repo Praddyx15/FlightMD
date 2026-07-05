@@ -121,11 +121,23 @@ class GPSAnalyser(BaseAnalyser):
             if f.chart_data is None:
                 f.chart_data = chart_data
 
+        key_metrics = {}
+        if "satellites_used" in df.columns:
+            sats = df["satellites_used"].dropna()
+            if len(sats) > 0:
+                key_metrics["min_satellites"] = float(sats.min())
+        if hdop_col and hdop_col in df.columns:
+            hdop_clean = df[hdop_col].values
+            hdop_clean = hdop_clean[hdop_clean > 0]
+            if len(hdop_clean) > 0:
+                key_metrics["max_hdop"] = round(float(hdop_clean.max()), 3)
+
         return AnalyserResult(
             analyser=self.name,
             display_name=self.display_name,
             findings=findings,
             health_score=health_score,
+            key_metrics=key_metrics,
         )
 
     # ── private helpers ──────────────────────────────────────────────────────

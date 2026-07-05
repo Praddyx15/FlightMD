@@ -115,11 +115,21 @@ class EKFAnalyser(BaseAnalyser):
             if f.chart_data is None:
                 f.chart_data = chart_data
 
+        key_metrics = {}
+        if "estimator_innovation_test_ratios" in topics:
+            ratio_df = topics["estimator_innovation_test_ratios"]
+            ratio_cols = [c for c in ratio_df.columns if c != "timestamp"]
+            if ratio_cols:
+                max_ratio = ratio_df[ratio_cols].max().max()
+                if pd.notna(max_ratio):
+                    key_metrics["max_innovation_ratio"] = round(float(max_ratio), 4)
+
         return AnalyserResult(
             analyser=self.name,
             display_name=self.display_name,
             findings=findings,
             health_score=health_score,
+            key_metrics=key_metrics,
         )
 
     # ── private helpers ──────────────────────────────────────────────────────

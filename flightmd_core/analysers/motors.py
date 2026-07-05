@@ -61,6 +61,7 @@ class MotorAnalyser(BaseAnalyser):
 
         n_motors = len(rpm_cols)
         rpm_matrix = np.column_stack([df[c].fillna(0).values for c in rpm_cols])
+        key_metrics: dict[str, float] = {}
 
         # ── 1. Motor balance at hover ────────────────────────────────────────
         hover_mask = self._detect_hover(rpm_matrix, ts_s)
@@ -71,6 +72,7 @@ class MotorAnalyser(BaseAnalyser):
             mean_mean = float(mean_rpm.mean())
             mean_std  = float(std_rpm.mean())
             balance_idx = mean_std / mean_mean if mean_mean > 0 else 0.0
+            key_metrics["motor_balance_index"] = round(balance_idx, 4)
 
             if balance_idx > BALANCE_CRITICAL:
                 health_score = max(0.0, health_score - 30)
@@ -210,6 +212,7 @@ class MotorAnalyser(BaseAnalyser):
             display_name=self.display_name,
             findings=findings,
             health_score=health_score,
+            key_metrics=key_metrics,
         )
 
     # ── helpers ──────────────────────────────────────────────────────────────
