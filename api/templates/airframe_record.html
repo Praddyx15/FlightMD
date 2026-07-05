@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FlightMD Airframe Record — {{ airframe_label }}</title>
+</head>
+<body>
+
+<!-- ── HEADER ──────────────────────────────────────────────────────────────── -->
+<div class="header">
+  <div>
+    <div class="logo">✈ FLIGHTMD</div>
+    <div class="tagline">Airframe flight &amp; maintenance record</div>
+    <div style="font-size:8pt;color:#999;margin-top:4px;">
+      Airframe: <span style="font-family:monospace;">{{ airframe_label }}</span><br>
+      Generated: {{ generated_at }}
+    </div>
+  </div>
+  <div class="score-block">
+    <div class="score-number" style="color:{{ '#FF7A2F' if maintenance_due else '#0DD97C' }}">
+      {{ hours_since_maintenance | round(1) }}
+    </div>
+    <div class="score-label" style="color:{{ '#FF7A2F' if maintenance_due else '#0DD97C' }}">
+      {{ "Maintenance Due" if maintenance_due else "Hours OK" }}
+    </div>
+    <div style="font-size:7pt;color:#888;margin-top:2px;">Hours Since Last Maintenance</div>
+  </div>
+</div>
+
+<div class="disclaimer" style="margin-bottom:18px;border:1px solid #e0e4f0;border-radius:4px;padding:10px 14px;">
+  This document is a record of flights and maintenance events logged for this airframe in FlightMD,
+  generated for the operator's own recordkeeping. It is not a regulatory certification and does not
+  assert compliance with any aviation authority's requirements — it is only as complete as the flights
+  and maintenance entries that were actually logged here.
+</div>
+
+<!-- ── SUMMARY ─────────────────────────────────────────────────────────────── -->
+<h2>Summary</h2>
+<div class="meta-grid">
+  <div class="meta-item">
+    <div class="meta-label">Logged Flights</div>
+    <div class="meta-value">{{ flights|length }}</div>
+  </div>
+  <div class="meta-item">
+    <div class="meta-label">Total Flight Hours</div>
+    <div class="meta-value">{{ total_flight_hours | round(2) }}</div>
+  </div>
+  <div class="meta-item">
+    <div class="meta-label">Maintenance Interval</div>
+    <div class="meta-value">
+      {{ config.maintenance_interval_hours ~ " h" if config.maintenance_interval_hours else "Not set" }}
+    </div>
+  </div>
+  <div class="meta-item">
+    <div class="meta-label">Last Maintenance</div>
+    <div class="meta-value">
+      {{ config.maintenance_log[-1].date if config.maintenance_log else "None logged" }}
+    </div>
+  </div>
+</div>
+
+<!-- ── FLIGHT HISTORY ──────────────────────────────────────────────────────── -->
+<h2>Flight History</h2>
+{% if not flights %}
+<p style="color:#888;">No flights logged for this airframe yet.</p>
+{% else %}
+<table class="param-table">
+  <thead>
+    <tr>
+      <th>Date</th>
+      <th>File</th>
+      <th>Duration</th>
+      <th>Score</th>
+      <th>Grade</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for f in flights %}
+    <tr>
+      <td>{{ f.date }}</td>
+      <td class="param-name">{{ f.file_name }}</td>
+      <td class="param-val">{{ f.duration_minutes }} min</td>
+      <td class="param-val" style="color:{{ f.overall_score | score_colour }};font-weight:bold;">{{ f.overall_score }}</td>
+      <td>{{ f.letter_grade }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<!-- ── MAINTENANCE LOG ─────────────────────────────────────────────────────── -->
+<h2>Maintenance Log</h2>
+{% if not config.maintenance_log %}
+<p style="color:#888;">No maintenance entries logged for this airframe yet.</p>
+{% else %}
+<table class="param-table">
+  <thead>
+    <tr>
+      <th>Date</th>
+      <th>Type</th>
+      <th>Notes</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for m in config.maintenance_log %}
+    <tr>
+      <td>{{ m.date }}</td>
+      <td class="param-name">{{ m.maintenance_type }}</td>
+      <td>{{ m.notes or "—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<!-- ── CHECKLIST ───────────────────────────────────────────────────────────── -->
+{% if config.checklist_items %}
+<h2>Pre-Flight Checklist Template</h2>
+<ul style="font-size:9.5pt;line-height:1.7;">
+  {% for item in config.checklist_items %}
+  <li>{{ item }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+<div class="disclaimer" style="margin-top:24px;">
+  FlightMD · Deterministic flight log analysis · MIT License
+</div>
+
+</body>
+</html>

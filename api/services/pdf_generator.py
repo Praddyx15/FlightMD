@@ -69,6 +69,46 @@ class PDFGenerator:
         logger.info(f"PDF generated for report {report.report_id}: {len(pdf_bytes)} bytes")
         return pdf_bytes
 
+    def generate_airframe_record(
+        self,
+        airframe_label: str,
+        flights: list,
+        config,
+        total_flight_hours: float,
+        hours_since_maintenance: float,
+        maintenance_due: bool,
+    ) -> bytes:
+        """
+        Renders a maintenance/flight-history record for one airframe —
+        for the operator's own recordkeeping, not a regulatory
+        certification (FlightMD doesn't assert compliance with anything;
+        it just gives you your own data in one document).
+        """
+        try:
+            from weasyprint import HTML, CSS
+        except ImportError as e:
+            raise ImportError(
+                "WeasyPrint is required for PDF generation. "
+                "Install it with: pip install weasyprint"
+            ) from e
+
+        template = self._env.get_template("airframe_record.html")
+        html_content = template.render(
+            airframe_label=airframe_label,
+            flights=flights,
+            config=config,
+            total_flight_hours=total_flight_hours,
+            hours_since_maintenance=hours_since_maintenance,
+            maintenance_due=maintenance_due,
+            generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        )
+
+        pdf_bytes = HTML(string=html_content, base_url=TEMPLATE_DIR).write_pdf(
+            stylesheets=[CSS(string=self._base_css())]
+        )
+        logger.info(f"Airframe record PDF generated for {airframe_label!r}: {len(pdf_bytes)} bytes")
+        return pdf_bytes
+
     # ── Jinja2 filters ───────────────────────────────────────────────────────
 
     @staticmethod
