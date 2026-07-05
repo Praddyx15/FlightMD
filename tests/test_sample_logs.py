@@ -76,3 +76,20 @@ async def test_flawed_sample_key_metrics_show_the_underlying_drift(ext):
 
     gps = next(ar for ar in report.analyser_results if ar.analyser == "gps")
     assert gps.key_metrics["min_satellites"] <= 8
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ext", FORMATS.keys())
+async def test_gps_path_signal_quality_populated_across_formats(ext):
+    """gps_path_hdop is a per-point parallel array to gps_path, used to
+    color the 3D flight path by GPS signal quality — available for all
+    three formats since hdop lives in the same GPS topic as lat/lon."""
+    report = await run_analysis(
+        ulog_path=_sample_path("flawed", ext),
+        file_name=f"sample_flawed.{ext}",
+        file_size=os.path.getsize(_sample_path("flawed", ext)),
+    )
+    assert report.metadata.gps_path
+    assert report.metadata.gps_path_hdop is not None
+    assert len(report.metadata.gps_path_hdop) == len(report.metadata.gps_path)
+    assert any(v is not None and v > 0 for v in report.metadata.gps_path_hdop)

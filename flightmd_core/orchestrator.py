@@ -19,6 +19,9 @@ import logging
 import time
 from typing import Optional
 
+import numpy as np
+import pandas as pd
+
 from flightmd_core.models.findings import FlightMDReport
 from flightmd_core.services.ai_enhancer import AIEnhancer
 from flightmd_core.services.ulog_parser     import ULogParser
@@ -126,6 +129,8 @@ async def run_analysis(
     lat = None
     lon = None
     gps_path = None
+    gps_path_hdop = None
+    gps_path_wind_speed_ms = None
 
     if "vehicle_gps_position" in topics:
         gps_df = topics["vehicle_gps_position"]
@@ -138,20 +143,51 @@ async def run_analysis(
                 lon = float(valid_gps["lon"].iloc[0] / 1e7)
 
                 alt_col = next((c for c in ["alt", "alt_ellipsoid", "amsl"] if c in valid_gps.columns), None)
+                hdop_col = next((c for c in ["hdop", "eph"] if c in valid_gps.columns), None)
                 # downsample gps_path
                 step = max(1, len(valid_gps) // 500)
                 path_subset = valid_gps.iloc[::step]
 
                 path_points = []
+                hdop_points = []
                 for _, row in path_subset.iterrows():
                     r_lat = float(row["lat"] / 1e7)
                     r_lon = float(row["lon"] / 1e7)
                     r_alt = float(row[alt_col] / 1000.0) if alt_col else 0.0 # convert mm to m
                     path_points.append([r_lat, r_lon, r_alt])
+                    hdop_val = row[hdop_col] if hdop_col else None
+                    hdop_points.append(float(hdop_val) if hdop_val is not None and pd.notna(hdop_val) else None)
 
                 gps_path = path_points
+                gps_path_hdop = hdop_points if hdop_col else None
+
+                # Wind speed per path point (PX4 estimator_status only) —
+                # cross-topic, so join by nearest timestamp rather than
+                # relying on matching row order.
+                if "estimator_status" in topics and "timestamp" in path_subset.columns:
+                    est_df = topics["estimator_status"]
+                    wind_n_col = next((c for c in ["wind_vel_n", "wind[0]"] if c in est_df.columns), None)
+                    wind_e_col = next((c for c in ["wind_vel_e", "wind[1]"] if c in est_df.columns), None)
+                    if wind_n_col and wind_e_col and "timestamp" in est_df.columns:
+                        try:
+                            wind_df = pd.DataFrame({
+                                "timestamp": est_df["timestamp"],
+                                "wind_speed_ms": np.sqrt(est_df[wind_n_col] ** 2 + est_df[wind_e_col] ** 2),
+                            }).dropna().sort_values("timestamp")
+                            path_ts_df = path_subset[["timestamp"]].sort_values("timestamp")
+                            merged = pd.merge_asof(path_ts_df, wind_df, on="timestamp", direction="nearest")
+                            # merge_asof re-sorts by timestamp — realign back to path_subset's original order
+                            wind_by_ts = dict(zip(merged["timestamp"], merged["wind_speed_ms"]))
+                            gps_path_wind_speed_ms = [
+                                float(wind_by_ts[ts]) if pd.notna(wind_by_ts.get(ts)) else None
+                                for ts in path_subset["timestamp"]
+                            ]
+                        except Exception as e:
+                            logger.warning(f"Wind speed path join failed (non-fatal): {e}")
 
     metadata.gps_path = gps_path
+    metadata.gps_path_hdop = gps_path_hdop
+    metadata.gps_path_wind_speed_ms = gps_path_wind_speed_ms
 
     # Run weather fetch in an executor so we don't block
     if lat and lon:

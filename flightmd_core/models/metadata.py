@@ -23,3 +23,9 @@ class FlightMetadata(BaseModel):
     available_topics: list[str] = []
     weather: Optional[dict] = None
     gps_path: Optional[list[list[float]]] = None
+    # Parallel arrays, same length/order as gps_path — one entry per path
+    # point, None where that point has no reading. Lets the frontend color
+    # the 3D flight path by wind speed or GPS signal quality instead of a
+    # flat colour.
+    gps_path_wind_speed_ms: Optional[list[Optional[float]]] = None
+    gps_path_hdop: Optional[list[Optional[float]]] = None
