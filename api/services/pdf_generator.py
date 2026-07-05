@@ -106,7 +106,7 @@ class PDFGenerator:
             size: A4;
             margin: 20mm 18mm 24mm 18mm;
             @bottom-center {
-                content: "FlightMD · Sixty Motion Aerospace · Page " counter(page) " of " counter(pages);
+                content: "FlightMD · Pradum Behl · Page " counter(page) " of " counter(pages);
                 font-size: 8pt;
                 color: #666;
                 font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
