@@ -15,8 +15,10 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from api.airframe_store import airframe_store, evaluate_alert_rules
 from api.config import get_settings
-from api.storage import job_store
+from api.storage import job_store, normalise_airframe_label
+from api.webhook_notifier import send_alert_webhook
 from flightmd_core.orchestrator import run_analysis
 from flightmd_core.services.ai_enhancer import AIEnhancer
 from flightmd_core.services.format_detector import (
@@ -94,6 +96,7 @@ async def analyse_log(
             file_name=file_name,
             file_size=file_size,
             log_format=log_format,
+            airframe_label=normalise_airframe_label(airframe_label),
         )
     )
 
@@ -115,6 +118,7 @@ async def _run_analysis_task(
     file_name: str,
     file_size: int,
     log_format: str,
+    airframe_label: Optional[str] = None,
 ) -> None:
     """
     Background task: write file to temp disk, run analysis, update job store.
@@ -151,6 +155,9 @@ async def _run_analysis_task(
         job_store.complete(report_id, report)
         logger.info(f"Job {report_id} complete: {report.overall_score}/100")
 
+        if airframe_label:
+            await _check_alert_rules(airframe_label, report_id, report)
+
     except Exception as e:
         logger.error(f"Job {report_id} failed: {e}", exc_info=True)
         job_store.fail(report_id, str(e))
@@ -160,3 +167,29 @@ async def _run_analysis_task(
                 os.unlink(tmp_path)
             except OSError:
                 pass
+
+
+async def _check_alert_rules(airframe_label: str, report_id: str, report) -> None:
+    """
+    Evaluate this tagged flight against its airframe's alert rules and fire
+    the configured webhook (if any) for whatever breached. Best-effort —
+    any failure here is logged and swallowed, never allowed to affect the
+    already-completed analysis job.
+    """
+    try:
+        config = airframe_store.get(airframe_label)
+        if not config.alert_rules or not config.webhook_url:
+            return
+        triggered = evaluate_alert_rules(report, config.alert_rules)
+        if not triggered:
+            return
+        loop = asyncio.get_running_loop()
+        sent = await loop.run_in_executor(
+            None, send_alert_webhook, config.webhook_url, airframe_label, report_id, triggered
+        )
+        logger.info(
+            f"Alert webhook for airframe {airframe_label!r} "
+            f"({len(triggered)} rule(s) breached): {'sent' if sent else 'failed'}"
+        )
+    except Exception as e:
+        logger.error(f"Alert rule evaluation failed for airframe {airframe_label!r}: {e}")
