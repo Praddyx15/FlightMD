@@ -15,8 +15,7 @@ export function ReportHeader({ report }: { report: FlightMDReport }) {
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: "easeOut" }}
-      className="rounded-xl border p-6 sm:p-8"
-      style={{ background: "#0E1428", borderColor: "rgba(255,255,255,0.08)" }}
+      className="rounded-2xl border border-border bg-card/85 p-6 sm:p-8 shadow-xl backdrop-blur-md"
     >
       <div className="flex flex-col sm:flex-row gap-6 items-start">
         {/* Score circle */}
@@ -111,8 +110,7 @@ function MetaItem({
 }) {
   return (
     <div
-      className="rounded-lg p-2.5"
-      style={{ background: "#141C35", border: "1px solid rgba(255,255,255,0.05)" }}
+      className="rounded-xl p-2.5 bg-elevated/80 border border-border/60"
     >
       <div className="text-white/35 uppercase tracking-wider text-[10px] mb-0.5">
         {label}

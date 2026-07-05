@@ -37,8 +37,7 @@ export function FindingsList({ findings }: Props) {
       <section>
         <h2 className="text-lg font-bold text-white/80 mb-4">Findings</h2>
         <div
-          className="rounded-xl border p-8 text-center"
-          style={{ background: "#0E1428", borderColor: "rgba(255,255,255,0.07)" }}
+          className="rounded-2xl border border-border bg-card/85 p-8 text-center backdrop-blur-md"
         >
           <div className="text-3xl mb-2">✅</div>
           <p className="text-white/60">No issues detected. Your flight log looks healthy.</p>

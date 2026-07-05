@@ -3,13 +3,14 @@
 @tailwind utilities;
 
 :root {
-  --bg-primary:   #080D1A;
-  --bg-card:      #0E1428;
-  --bg-elevated:  #141C35;
-  --accent:       #E8A020;
-  --border:       rgba(255,255,255,0.08);
-  --text-primary: #E8EDF5;
-  --text-muted:   #7A8BA8;
+  --bg-primary:   #060B08; /* Deep Obsidian Pine */
+  --bg-card:      #0D1510; /* Rich Forest Moss */
+  --bg-elevated:  #142019; /* Muted Sage-Pine */
+  --accent:       #8EC970; /* Fresh Sprout Green */
+  --accent-amber: #E8A020; /* Harvest Gold */
+  --border:       rgba(142, 201, 112, 0.08);
+  --text-primary: #F0F4F1; /* Organic Off-white */
+  --text-muted:   #81998E; /* Soft Mossy Gray */
   --mono:         'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
 }
 
@@ -17,6 +18,11 @@
 
 html, body {
   background-color: var(--bg-primary);
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(142, 201, 112, 0.07) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, rgba(232, 160, 32, 0.04) 0px, transparent 50%),
+    radial-gradient(at 50% 20%, rgba(20, 32, 25, 0.4) 0px, transparent 60%);
+  background-attachment: fixed;
   color: var(--text-primary);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;

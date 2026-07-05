@@ -36,8 +36,8 @@ export function DropZone({ onFile, disabled }: Props) {
       {...getRootProps()}
       className="relative cursor-pointer rounded-xl border-2 border-dashed p-10 text-center transition-all duration-200"
       style={{
-        borderColor: isDragActive ? "#E8A020" : "rgba(255,255,255,0.12)",
-        background: isDragActive ? "rgba(232,160,32,0.05)" : "transparent",
+        borderColor: isDragActive ? "var(--accent)" : "rgba(255,255,255,0.12)",
+        background: isDragActive ? "rgba(142,201,112,0.05)" : "transparent",
       }}
     >
       <input {...getInputProps()} />
@@ -78,7 +78,7 @@ export function DropZone({ onFile, disabled }: Props) {
             onFile(selectedFile);
           }}
           className="mt-6 px-8 py-3 rounded-lg font-semibold text-sm transition-all duration-200 hover:opacity-90 active:scale-95"
-          style={{ background: "#E8A020", color: "#080D1A" }}
+          style={{ background: "var(--accent)", color: "var(--bg-primary)" }}
         >
           Analyse Flight Log →
         </button>

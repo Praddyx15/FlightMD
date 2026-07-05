@@ -20,10 +20,10 @@ export function FindingCard({ finding }: { finding: Finding }) {
     <Collapsible.Root
       open={expanded}
       onOpenChange={setExpanded}
-      className="rounded-xl border overflow-hidden transition-all duration-200"
+      className="rounded-2xl border overflow-hidden transition-all duration-200 shadow-md"
       style={{
-        borderColor: expanded ? `${colour}55` : "rgba(255,255,255,0.07)",
-        background: "#0E1428",
+        borderColor: expanded ? `${colour}55` : "var(--border)",
+        background: "var(--bg-card)",
       }}
     >
       {/* Header — always visible, click to toggle */}
@@ -78,8 +78,8 @@ export function FindingCard({ finding }: { finding: Finding }) {
 
           {/* Recommendation */}
           <div
-            className="rounded-lg px-4 py-3"
-            style={{ background: "#1A2540", borderLeft: `3px solid ${colour}` }}
+            className="rounded-xl px-4 py-3"
+            style={{ background: "var(--bg-elevated)", borderLeft: `3px solid ${colour}` }}
           >
             <h4 className="text-xs text-white/35 uppercase tracking-wider mb-1">
               Recommended Action

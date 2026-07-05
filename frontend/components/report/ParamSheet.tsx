@@ -32,10 +32,10 @@ export function ParamSheet({ params }: { params: ParamRecommendation[] }) {
           onClick={handleCopyAll}
           className="ml-auto text-xs px-3 py-1.5 rounded-lg transition-all"
           style={{
-            background: copied === "__all__" ? "#0DD97C22" : "#1A2540",
-            color: copied === "__all__" ? "#0DD97C" : "#E8A020",
+            background: copied === "__all__" ? "rgba(13,217,124,0.15)" : "var(--bg-elevated)",
+            color: copied === "__all__" ? "#0DD97C" : "var(--accent)",
             border: "1px solid",
-            borderColor: copied === "__all__" ? "#0DD97C55" : "#E8A02055",
+            borderColor: copied === "__all__" ? "#0DD97C55" : "var(--accent)",
           }}
         >
           {copied === "__all__" ? "✓ Copied!" : "Copy All (.param format)"}
@@ -43,12 +43,11 @@ export function ParamSheet({ params }: { params: ParamRecommendation[] }) {
       </div>
 
       <div
-        className="rounded-xl border overflow-hidden"
-        style={{ background: "#0E1428", borderColor: "rgba(255,255,255,0.07)" }}
+        className="rounded-2xl border border-border overflow-hidden bg-card/85 backdrop-blur-md shadow-lg"
       >
         <table className="w-full text-sm">
           <thead>
-            <tr style={{ background: "#141C35", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+            <tr className="bg-elevated border-b border-border">
               <th className="text-left px-4 py-3 text-white/40 font-medium text-xs uppercase tracking-wider">
                 Parameter
               </th>
@@ -72,7 +71,7 @@ export function ParamSheet({ params }: { params: ParamRecommendation[] }) {
               <tr
                 key={p.param_name}
                 style={{
-                  borderBottom: i < params.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
+                  borderBottom: i < params.length - 1 ? "1px solid var(--border)" : "none",
                   background: i % 2 === 1 ? "rgba(255,255,255,0.015)" : "transparent",
                 }}
               >
@@ -84,7 +83,7 @@ export function ParamSheet({ params }: { params: ParamRecommendation[] }) {
                   {p.unit ? ` ${p.unit}` : ""}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <span className="mono font-bold text-xs" style={{ color: "#E8A020" }}>
+                  <span className="mono font-bold text-xs" style={{ color: "var(--accent)" }}>
                     {p.suggested_value}
                     {p.unit ? ` ${p.unit}` : ""}
                   </span>
