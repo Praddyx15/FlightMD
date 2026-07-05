@@ -238,6 +238,7 @@ class ArduPilotBinParser:
         metadata = FlightMetadata(
             duration_seconds=round(duration_s, 2),
             firmware_version=firmware_version,
+            vehicle_type=_vehicle_type_from_firmware_string(firmware_version),
             arm_count=arm_events,
             flight_modes_used=sorted(set(mode_changes)),
             available_topics=sorted(topics.keys()),
@@ -256,3 +257,25 @@ def _is_numeric(v) -> bool:
         return True
     except (TypeError, ValueError):
         return False
+
+
+_FIRMWARE_TO_VEHICLE_TYPE = {
+    "ArduCopter": "Copter",
+    "ArduPlane": "Plane",
+    "ArduRover": "Rover",
+    "ArduSub": "Sub",
+    "Blimp": "Blimp",
+    "AntennaTracker": "AntennaTracker",
+}
+
+
+def _vehicle_type_from_firmware_string(firmware_version: Optional[str]) -> Optional[str]:
+    """ArduPilot's startup MSG line (e.g. "ArduCopter V4.3.5 (02ff7ea3)") is the
+    only place the vehicle type is recorded in a dataflash log — there's no
+    separate vehicle-type field to read."""
+    if not firmware_version:
+        return None
+    for prefix, vehicle_type in _FIRMWARE_TO_VEHICLE_TYPE.items():
+        if prefix in firmware_version:
+            return vehicle_type
+    return None

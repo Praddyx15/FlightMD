@@ -133,3 +133,31 @@ def test_estimator_status_not_synthesized(monkeypatch, tmp_bin_path):
 def test_missing_file_raises():
     with pytest.raises(FileNotFoundError):
         ArduPilotBinParser().parse("/no/such/file.bin")
+
+
+def test_vehicle_type_derived_from_startup_message(monkeypatch, tmp_bin_path):
+    """
+    ArduPilot dataflash logs have no dedicated vehicle-type field — the only
+    place it's recorded is the startup MSG line (e.g. "ArduCopter V4.3.5
+    (02ff7ea3)"), which also doubles as the firmware_version string.
+    """
+    messages = [
+        FakeDFMessage("MSG", 1000.0, Message="ArduCopter V4.3.5 (02ff7ea3)"),
+    ]
+    _patch_dfreader(monkeypatch, messages)
+
+    _, _, metadata = ArduPilotBinParser().parse(tmp_bin_path)
+
+    assert metadata.firmware_version == "ArduCopter V4.3.5 (02ff7ea3)"
+    assert metadata.vehicle_type == "Copter"
+
+
+def test_vehicle_type_none_when_no_startup_message(monkeypatch, tmp_bin_path):
+    messages = [
+        FakeDFMessage("GPS", 1000.0, Lat=1.0, Lng=1.0, Alt=1.0, NSats=10, HDop=1.0, Status=3),
+    ]
+    _patch_dfreader(monkeypatch, messages)
+
+    _, _, metadata = ArduPilotBinParser().parse(tmp_bin_path)
+
+    assert metadata.vehicle_type is None
