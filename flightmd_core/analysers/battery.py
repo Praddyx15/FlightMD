@@ -12,7 +12,7 @@ from typing import Optional
 
 from flightmd_core.analysers.base import BaseAnalyser
 from flightmd_core.models.findings import (
-    AnalyserResult, Finding, Severity, Category, ParamRecommendation
+    AnalyserResult, Finding, Severity, Category
 )
 
 # Sag thresholds (volts per cell, typical LiPo cell = 4.2V full)

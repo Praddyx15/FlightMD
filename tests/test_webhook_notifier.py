@@ -4,7 +4,12 @@ real network call, so it isn't exercised here beyond confirming it refuses
 unsafe URLs before ever opening a connection.
 """
 
+import os
+import sys
+
 import pytest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from api.webhook_notifier import UnsafeWebhookURLError, validate_webhook_url, send_alert_webhook
 

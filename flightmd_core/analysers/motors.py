@@ -7,7 +7,6 @@ telemetry enabled in PX4. Most logs won't have this — skipped gracefully.
 
 import numpy as np
 import pandas as pd
-from typing import Optional
 
 from flightmd_core.analysers.base import BaseAnalyser
 from flightmd_core.models.findings import (
@@ -59,7 +58,6 @@ class MotorAnalyser(BaseAnalyser):
                 skip_reason="No ESC RPM columns found. ESC telemetry not available in this log.",
             )
 
-        n_motors = len(rpm_cols)
         rpm_matrix = np.column_stack([df[c].fillna(0).values for c in rpm_cols])
         key_metrics: dict[str, float] = {}
 

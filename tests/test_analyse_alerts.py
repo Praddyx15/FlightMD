@@ -5,7 +5,12 @@ webhook. Isolated from the actual analysis pipeline (that's covered by
 test_sample_logs.py / test_api.py) and from real network calls.
 """
 
+import os
+import sys
+
 import pytest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import api.routers.analyse as analyse_module
 from api.airframe_store import AirframeConfig, AirframeConfigStore, AlertRule

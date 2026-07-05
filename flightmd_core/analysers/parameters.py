@@ -8,7 +8,6 @@ directly — not topic DataFrames.
 
 import json
 import os
-from typing import Optional
 
 import pandas as pd
 
@@ -94,8 +93,7 @@ class ParameterAnalyser(BaseAnalyser):
             )
 
         # ── Load reference data ──────────────────────────────────────────────
-        defaults       = self._load_defaults()
-        safe_ranges    = self._load_safe_ranges()
+        safe_ranges = self._load_safe_ranges()
 
         # ── 1. Deprecated params ─────────────────────────────────────────────
         for p in DEPRECATED_PARAMS:

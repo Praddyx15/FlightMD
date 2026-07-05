@@ -6,7 +6,11 @@ template itself is valid and produces the expected content with no
 leftover unescaped {{ }} / {% %} syntax.
 """
 
+import os
+import sys
 from datetime import datetime, timezone
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from api.airframe_store import AirframeConfig, AlertRule, MaintenanceEntry
 from api.services.pdf_generator import PDFGenerator

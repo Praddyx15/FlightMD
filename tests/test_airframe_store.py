@@ -2,7 +2,12 @@
 Tests for AirframeConfigStore — maintenance log, checklist, and alert rules.
 """
 
+import os
+import sys
+
 import pytest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from api.airframe_store import (
     AirframeConfig, AirframeConfigStore, AlertRule, MaintenanceEntry,
