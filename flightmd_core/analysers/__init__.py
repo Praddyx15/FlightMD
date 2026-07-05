@@ -1,10 +1,11 @@
-from flightmd_core.analysers.oscillation import OscillationAnalyser
-from flightmd_core.analysers.vibration  import VibrationAnalyser
-from flightmd_core.analysers.ekf        import EKFAnalyser
-from flightmd_core.analysers.battery    import BatteryAnalyser
-from flightmd_core.analysers.gps        import GPSAnalyser
-from flightmd_core.analysers.parameters import ParameterAnalyser
-from flightmd_core.analysers.motors     import MotorAnalyser
+from flightmd_core.analysers.oscillation    import OscillationAnalyser
+from flightmd_core.analysers.vibration      import VibrationAnalyser
+from flightmd_core.analysers.ekf            import EKFAnalyser
+from flightmd_core.analysers.battery        import BatteryAnalyser
+from flightmd_core.analysers.gps            import GPSAnalyser
+from flightmd_core.analysers.parameters     import ParameterAnalyser
+from flightmd_core.analysers.motors         import MotorAnalyser
+from flightmd_core.analysers.ascent_profile import AscentProfileAnalyser
 
 __all__ = [
     "OscillationAnalyser",
@@ -14,4 +15,5 @@ __all__ = [
     "GPSAnalyser",
     "ParameterAnalyser",
     "MotorAnalyser",
+    "AscentProfileAnalyser",
 ]

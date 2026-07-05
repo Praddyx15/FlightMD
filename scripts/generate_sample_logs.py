@@ -275,7 +275,11 @@ def write_ardupilot_bin(path: str, profile: dict) -> None:
                     + struct.pack(
                         "<QBiiffB", ts, 3,
                         int(profile["lat"][i] * 1e7), int(profile["lon"][i] * 1e7),
-                        float(profile["alt_m"][i] * 1000), float(profile["hdop"][i]),
+                        # Raw metres, not mm — ardupilot_parser.py multiplies GPS.Alt
+                        # by 1000 itself (matching real ArduPilot dataflash logs,
+                        # where Alt is stored in metres). Pre-scaling here double-
+                        # counts that conversion.
+                        float(profile["alt_m"][i]), float(profile["hdop"][i]),
                         int(profile["sats"][i]),
                     )
                 )

@@ -179,6 +179,31 @@ report = await run_analysis(
 | Parameters | Anomalies vs PX4 defaults, dangerous combos | 5% |
 | Motors | ESC telemetry, motor balance, RPM dropouts | 5% |
 
+An eighth module, **Ascent & Recovery Analysis**, runs on every flight but isn't weighted into
+`overall_score` above — see below.
+
+## Sounding Rockets & High-Altitude Balloons
+
+ArduPilot/PX4/MAVLink telemetry isn't only a multirotor thing — sounding rockets and high-altitude
+balloons (HABs) often fly the same autopilots or stream MAVLink-compatible telemetry from a custom
+flight computer. Since neither has a declared "Rocket" vehicle type to key off (ArduPilot has no
+rocket firmware; `vehicle_type` in the report is unreliable for this), the **Ascent & Recovery**
+analyser detects the flight *shape* itself from the GPS altitude trace — a single dominant climb-
+then-descend peak, at a scale or G-profile no ordinary multirotor flight produces — and skips
+gracefully (not an error) for the multi-leg survey/mapping missions that make up the vast majority
+of flights FlightMD sees. When it does apply:
+
+- **Apogee detection** — peak altitude AGL, time-to-apogee, descent duration.
+- **High-G launch profile** — peak boost acceleration and duration, plus a warning if angular rates
+  during the boost phase suggest asymmetric thrust or tumbling under power.
+- **Parachute deployment detection** — finds the sharp descent-rate change a successful deployment
+  produces; warns if it happened very close to the ground, and flags **critical** if no deployment
+  signature is found before the descent reaches near ground level (i.e. an apparent chute failure).
+
+Because this module is inapplicable to typical drone flights, it's excluded from the weighted
+`overall_score` — its findings appear in the report, but a rocket/HAB-only concern never dilutes or
+gets diluted by the general multirotor scoring.
+
 ## Cross-Flight Trends & Comparison
 
 Every finding is generated fresh from a single flight — but some problems (a battery pack's

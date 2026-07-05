@@ -11,6 +11,7 @@ export type Category =
   | "gps"
   | "parameters"
   | "motors"
+  | "ascent_profile"
   | "system";
 
 export interface ParamRecommendation {

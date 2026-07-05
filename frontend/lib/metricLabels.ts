@@ -1,11 +1,12 @@
 export const MODULE_LABELS: Record<string, string> = {
-  oscillation: "Oscillation",
-  vibration:   "Vibration",
-  ekf:         "EKF Health",
-  battery:     "Battery",
-  gps:         "GPS Quality",
-  parameters:  "Parameters",
-  motors:      "Motors / ESC",
+  oscillation:    "Oscillation",
+  vibration:      "Vibration",
+  ekf:            "EKF Health",
+  battery:        "Battery",
+  gps:            "GPS Quality",
+  parameters:     "Parameters",
+  motors:         "Motors / ESC",
+  ascent_profile: "Ascent & Recovery",
 };
 
 // Known key_metrics get a friendly label + unit; anything else falls back
@@ -22,6 +23,12 @@ const METRIC_META: Record<string, { label: string; unit: string }> = {
   "gps.min_satellites":         { label: "Min Satellites Tracked", unit: "" },
   "motors.motor_balance_index": { label: "Motor Balance Index", unit: "" },
   "parameters.anomaly_count":   { label: "Parameter Anomalies", unit: "" },
+  "ascent_profile.apogee_altitude_m":                  { label: "Apogee Altitude", unit: " m AGL" },
+  "ascent_profile.time_to_apogee_s":                   { label: "Time to Apogee", unit: " s" },
+  "ascent_profile.peak_boost_g":                       { label: "Peak Boost Acceleration", unit: " g" },
+  "ascent_profile.boost_duration_s":                   { label: "Boost Duration", unit: " s" },
+  "ascent_profile.parachute_deployment_altitude_m":    { label: "Parachute Deployment Altitude", unit: " m AGL" },
+  "ascent_profile.time_from_apogee_to_deployment_s":   { label: "Time from Apogee to Deployment", unit: " s" },
 };
 
 export function humaniseMetricKey(key: string): { label: string; unit: string } {

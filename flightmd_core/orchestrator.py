@@ -40,6 +40,7 @@ from flightmd_core.analysers import (
     GPSAnalyser,
     ParameterAnalyser,
     MotorAnalyser,
+    AscentProfileAnalyser,
 )
 
 logger = logging.getLogger(__name__)
@@ -214,6 +215,7 @@ async def run_analysis(
         GPSAnalyser(),
         ParameterAnalyser(),
         MotorAnalyser(),
+        AscentProfileAnalyser(),
     ]
 
     available_topics = set(topics.keys())

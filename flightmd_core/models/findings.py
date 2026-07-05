@@ -20,14 +20,15 @@ class Severity(str, Enum):
 
 
 class Category(str, Enum):
-    OSCILLATION = "oscillation"
-    VIBRATION   = "vibration"
-    EKF         = "ekf"
-    BATTERY     = "battery"
-    GPS         = "gps"
-    PARAMETERS  = "parameters"
-    MOTORS      = "motors"
-    SYSTEM      = "system"
+    OSCILLATION     = "oscillation"
+    VIBRATION       = "vibration"
+    EKF             = "ekf"
+    BATTERY         = "battery"
+    GPS             = "gps"
+    PARAMETERS      = "parameters"
+    MOTORS          = "motors"
+    ASCENT_PROFILE  = "ascent_profile"
+    SYSTEM          = "system"
 
 
 class ParamRecommendation(BaseModel):
@@ -71,7 +72,7 @@ class AnalyserResult(BaseModel):
 
 class FlightMDReport(BaseModel):
     report_id: str
-    schema_version: str = "1.3"          # bump when data contract changes — UAOP checks this
+    schema_version: str = "1.4"          # bump when data contract changes — UAOP checks this
     overall_score: float
     score_label: str                     # Excellent/Good/Caution/Warning/Critical
     letter_grade: str                    # A-F grade based on overall_score
