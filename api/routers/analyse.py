@@ -9,7 +9,9 @@ import os
 import tempfile
 import uuid
 
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from typing import Optional
+
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -41,10 +43,17 @@ FORMAT_SUFFIX = {
 async def analyse_log(
     request: Request,
     file: UploadFile = File(...),
+    airframe_label: Optional[str] = Form(None),
 ) -> dict:
     """
     Accept a PX4 .ulg, ArduPilot .bin, or MAVLink .tlog flight log and begin
     asynchronous analysis.
+
+    airframe_label is optional. If given, this flight is kept indefinitely
+    and included in that airframe's trend history (GET /trends/{label}) —
+    otherwise the report is ephemeral and expires after 1 hour, same as
+    always. Nothing is retained long-term unless the uploader opts in by
+    naming their airframe.
 
     Returns immediately with a report_id and estimated processing time.
     Poll GET /status/{report_id} for progress.
@@ -75,7 +84,7 @@ async def analyse_log(
 
     # ── Create job ───────────────────────────────────────────────────────────
     report_id = str(uuid.uuid4())
-    job_store.create(report_id)
+    job_store.create(report_id, airframe_label=airframe_label)
 
     # ── Kick off background task ─────────────────────────────────────────────
     asyncio.create_task(
