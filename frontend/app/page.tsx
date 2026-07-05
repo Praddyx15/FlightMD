@@ -7,10 +7,12 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { DropZone } from "@/components/upload/DropZone";
 import { UploadProgress } from "@/components/upload/UploadProgress";
-import { uploadLog, getReports } from "@/lib/api";
+import { uploadLog, getReports, type ReportSummary } from "@/lib/api";
 import { gradeColour, scoreColour } from "@/lib/utils";
-import { FileText, Calendar, Clock, Cloud, ShieldCheck } from "lucide-react";
-import { DroneScene } from "@/components/three/DroneScene";
+import { FileText, Calendar, Clock, Cloud, ShieldCheck, Tag, ArrowLeftRight, TrendingUp } from "lucide-react";
+import Radar from "@/components/shared/Radar";
+import GradientText from "@/components/shared/GradientText";
+import MagicBento from "@/components/shared/MagicBento";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -19,25 +21,13 @@ type UploadState =
   | { phase: "uploading"; progress: number }
   | { phase: "error"; message: string };
 
-interface ReportSummary {
-  report_id: string;
-  file_name: string;
-  file_size_bytes: number;
-  overall_score: number;
-  score_label: string;
-  letter_grade: string;
-  duration_seconds: number;
-  firmware_version: string;
-  vehicle_type: string;
-  weather_desc: string;
-  created_at: number;
-}
-
 export default function HomePage() {
   const router = useRouter();
   const [state, setState] = useState<UploadState>({ phase: "idle" });
+  const [airframeLabel, setAirframeLabel] = useState("");
   const [history, setHistory] = useState<ReportSummary[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [compareSelection, setCompareSelection] = useState<string[]>([]);
 
   const heroRef = useRef<HTMLDivElement>(null);
   const droneScrollProgress = useRef(0);
@@ -92,14 +82,26 @@ export default function HomePage() {
     setState({ phase: "uploading", progress: 0 });
 
     try {
-      const resp = await uploadLog(file, (pct) => {
-        setState({ phase: "uploading", progress: pct });
-      });
+      const resp = await uploadLog(
+        file,
+        (pct) => {
+          setState({ phase: "uploading", progress: pct });
+        },
+        airframeLabel
+      );
       router.push(`/report/${resp.report_id}`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Upload failed. Please try again.";
       setState({ phase: "error", message: msg });
     }
+  }
+
+  function toggleCompareSelection(reportId: string) {
+    setCompareSelection((prev) => {
+      if (prev.includes(reportId)) return prev.filter((id) => id !== reportId);
+      if (prev.length >= 2) return [prev[1], reportId];
+      return [...prev, reportId];
+    });
   }
 
   const formatSize = (bytes: number) => {
@@ -113,29 +115,68 @@ export default function HomePage() {
     <div className="max-w-4xl mx-auto px-4 py-12 sm:py-16 space-y-12">
       {/* Hero */}
       <div ref={heroRef} className="text-center mb-8">
-        <h1 className="text-4xl sm:text-5xl font-bold mb-4" style={{ color: "#E8EDF5" }}>
-          Your drone&apos;s flight log,{" "}
-          <span style={{ color: "#E8A020" }}>decoded.</span>
+        <h1 className="text-4xl sm:text-5xl font-bold mb-4 text-slate-100 flex flex-col sm:flex-row items-center justify-center gap-2">
+          <span>Your drone&apos;s flight log,</span>
+          <GradientText
+            colors={["#8EC970", "#D8F3C9", "#4E9F3D"]}
+            animationSpeed={6}
+            showBorder={false}
+            className="text-4xl sm:text-5xl font-bold"
+          >
+            decoded.
+          </GradientText>
         </h1>
-        <p className="text-lg text-white/60 max-w-xl mx-auto">
+        <p className="text-lg text-slate-400 max-w-xl mx-auto">
           Upload a PX4, ArduPilot, or MAVLink telemetry log.
           Get a deterministic diagnostic report in ~20 seconds — no AI required. Free, open-source, no login required.
         </p>
-        <DroneScene
-          className="w-full h-72 sm:h-96 -my-4"
-          scrollProgress={droneScrollProgress}
-        />
+        <div className="relative w-full h-72 sm:h-96 -my-4 overflow-hidden rounded-xl">
+          <Radar
+            speed={1.0}
+            scale={0.6}
+            ringCount={5}
+            spokeCount={6}
+            ringThickness={0.03}
+            spokeThickness={0.005}
+            sweepSpeed={0.8}
+            sweepWidth={1.5}
+            sweepLobes={1}
+            color="#8EC970"
+            backgroundColor="#060B08"
+            falloff={1.5}
+            brightness={0.8}
+            enableMouseInteraction={true}
+            mouseInfluence={0.05}
+          />
+        </div>
       </div>
 
       {/* Upload card */}
       <div
-        className="rounded-xl border p-6 sm:p-8 shadow-2xl"
-        style={{ background: "#0E1428", borderColor: "rgba(255,255,255,0.08)" }}
+        className="rounded-2xl border border-border bg-card/85 p-6 sm:p-8 shadow-2xl backdrop-blur-md"
       >
         {state.phase === "uploading" ? (
           <UploadProgress progress={state.progress} />
         ) : (
           <>
+            <div className="mb-4">
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-white/50 mb-1.5">
+                <Tag className="w-3.5 h-3.5" />
+                Airframe label <span className="font-normal text-white/30">(optional)</span>
+              </label>
+              <input
+                type="text"
+                value={airframeLabel}
+                onChange={(e) => setAirframeLabel(e.target.value)}
+                placeholder="e.g. Quad-1 — tag it to track trends across flights"
+                maxLength={40}
+                className="w-full px-3 py-2 rounded-lg text-sm bg-slate-950 border border-slate-800 text-white/80 placeholder:text-white/25 focus:outline-none focus:border-[#E8A020]/50"
+              />
+              <p className="text-xxs text-white/25 mt-1">
+                Untagged flights stay ephemeral and expire in 1 hour, as always. Tagging
+                opts this flight into permanent trend history under that label.
+              </p>
+            </div>
             <DropZone onFile={handleFile} disabled={false} />
             {state.phase === "error" && (
               <div className="mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
@@ -154,14 +195,25 @@ export default function HomePage() {
 
       {/* Flight Log History Hub */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-3">
           <h2 className="text-xl font-bold text-slate-100 flex items-center space-x-2">
             <ShieldCheck className="w-5 h-5 text-indigo-400" />
             <span>Flight Log Hub</span>
           </h2>
-          <span className="text-xs text-slate-400 font-mono">
-            {history.length} {history.length === 1 ? 'flight' : 'flights'} logged
-          </span>
+          <div className="flex items-center gap-3">
+            {compareSelection.length === 2 && (
+              <button
+                onClick={() => router.push(`/compare?a=${compareSelection[0]}&b=${compareSelection[1]}`)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-bg bg-accent hover:opacity-90 active:scale-95 transition-all"
+              >
+                <ArrowLeftRight className="w-3.5 h-3.5" />
+                Compare Selected
+              </button>
+            )}
+            <span className="text-xs text-slate-400 font-mono">
+              {history.length} {history.length === 1 ? 'flight' : 'flights'} logged
+            </span>
+          </div>
         </div>
 
         {loadingHistory ? (
@@ -169,53 +221,74 @@ export default function HomePage() {
             Loading flight logs...
           </div>
         ) : history.length === 0 ? (
-          <div className="text-center py-12 bg-slate-900/50 border border-slate-800 rounded-xl text-slate-500 text-sm">
+          <div className="text-center py-12 bg-card/40 border border-border rounded-xl text-slate-500 text-sm">
             No previously analysed logs. Upload your first flight log above.
           </div>
         ) : (
-          <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-lg divide-y divide-slate-800">
+          <div className="bg-card/40 border border-border rounded-xl overflow-hidden shadow-lg divide-y divide-border/60 backdrop-blur-sm">
             {history.map((item, idx) => (
               <motion.div
                 key={item.report_id}
-                initial={{ opacity: 0, y: 6 }}
+                initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.25, delay: Math.min(idx * 0.04, 0.4) }}
+                transition={{ duration: 0.35, delay: Math.min(idx * 0.04, 0.4), ease: "easeOut" }}
                 onClick={() => router.push(`/report/${item.report_id}`)}
-                className="p-4 sm:p-5 hover:bg-slate-850 cursor-pointer transition-all duration-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+                className="p-4 sm:p-5 hover:bg-elevated/40 hover:scale-[1.005] cursor-pointer transition-all duration-300 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
               >
-                <div className="space-y-1.5 flex-1 min-w-0">
-                  <div className="flex items-center space-x-2.5">
-                    <FileText className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                    <span className="font-semibold text-slate-200 truncate">{item.file_name}</span>
-                    <span
-                      className="px-2 py-0.5 rounded border text-xs font-bold"
-                      style={{
-                        color: gradeColour(item.letter_grade),
-                        background: `${gradeColour(item.letter_grade)}1a`,
-                        borderColor: `${gradeColour(item.letter_grade)}40`,
-                      }}
-                    >
-                      Grade {item.letter_grade}
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-slate-400">
-                    <span className="flex items-center space-x-1">
-                      <Calendar className="w-3.5 h-3.5 text-slate-500" />
-                      <span>{new Date(item.created_at * 1000).toLocaleDateString()}</span>
-                    </span>
-                    <span className="flex items-center space-x-1">
-                      <Clock className="w-3.5 h-3.5 text-slate-500" />
-                      <span>{(item.duration_seconds / 60).toFixed(1)} mins</span>
-                    </span>
-                    {item.weather_desc && item.weather_desc !== "N/A" && (
-                      <span className="flex items-center space-x-1 max-w-[200px] sm:max-w-xs truncate">
-                        <Cloud className="w-3.5 h-3.5 text-slate-500" />
-                        <span className="truncate">{item.weather_desc}</span>
+                <div className="flex items-start gap-3 flex-1 min-w-0">
+                  <input
+                    type="checkbox"
+                    checked={compareSelection.includes(item.report_id)}
+                    onChange={() => toggleCompareSelection(item.report_id)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-4 h-4 mt-1.5 accent-[#E8A020] flex-shrink-0"
+                    title="Select to compare"
+                  />
+                  <div className="space-y-1.5 flex-1 min-w-0">
+                    <div className="flex items-center space-x-2.5 flex-wrap gap-y-1">
+                      <FileText className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                      <span className="font-semibold text-slate-200 truncate">{item.file_name}</span>
+                      <span
+                        className="px-2 py-0.5 rounded border text-xs font-bold"
+                        style={{
+                          color: gradeColour(item.letter_grade),
+                          background: `${gradeColour(item.letter_grade)}1a`,
+                          borderColor: `${gradeColour(item.letter_grade)}40`,
+                        }}
+                      >
+                        Grade {item.letter_grade}
                       </span>
-                    )}
-                    <span className="font-mono text-slate-500">
-                      {formatSize(item.file_size_bytes)}
-                    </span>
+                      {item.airframe_label && (
+                        <a
+                          href={`/airframe/${encodeURIComponent(item.airframe_label)}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-semibold border-indigo-500/40 bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25 transition-colors"
+                          title="View trend history for this airframe"
+                        >
+                          <TrendingUp className="w-3 h-3" />
+                          {item.airframe_label}
+                        </a>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-slate-400">
+                      <span className="flex items-center space-x-1">
+                        <Calendar className="w-3.5 h-3.5 text-slate-500" />
+                        <span>{new Date(item.created_at * 1000).toLocaleDateString()}</span>
+                      </span>
+                      <span className="flex items-center space-x-1">
+                        <Clock className="w-3.5 h-3.5 text-slate-500" />
+                        <span>{(item.duration_seconds / 60).toFixed(1)} mins</span>
+                      </span>
+                      {item.weather_desc && item.weather_desc !== "N/A" && (
+                        <span className="flex items-center space-x-1 max-w-[200px] sm:max-w-xs truncate">
+                          <Cloud className="w-3.5 h-3.5 text-slate-500" />
+                          <span className="truncate">{item.weather_desc}</span>
+                        </span>
+                      )}
+                      <span className="font-mono text-slate-500">
+                        {formatSize(item.file_size_bytes)}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
@@ -234,32 +307,10 @@ export default function HomePage() {
       </div>
 
       {/* What we analyse */}
-      <div className="space-y-4">
+      <div className="space-y-6">
         <h2 className="text-xl font-bold text-slate-100">Analysis Capabilities</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {MODULES.map((m) => (
-            <div
-              key={m.name}
-              className="rounded-lg border p-3 text-center"
-              style={{ background: "#0E1428", borderColor: "rgba(255,255,255,0.06)" }}
-            >
-              <div className="text-xl mb-1">{m.icon}</div>
-              <div className="text-xs font-semibold text-white/70">{m.name}</div>
-              <div className="text-xs text-white/35 mt-0.5">{m.weight}% weight</div>
-            </div>
-          ))}
-        </div>
+        <MagicBento />
       </div>
     </div>
   );
 }
-
-const MODULES = [
-  { name: "Oscillation",  icon: "〰️", weight: 20 },
-  { name: "Vibration",    icon: "📳", weight: 20 },
-  { name: "EKF Health",   icon: "🔭", weight: 20 },
-  { name: "Battery",      icon: "🔋", weight: 15 },
-  { name: "GPS Quality",  icon: "📡", weight: 15 },
-  { name: "Parameters",   icon: "⚙️", weight:  5 },
-  { name: "Motors / ESC", icon: "🔄", weight:  5 },
-];
