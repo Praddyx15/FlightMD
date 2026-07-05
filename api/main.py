@@ -14,7 +14,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from api.config import get_settings
-from api.routers import analyse, report, export, health, trends
+from api.routers import analyse, report, export, health, trends, airframe
 from api.storage import job_store
 
 logging.basicConfig(
@@ -85,6 +85,7 @@ app.include_router(analyse.router, tags=["Analysis"])
 app.include_router(report.router, tags=["Reports"])
 app.include_router(export.router, tags=["Export"])
 app.include_router(trends.router, tags=["Trends"])
+app.include_router(airframe.router, tags=["Airframe"])
 
 # Expose start time for uptime calculation
 app.state.start_time = START_TIME
