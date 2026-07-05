@@ -54,18 +54,33 @@ FlightMD's position is different on three axes at once:
   explicitly tag, never collected automatically. MIT-licensed, and the optional AI layer defaults to
   Groq's free tier so running your own instance costs nothing.
 
-| | **FlightMD** | PX4 Flight Review | UAV Log Viewer | Typical fleet-ops SaaS |
+[AirData UAV](https://airdata.com) is the closest real competitor — a paid, account-required fleet-ops
+platform (Free tier → $14.99/mo → Enterprise) with broad drone/app support (DJI GO/Fly/Pilot, Autel,
+Parrot, Litchi, DroneDeploy, Pix4D, plus PX4 `.ulg`/ArduPilot `.bin` upload) and genuinely good fleet
+tooling: maintenance scheduling, compliance report generation, alert thresholds, and wind/RF-interference
+map visualization. It's a different value proposition, not a strict subset — checked directly against
+their site, pricing page, and real ArduPilot-user reports: for PX4/ArduPilot logs specifically, there's
+no oscillation/vibration/EKF/parameter-tuning analysis anywhere in their materials, and their "Auto
+Analysis" tool is described by an experienced ArduPilot user on their own forum as *"outdated and mostly
+useless."* Their strength is fleet operations; FlightMD's is root-cause diagnosis — with the fleet-ops
+features below now closing the gap without needing an account.
+
+| | **FlightMD** | PX4 Flight Review | UAV Log Viewer | AirData UAV |
 |---|---|---|---|---|
-| Multi-format: PX4 · ArduPilot · MAVLink | ✅ one tool, auto-detected | ❌ PX4 only | Partial | ✅ usually |
-| Root-cause explanations (not just plots) | ✅ 7 deterministic rule engines | ❌ | ❌ | Varies, often AI-only |
-| Exact parameter fix per finding | ✅ | ❌ | ❌ | Sometimes, paywalled |
-| Cross-flight trend analysis | ✅ opt-in, no account needed | ❌ single-log only | ❌ single-log only | ✅ usually, requires an account |
-| Side-by-side flight comparison | ✅ | ❌ | ❌ | Varies |
+| Multi-format: PX4 · ArduPilot · MAVLink | ✅ one tool, auto-detected | ❌ PX4 only | Partial | ✅ |
+| Root-cause explanations (not just plots) | ✅ 7 deterministic rule engines | ❌ | ❌ | ❌ basic visualization only for PX4/ArduPilot |
+| Exact parameter fix per finding | ✅ | ❌ | ❌ | ❌ |
+| Cross-flight trend analysis | ✅ opt-in, no account needed | ❌ single-log only | ❌ single-log only | ✅ requires an account |
+| Side-by-side flight comparison | ✅ | ❌ | ❌ | Partial |
+| Maintenance tracking & checklists | ✅ opt-in, per airframe | ❌ | ❌ | ✅ |
+| Flight/maintenance record export | ✅ PDF, your own recordkeeping | ❌ | ❌ | ✅ "compliance reports" |
+| Fleet alert thresholds | ✅ webhook-based (Slack/Discord) | ❌ | ❌ | ✅ |
+| Wind / signal-quality path visualization | ✅ 3D path colour-coded by wind or GPS HDOP | ❌ | ❌ | ✅ wind maps, RF interference |
 | Fully functional with zero AI/cloud calls | ✅ | ✅ | ✅ | ❌ |
-| Optional AI layer with a free tier | ✅ Groq, no cost to operator | ❌ | ❌ | ❌ bundled into price |
+| Optional AI layer with a free tier | ✅ Groq, no cost to operator | ❌ | ❌ | ❌ |
 | Open source / self-hostable | ✅ MIT | ✅ BSD | ✅ | ❌ closed source |
-| No login, ephemeral by default | ✅ reports expire in 1h unless tagged | ✅ | ✅ | ❌ accounts required |
-| Interactive 3D flight-path visualization | ✅ | ❌ | Basic 2D | Varies |
+| No login, ephemeral by default | ✅ reports expire in 1h unless tagged | ✅ | ✅ | ❌ accounts required, 6–24mo archives |
+| Interactive 3D flight-path visualization | ✅ | ❌ | Basic 2D | ✅ |
 | Time to report | ~20s | Instant (client-side plots) | Instant (client-side plots) | Varies |
 
 ## Live Demo
@@ -182,6 +197,28 @@ flights, long before any single flight is bad enough to trigger a finding.
 
 Both are backed by the same deterministic analysis output — no separate AI call, no additional
 computation beyond re-shaping data that was already produced per-flight.
+
+## Fleet Operations: Maintenance, Alerts, Records, Signal Maps
+
+Tagging an airframe (above) also unlocks a small set of fleet-ops features, opt-in and per-airframe
+— none of this is collected unless you name an airframe:
+
+- **Maintenance tracking & checklists.** Log maintenance events (date, type, notes) per airframe;
+  set a maintenance interval in hours and FlightMD tells you how many flight-hours have accumulated
+  since the last logged service, flagging when it's due. A simple pre-flight checklist template lives
+  alongside it. `GET/PUT /airframe/{label}/config`, `POST /airframe/{label}/maintenance`.
+- **Flight & maintenance record export.** `GET /export/airframe/{label}/pdf` generates a PDF of the
+  airframe's flight history, maintenance log, and checklist — **for your own recordkeeping, not a
+  regulatory certification**. FlightMD doesn't assert compliance with anything; it just hands you your
+  own data in one document, consistent with the rest of the report never making a compliance claim.
+- **Alert thresholds via webhook.** Set rules like "alert if overall score drops below 80" or "alert
+  if battery sag exceeds 0.5V/cell" per airframe, plus a webhook URL (Slack/Discord-compatible). When
+  a new tagged flight breaches a rule, FlightMD posts a message — no account, no email server, just a
+  webhook you already control. The URL is validated https-only and must resolve to a public address
+  before anything is ever sent to it.
+- **Wind speed / GPS signal-quality path visualization.** The 3D flight-path scene can colour-code the
+  path by wind speed (PX4 logs with a converged wind estimate) or GPS signal quality (HDOP, all
+  formats) instead of a flat colour — a toggle appears automatically when a report has that data.
 
 ## UAOP Integration
 
