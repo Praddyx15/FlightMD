@@ -229,7 +229,12 @@ def write_ardupilot_bin(path: str, profile: dict) -> None:
     message_types = {
         0x01: ("IMU", "Qffffff", "TimeUS,GyrX,GyrY,GyrZ,AccX,AccY,AccZ", "Qffffff"),
         0x02: ("BAT", "Qffff", "TimeUS,Volt,Curr,CurrTot,Temp", "Qffff"),
-        0x03: ("GPS", "QBiiffB", "TimeUS,Status,Lat,Lng,Alt,HDop,NSats", "QBiiffB"),
+        # Lat/Lng use ArduPilot's 'L' type code (not generic 'i') so
+        # DFReader applies its built-in 1e-7 degE7->degrees scaling when
+        # reading the field back — matching how real dataflash logs encode
+        # GPS.Lat/GPS.Lng. The struct-pack format below is unaffected: the
+        # wire layout is still a plain 4-byte int either way.
+        0x03: ("GPS", "QBLLffB", "TimeUS,Status,Lat,Lng,Alt,HDop,NSats", "QBiiffB"),
         0x04: ("MSG", "QZ", "TimeUS,Message", "Q64s"),
         0x05: ("PARM", "QNf", "TimeUS,Name,Value", "Q16sf"),
     }

@@ -162,6 +162,54 @@ async def run_analysis(
                 gps_path = path_points
                 gps_path_hdop = hdop_points if hdop_col else None
 
+                # Fallback flight stats derived straight from the GPS topic —
+                # ulog_parser.py already computes these from PX4's
+                # vehicle_local_position, but ArduPilot/MAVLink logs have no
+                # such topic, so those fields would otherwise stay None.
+                # Only fill in what the format-specific parser left empty.
+                if metadata.max_altitude_m is None and alt_col:
+                    alt_m = valid_gps[alt_col].to_numpy(dtype=float) / 1000.0
+                    metadata.max_altitude_m = round(float(alt_m.max() - alt_m[0]), 1)
+
+                if (metadata.max_speed_ms is None or metadata.total_distance_m is None) and "timestamp" in valid_gps.columns:
+                    gps_lat = valid_gps["lat"].to_numpy(dtype=float) / 1e7
+                    gps_lon = valid_gps["lon"].to_numpy(dtype=float) / 1e7
+                    ts_s = valid_gps["timestamp"].to_numpy(dtype=float) / 1e6
+                    if len(gps_lat) > 1:
+                        # Equirectangular approximation — accurate enough at
+                        # flight-line scales, far cheaper than true haversine.
+                        lat0_rad = np.radians(gps_lat[0])
+                        earth_r_m = 6371000.0
+                        dx = np.radians(gps_lon - gps_lon[0]) * earth_r_m * np.cos(lat0_rad)
+                        dy = np.radians(gps_lat - gps_lat[0]) * earth_r_m
+                        seg_dist = np.hypot(np.diff(dx), np.diff(dy))
+                        seg_dt = np.diff(ts_s)
+
+                        # Real GPS fixes never arrive faster than ~20Hz — a
+                        # smaller inter-sample gap means duplicate/near-
+                        # duplicate log entries (observed at the tail of real
+                        # dataflash logs, e.g. during landing/disarm), not
+                        # genuine motion. Dividing a real-but-tiny distance by
+                        # a near-zero gap explodes into an impossible speed.
+                        MIN_GPS_DT_S = 0.05
+                        # Second, independent guard: a single glitched fix
+                        # (receiver multipath/cold-start, or a malformed log
+                        # entry) can produce a huge jump even across a
+                        # plausible time gap. No rotorcraft/fixed-wing UAV
+                        # gets anywhere near this — it exists purely to
+                        # reject corrupt coordinate outliers.
+                        MAX_PLAUSIBLE_SPEED_MS = 75.0
+
+                        with np.errstate(divide="ignore", invalid="ignore"):
+                            seg_speed_raw = np.where(seg_dt > 0, seg_dist / seg_dt, np.inf)
+                        plausible = (seg_dt >= MIN_GPS_DT_S) & (seg_speed_raw <= MAX_PLAUSIBLE_SPEED_MS)
+
+                        if metadata.total_distance_m is None:
+                            metadata.total_distance_m = round(float(seg_dist[plausible].sum()), 1)
+
+                        if metadata.max_speed_ms is None and plausible.any():
+                            metadata.max_speed_ms = round(float(seg_speed_raw[plausible].max()), 2)
+
                 # Wind speed per path point (PX4 estimator_status only) —
                 # cross-topic, so join by nearest timestamp rather than
                 # relying on matching row order.

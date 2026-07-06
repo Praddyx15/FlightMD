@@ -93,3 +93,27 @@ async def test_gps_path_signal_quality_populated_across_formats(ext):
     assert report.metadata.gps_path_hdop is not None
     assert len(report.metadata.gps_path_hdop) == len(report.metadata.gps_path)
     assert any(v is not None and v > 0 for v in report.metadata.gps_path_hdop)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ext", FORMATS.keys())
+async def test_flight_stats_populated_across_formats(ext):
+    """max_altitude_m/max_speed_ms/total_distance_m come from PX4's
+    vehicle_local_position for ULog, but ArduPilot .bin and MAVLink .tlog
+    have no such topic — the orchestrator falls back to deriving them from
+    the universal GPS topic, so all three formats should end up populated
+    with physically plausible values (a real dataflash log surfaced these
+    fields silently staying None, and — before a gap-plausibility guard —
+    a speed of tens of thousands of m/s from duplicate-timestamp GPS rows)."""
+    report = await run_analysis(
+        ulog_path=_sample_path("flawed", ext),
+        file_name=f"sample_flawed.{ext}",
+        file_size=os.path.getsize(_sample_path("flawed", ext)),
+    )
+    md = report.metadata
+    assert md.max_altitude_m is not None
+    assert md.max_speed_ms is not None
+    assert md.total_distance_m is not None
+    assert 0 <= md.max_speed_ms < 100, "implausible speed — likely a duplicate-timestamp GPS row divide-by-near-zero"
+    assert md.max_altitude_m > 0
+    assert md.total_distance_m > 0
