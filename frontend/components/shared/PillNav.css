@@ -13,7 +13,7 @@
   display: flex;
   align-items: center;
   box-sizing: border-box;
-  background: var(--base, #060B08);
+  background: var(--base, #0A0A0A);
   padding: 6px;
   border-radius: 9999px;
   border: 1px solid rgba(255, 255, 255, 0.05);
@@ -41,7 +41,7 @@
   width: var(--nav-h);
   height: var(--nav-h);
   border-radius: 50%;
-  background: var(--base, #060B08);
+  background: var(--base, #0A0A0A);
   padding: 8px;
   display: inline-flex;
   align-items: center;
@@ -101,7 +101,7 @@
   left: 50%;
   bottom: 0;
   border-radius: 50%;
-  background: var(--pill-bg, #8EC970);
+  background: var(--pill-bg, #B89642);
   z-index: 1;
   display: block;
   pointer-events: none;
@@ -127,15 +127,15 @@
   position: absolute;
   left: 0;
   top: 0;
-  color: var(--hover-text, #060B08);
+  color: var(--hover-text, #0A0A0A);
   z-index: 3;
   display: inline-block;
   will-change: transform, opacity;
 }
 
 .pill.is-active {
-  background: var(--pill-bg, #8EC970);
-  color: var(--hover-text, #060B08);
+  background: var(--pill-bg, #B89642);
+  color: var(--hover-text, #0A0A0A);
 }
 
 .desktop-only {
@@ -160,7 +160,7 @@
   width: var(--nav-h);
   height: var(--nav-h);
   border-radius: 50%;
-  background: var(--base, #060B08);
+  background: var(--base, #0A0A0A);
   border: 1px solid rgba(255, 255, 255, 0.05);
   display: none;
   flex-direction: column;
@@ -192,7 +192,7 @@
   top: 3em;
   left: 1rem;
   right: 1rem;
-  background: var(--base, #060B08);
+  background: var(--base, #0A0A0A);
   border-radius: 27px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
   z-index: 998;
@@ -225,6 +225,6 @@
 
 .mobile-menu-popover .mobile-menu-link:hover {
   cursor: pointer;
-  background-color: var(--pill-bg, #8EC970);
-  color: var(--hover-text, #060B08);
+  background-color: var(--pill-bg, #B89642);
+  color: var(--hover-text, #0A0A0A);
 }

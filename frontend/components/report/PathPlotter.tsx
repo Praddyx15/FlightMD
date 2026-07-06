@@ -45,7 +45,7 @@ export default function PathPlotter({ report }: PathPlotterProps) {
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center space-x-2">
-          <Map className="w-5 h-5 text-indigo-400" />
+          <Map className="w-5 h-5 text-gold-500" />
           <h3 className="font-semibold text-slate-100">Flight Path</h3>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -141,7 +141,7 @@ export default function PathPlotter({ report }: PathPlotterProps) {
         <div className="absolute top-4 right-4 bg-slate-900/90 border border-slate-800 rounded-lg px-3 py-2 text-xxs text-slate-300 font-mono space-y-1 backdrop-blur-sm pointer-events-none">
           <div>Max Altitude: <span className="text-emerald-400">{maxAlt.toFixed(1)} m</span></div>
           {report.metadata.total_distance_m && (
-            <div>Distance: <span className="text-indigo-400">{report.metadata.total_distance_m.toFixed(0)} m</span></div>
+            <div>Distance: <span className="text-gold-500">{report.metadata.total_distance_m.toFixed(0)} m</span></div>
           )}
         </div>
 

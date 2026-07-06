@@ -39,7 +39,7 @@ function PathLine({ points, vertexColors }: { points: ScenePoint[]; vertexColors
   return vertexColors ? (
     <Line points={vertices} vertexColors={vertexColors} color="white" lineWidth={3} />
   ) : (
-    <Line points={vertices} color="#E8A020" lineWidth={2.5} />
+    <Line points={vertices} color="#B89642" lineWidth={2.5} />
   );
 }
 
@@ -111,7 +111,7 @@ export function FlightPathScene({
       >
         <ambientLight intensity={0.55} />
         <directionalLight position={[3, 4, 2]} intensity={1.0} color="#EAF0FF" />
-        <directionalLight position={[-3, 1, -2]} intensity={0.5} color="#E8A020" />
+        <directionalLight position={[-3, 1, -2]} intensity={0.5} color="#B89642" />
 
         <Grid
           position={[0, -0.01, 0]}

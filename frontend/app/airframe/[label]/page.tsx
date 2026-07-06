@@ -77,7 +77,7 @@ export default function AirframeTrendsPage() {
             time — everything else stays ephemeral and expires after an hour, as always.
             Upload a flight and give it this label to start building history.
           </p>
-          <a href="/" className="inline-block mt-2 text-sm underline" style={{ color: "#E8A020" }}>
+          <a href="/" className="inline-block mt-2 text-sm underline" style={{ color: "#B89642" }}>
             ← Upload a flight
           </a>
         </div>
@@ -106,7 +106,7 @@ export default function AirframeTrendsPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-            <TrendingUp className="w-6 h-6" style={{ color: "#E8A020" }} />
+            <TrendingUp className="w-6 h-6" style={{ color: "#B89642" }} />
             {label}
           </h1>
           <p className="text-sm text-white/40 mt-1">
@@ -117,7 +117,7 @@ export default function AirframeTrendsPage() {
           <button
             onClick={() => router.push(`/compare?a=${selected[0]}&b=${selected[1]}`)}
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all"
-            style={{ background: "#E8A020" }}
+            style={{ background: "#B89642" }}
           >
             <ArrowLeftRight className="w-4 h-4" />
             Compare Selected
@@ -128,7 +128,7 @@ export default function AirframeTrendsPage() {
       {/* Overall score trend */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
         <h3 className="font-semibold text-slate-100 mb-3">Overall Health Score</h3>
-        <TrendLineChart points={scorePoints} yDomain={[0, 100]} color="#E8A020" />
+        <TrendLineChart points={scorePoints} yDomain={[0, 100]} color="#B89642" />
       </div>
 
       {/* Per-module score trends */}
@@ -202,7 +202,7 @@ export default function AirframeTrendsPage() {
                 type="checkbox"
                 checked={selected.includes(f.report_id)}
                 onChange={() => toggleSelect(f.report_id)}
-                className="w-4 h-4 accent-[#E8A020]"
+                className="w-4 h-4 accent-[#B89642]"
               />
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-semibold text-slate-200 truncate">{f.file_name}</div>

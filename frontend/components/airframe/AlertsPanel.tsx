@@ -66,7 +66,7 @@ export function AlertsPanel({ airframeLabel, config, onUpdated }: AlertsPanelPro
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
       <h3 className="font-semibold text-slate-100 flex items-center gap-2">
-        <Bell className="w-5 h-5 text-indigo-400" />
+        <Bell className="w-5 h-5 text-gold-500" />
         Alerts
       </h3>
       <p className="text-xs text-white/40 -mt-2">
@@ -141,7 +141,7 @@ export function AlertsPanel({ airframeLabel, config, onUpdated }: AlertsPanelPro
         onClick={save}
         disabled={saving}
         className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-40 transition-all"
-        style={{ background: "#E8A020" }}
+        style={{ background: "#B89642" }}
       >
         Save Alert Rules
       </button>

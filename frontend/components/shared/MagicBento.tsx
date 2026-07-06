@@ -2,7 +2,7 @@
 
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { gsap } from 'gsap';
-import { Activity, Zap, Compass, BatteryCharging, Satellite, Settings, Cpu } from 'lucide-react';
+import { Activity, Zap, Compass, BatteryCharging, Satellite, Settings, Cpu, Rocket } from 'lucide-react';
 import './MagicBento.css';
 
 export interface BentoCardProps {
@@ -10,7 +10,11 @@ export interface BentoCardProps {
   title: string;
   description: string;
   label: string;
-  weight: number;
+  /** Contribution to the overall 0-100 flight health score. Omit for
+   * modules that are situational (e.g. only apply to rocket/HAB flights)
+   * and therefore never factor into that score. */
+  weight?: number;
+  badge?: string;
   icon: React.ReactNode;
   bgGradient?: string;
   gridClass?: string;
@@ -32,72 +36,81 @@ export interface BentoProps {
 
 const DEFAULT_PARTICLE_COUNT = 15;
 const DEFAULT_SPOTLIGHT_RADIUS = 280;
-const DEFAULT_GLOW_COLOR = '142, 201, 112'; // Sprout green RGB
+const DEFAULT_GLOW_COLOR = '184, 150, 66'; // Muted gold RGB
 const MOBILE_BREAKPOINT = 768;
 
 const cardData: BentoCardProps[] = [
   {
-    color: '#060B08',
+    color: '#111111',
     title: 'Oscillation Analysis',
     description: 'Auto-detects roll/pitch control loop oscillations to isolate mechanical/tuning instability.',
     label: 'Tuning & Stability',
     weight: 20,
-    icon: <Activity className="w-5 h-5 text-[#8EC970]" />,
+    icon: <Activity className="w-5 h-5 text-[#B89642]" />,
     gridClass: 'col-span-2 row-span-1'
   },
   {
-    color: '#060B08',
+    color: '#111111',
     title: 'Vibration Health',
     description: 'Tracks clipping, peak acceleration metrics, and high-frequency structural resonance.',
     label: 'IMU Damping',
     weight: 20,
-    icon: <Zap className="w-5 h-5 text-[#8EC970]" />,
-    gridClass: 'col-span-1 row-span-2'
+    icon: <Zap className="w-5 h-5 text-[#B89642]" />,
+    gridClass: 'col-span-1 row-span-1'
   },
   {
-    color: '#060B08',
+    color: '#111111',
     title: 'EKF Estimator',
     description: 'Monitors estimator innovation, consistency gates, and sensor fusion variances.',
     label: 'State Estimation',
     weight: 20,
-    icon: <Compass className="w-5 h-5 text-[#8EC970]" />,
-    gridClass: 'col-span-2 row-span-2'
+    icon: <Compass className="w-5 h-5 text-[#B89642]" />,
+    gridClass: 'col-span-2 row-span-1'
   },
   {
-    color: '#060B08',
+    color: '#111111',
     title: 'Battery Diagnostics',
     description: 'Evaluates voltage sag, internal resistance changes, and cell degradation profiles.',
     label: 'Power Delivery',
     weight: 15,
-    icon: <BatteryCharging className="w-5 h-5 text-[#8EC970]" />,
+    icon: <BatteryCharging className="w-5 h-5 text-[#B89642]" />,
     gridClass: 'col-span-1 row-span-1'
   },
   {
-    color: '#060B08',
+    color: '#111111',
     title: 'GPS & Telemetry',
     description: 'Tracks HDOP/VDOP metrics, satellite counts, and jammer/spoofing indicators.',
     label: 'Navigation Integrity',
     weight: 15,
-    icon: <Satellite className="w-5 h-5 text-[#8EC970]" />,
+    icon: <Satellite className="w-5 h-5 text-[#B89642]" />,
     gridClass: 'col-span-1 row-span-1'
   },
   {
-    color: '#060B08',
+    color: '#111111',
     title: 'Parameter Audit',
     description: 'Scans over 150+ critical airframe parameters for misconfigurations.',
     label: 'System Parameters',
     weight: 5,
-    icon: <Settings className="w-5 h-5 text-[#8EC970]" />,
+    icon: <Settings className="w-5 h-5 text-[#B89642]" />,
     gridClass: 'col-span-1 row-span-1'
   },
   {
-    color: '#060B08',
+    color: '#111111',
     title: 'Motors & ESCs',
     description: 'Analyzes thrust balance, ESC status codes, and desync indicators.',
     label: 'Actuators',
     weight: 5,
-    icon: <Cpu className="w-5 h-5 text-[#8EC970]" />,
-    gridClass: 'col-span-2 row-span-1'
+    icon: <Cpu className="w-5 h-5 text-[#B89642]" />,
+    gridClass: 'col-span-1 row-span-1'
+  },
+  {
+    color: '#111111',
+    title: 'Ascent & Recovery',
+    description: 'Detects apogee, high-G boost profiles, and parachute deployment — for sounding rockets and high-altitude balloons.',
+    label: 'Rockets & HAB',
+    badge: 'Situational',
+    icon: <Rocket className="w-5 h-5 text-[#B89642]" />,
+    gridClass: 'col-span-1 row-span-1'
   }
 ];
 
@@ -596,7 +609,7 @@ const MagicBento: React.FC<BentoProps> = ({
               >
                 <div className="magic-bento-card__header">
                   <div className="magic-bento-card__icon-wrapper">{card.icon}</div>
-                  <div className="magic-bento-card__weight">{card.weight}% weight</div>
+                  <div className="magic-bento-card__weight">{card.badge ?? `${card.weight}% weight`}</div>
                 </div>
                 <div className="magic-bento-card__content">
                   <div className="magic-bento-card__label">{card.label}</div>

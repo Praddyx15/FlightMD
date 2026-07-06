@@ -14,7 +14,7 @@ export function UploadProgress({ progress }: Props) {
           className="h-full rounded-full transition-all duration-300"
           style={{
             width: `${progress}%`,
-            background: "linear-gradient(90deg, #E8A020, #FFD080)",
+            background: "linear-gradient(90deg, #B89642, #E7C25B)",
           }}
         />
       </div>

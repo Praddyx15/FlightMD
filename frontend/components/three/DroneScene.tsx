@@ -44,7 +44,7 @@ export function DroneScene({ className, scrollProgress }: DroneSceneProps) {
         <directionalLight
           position={[-3, 1, -2]}
           intensity={0.8}
-          color="#E8A020"
+          color="#B89642"
         />
         <pointLight position={[0, 2, -3]} intensity={0.4} color="#3A9CF8" />
         <DroneModel position={[0, 0.1, 0]} scrollProgress={scrollProgress} />

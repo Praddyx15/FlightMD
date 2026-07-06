@@ -30,10 +30,10 @@ export function BatteryChart({ data }: Props) {
           <LineChart data={chartData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
             <CartesianGrid stroke="rgba(255,255,255,0.04)" />
             <XAxis dataKey="t" tickFormatter={(v) => `${v}s`} tick={{ fontSize: 10, fill: "rgba(255,255,255,0.35)" }} />
-            <YAxis yAxisId="v" orientation="left" tick={{ fontSize: 10, fill: "#E8A020" }} />
+            <YAxis yAxisId="v" orientation="left" tick={{ fontSize: 10, fill: "#B89642" }} />
             <YAxis yAxisId="i" orientation="right" tick={{ fontSize: 10, fill: "#3A9CF8" }} />
-            <Tooltip contentStyle={{ background: "#0E1428", border: "1px solid rgba(255,255,255,0.1)", fontSize: 11 }} />
-            <Line yAxisId="v" type="monotone" dataKey="v" stroke="#E8A020" strokeWidth={1.5} dot={false} name="Voltage (V)" />
+            <Tooltip contentStyle={{ background: "#171717", border: "1px solid rgba(255,255,255,0.1)", fontSize: 11 }} />
+            <Line yAxisId="v" type="monotone" dataKey="v" stroke="#B89642" strokeWidth={1.5} dot={false} name="Voltage (V)" />
             <Line yAxisId="i" type="monotone" dataKey="i" stroke="#3A9CF8" strokeWidth={1} dot={false} name="Current (A)" />
           </LineChart>
         </ResponsiveContainer>

@@ -121,7 +121,7 @@ export function FindingCard({ finding }: { finding: Finding }) {
                       <td className="py-1.5 mono text-white/70 font-bold">{pc.param_name}</td>
                       <td className="py-1.5 mono text-right text-white/50">{pc.current_value}</td>
                       <td className="py-1.5 mono text-right font-bold"
-                        style={{ color: "#E8A020" }}>{pc.suggested_value}</td>
+                        style={{ color: "#B89642" }}>{pc.suggested_value}</td>
                       <td className="py-1.5 text-right text-white/30 capitalize hidden sm:table-cell">
                         {pc.change_direction}
                       </td>

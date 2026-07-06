@@ -10,7 +10,6 @@ import { UploadProgress } from "@/components/upload/UploadProgress";
 import { uploadLog, getReports, type ReportSummary } from "@/lib/api";
 import { gradeColour, scoreColour } from "@/lib/utils";
 import { FileText, Calendar, Clock, Cloud, ShieldCheck, Tag, ArrowLeftRight, TrendingUp } from "lucide-react";
-import Radar from "@/components/shared/Radar";
 import GradientText from "@/components/shared/GradientText";
 import MagicBento from "@/components/shared/MagicBento";
 
@@ -118,7 +117,7 @@ export default function HomePage() {
         <h1 className="text-4xl sm:text-5xl font-bold mb-4 text-slate-100 flex flex-col sm:flex-row items-center justify-center gap-2">
           <span>Your drone&apos;s flight log,</span>
           <GradientText
-            colors={["#8EC970", "#D8F3C9", "#4E9F3D"]}
+            colors={["#B89642", "#E7C25B", "#D1AE52"]}
             animationSpeed={6}
             showBorder={false}
             className="text-4xl sm:text-5xl font-bold"
@@ -130,25 +129,6 @@ export default function HomePage() {
           Upload a PX4, ArduPilot, or MAVLink telemetry log.
           Get a deterministic diagnostic report in ~20 seconds — no AI required. Free, open-source, no login required.
         </p>
-        <div className="relative w-full h-72 sm:h-96 -my-4 overflow-hidden rounded-xl">
-          <Radar
-            speed={1.0}
-            scale={0.6}
-            ringCount={5}
-            spokeCount={6}
-            ringThickness={0.03}
-            spokeThickness={0.005}
-            sweepSpeed={0.8}
-            sweepWidth={1.5}
-            sweepLobes={1}
-            color="#8EC970"
-            backgroundColor="#060B08"
-            falloff={1.5}
-            brightness={0.8}
-            enableMouseInteraction={true}
-            mouseInfluence={0.05}
-          />
-        </div>
       </div>
 
       {/* Upload card */}
@@ -170,7 +150,7 @@ export default function HomePage() {
                 onChange={(e) => setAirframeLabel(e.target.value)}
                 placeholder="e.g. Quad-1 — tag it to track trends across flights"
                 maxLength={40}
-                className="w-full px-3 py-2 rounded-lg text-sm bg-slate-950 border border-slate-800 text-white/80 placeholder:text-white/25 focus:outline-none focus:border-[#E8A020]/50"
+                className="w-full px-3 py-2 rounded-lg text-sm bg-slate-950 border border-slate-800 text-white/80 placeholder:text-white/25 focus:outline-none focus:border-gold-500/50"
               />
               <p className="text-xxs text-white/25 mt-1">
                 Untagged flights stay ephemeral and expire in 1 hour, as always. Tagging
@@ -197,7 +177,7 @@ export default function HomePage() {
       <div className="space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <h2 className="text-xl font-bold text-slate-100 flex items-center space-x-2">
-            <ShieldCheck className="w-5 h-5 text-indigo-400" />
+            <ShieldCheck className="w-5 h-5 text-gold-500" />
             <span>Flight Log Hub</span>
           </h2>
           <div className="flex items-center gap-3">
@@ -241,7 +221,7 @@ export default function HomePage() {
                     checked={compareSelection.includes(item.report_id)}
                     onChange={() => toggleCompareSelection(item.report_id)}
                     onClick={(e) => e.stopPropagation()}
-                    className="w-4 h-4 mt-1.5 accent-[#E8A020] flex-shrink-0"
+                    className="w-4 h-4 mt-1.5 accent-[#B89642] flex-shrink-0"
                     title="Select to compare"
                   />
                   <div className="space-y-1.5 flex-1 min-w-0">
@@ -262,7 +242,7 @@ export default function HomePage() {
                         <a
                           href={`/airframe/${encodeURIComponent(item.airframe_label)}`}
                           onClick={(e) => e.stopPropagation()}
-                          className="flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-semibold border-indigo-500/40 bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25 transition-colors"
+                          className="flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-semibold border-gold-500/40 bg-gold-500/15 text-gold-300 hover:bg-gold-500/25 transition-colors"
                           title="View trend history for this airframe"
                         >
                           <TrendingUp className="w-3 h-3" />

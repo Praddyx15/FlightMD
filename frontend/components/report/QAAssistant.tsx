@@ -155,7 +155,7 @@ export default function QAAssistant({ report }: QAAssistantProps) {
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
       <div className="flex items-center justify-between border-b border-slate-800 pb-4">
         <div className="flex items-center space-x-2">
-          <div className="p-2 bg-indigo-500/10 text-indigo-400 rounded-lg">
+          <div className="p-2 bg-gold-500/10 text-gold-500 rounded-lg">
             <Sparkles className="w-5 h-5" />
           </div>
           <div>
@@ -176,7 +176,7 @@ export default function QAAssistant({ report }: QAAssistantProps) {
             disabled={aiUnavailable}
             onClick={() => setUseAI((v) => !v)}
             className={`relative h-5 w-9 rounded-full transition-colors ${
-              useAI && !aiUnavailable ? "bg-indigo-600" : "bg-slate-700"
+              useAI && !aiUnavailable ? "bg-gold-600" : "bg-slate-700"
             } ${aiUnavailable ? "opacity-40 cursor-not-allowed" : ""}`}
             title={aiUnavailable ? "AI assistant is not configured on this server" : ""}
           >
@@ -199,7 +199,7 @@ export default function QAAssistant({ report }: QAAssistantProps) {
           history.map((item, idx) => (
             <div key={idx} className="space-y-3 border-b border-slate-800/50 pb-4 last:border-0 last:pb-0">
               <div className="flex justify-end">
-                <div className="bg-indigo-600/90 text-white rounded-2xl rounded-tr-none px-4 py-2 text-sm max-w-[80%] shadow-md">
+                <div className="bg-gold-600/90 text-white rounded-2xl rounded-tr-none px-4 py-2 text-sm max-w-[80%] shadow-md">
                   {item.query}
                 </div>
               </div>
@@ -230,7 +230,7 @@ export default function QAAssistant({ report }: QAAssistantProps) {
                       {item.matchedParams.map((p, pIdx) => (
                         <div key={pIdx} className="bg-slate-900/50 p-2 rounded-lg border border-slate-800 flex items-center justify-between">
                           <div>
-                            <span className="text-xs font-mono text-indigo-400">{p.param_name}</span>
+                            <span className="text-xs font-mono text-gold-500">{p.param_name}</span>
                             <p className="text-xxs text-slate-400">{p.reason}</p>
                           </div>
                           <div className="text-right text-xs">
@@ -251,9 +251,9 @@ export default function QAAssistant({ report }: QAAssistantProps) {
           <div className="flex justify-start">
             <div className="bg-slate-850 border border-slate-800 text-slate-400 rounded-2xl rounded-tl-none px-4 py-3 text-sm flex items-center gap-2">
               <span className="flex gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce [animation-delay:-0.3s]" />
-                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce [animation-delay:-0.15s]" />
-                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce" />
+                <span className="w-1.5 h-1.5 rounded-full bg-gold-500 animate-bounce [animation-delay:-0.3s]" />
+                <span className="w-1.5 h-1.5 rounded-full bg-gold-500 animate-bounce [animation-delay:-0.15s]" />
+                <span className="w-1.5 h-1.5 rounded-full bg-gold-500 animate-bounce" />
               </span>
               Thinking…
             </div>
@@ -268,7 +268,7 @@ export default function QAAssistant({ report }: QAAssistantProps) {
             key={idx}
             disabled={thinking}
             onClick={() => handleSearch(preset)}
-            className="text-xs bg-slate-800/60 hover:bg-indigo-950/40 hover:text-indigo-300 border border-slate-700/60 hover:border-indigo-800/80 text-slate-300 rounded-full px-3 py-1.5 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="text-xs bg-slate-800/60 hover:bg-gold-900/40 hover:text-gold-300 border border-slate-700/60 hover:border-gold-700/80 text-slate-300 rounded-full px-3 py-1.5 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {preset}
           </button>
@@ -290,14 +290,14 @@ export default function QAAssistant({ report }: QAAssistantProps) {
             disabled={thinking}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Ask about oscillations, vibration thresholds, battery cells..."
-            className="w-full bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-slate-200 rounded-xl px-4 py-3 pl-10 text-sm outline-none transition-all disabled:opacity-50"
+            className="w-full bg-slate-950 border border-slate-800 focus:border-gold-500 focus:ring-1 focus:ring-gold-500 text-slate-200 rounded-xl px-4 py-3 pl-10 text-sm outline-none transition-all disabled:opacity-50"
           />
           <Search className="w-4 h-4 text-slate-500 absolute left-3 top-3.5" />
         </div>
         <button
           type="submit"
           disabled={thinking}
-          className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl px-5 py-3 text-sm font-semibold transition-all duration-200 shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="bg-gold-600 hover:bg-gold-500 text-white rounded-xl px-5 py-3 text-sm font-semibold transition-all duration-200 shadow-lg shadow-gold-600/20 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Send
         </button>

@@ -30,7 +30,7 @@ export const SEVERITY_ORDER: Record<Severity, number> = {
 export function scoreColour(score: number): string {
   if (score >= 90) return "#0DD97C";
   if (score >= 75) return "#3A9CF8";
-  if (score >= 60) return "#E8A020";
+  if (score >= 60) return "#B89642";
   if (score >= 40) return "#FF7A2F";
   return "#FF3D3D";
 }
@@ -41,7 +41,7 @@ export function scoreColour(score: number): string {
 const GRADE_COLOURS: Record<string, string> = {
   A: "#0DD97C",
   B: "#3A9CF8",
-  C: "#E8A020",
+  C: "#B89642",
   D: "#FF7A2F",
   E: "#FF7A2F",
   F: "#FF3D3D",

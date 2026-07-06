@@ -69,7 +69,7 @@ export function MaintenancePanel({ airframeLabel, config, onUpdated }: Maintenan
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h3 className="font-semibold text-slate-100 flex items-center gap-2">
-          <Wrench className="w-5 h-5 text-indigo-400" />
+          <Wrench className="w-5 h-5 text-gold-500" />
           Maintenance
         </h3>
         <a
@@ -142,7 +142,7 @@ export function MaintenancePanel({ airframeLabel, config, onUpdated }: Maintenan
             type="submit"
             disabled={saving || !type.trim()}
             className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-40 transition-all"
-            style={{ background: "#E8A020" }}
+            style={{ background: "#B89642" }}
           >
             Log Entry
           </button>
@@ -200,7 +200,7 @@ export function MaintenancePanel({ airframeLabel, config, onUpdated }: Maintenan
           onClick={saveChecklistAndInterval}
           disabled={saving}
           className="mt-2 px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-40 transition-all"
-          style={{ background: "#E8A020" }}
+          style={{ background: "#B89642" }}
         >
           Save Checklist &amp; Interval
         </button>

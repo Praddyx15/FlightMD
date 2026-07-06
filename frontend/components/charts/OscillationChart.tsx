@@ -36,7 +36,7 @@ export function OscillationChart({ data }: Props) {
             />
             <YAxis tick={{ fontSize: 10, fill: "rgba(255,255,255,0.35)" }} />
             <Tooltip
-              contentStyle={{ background: "#0E1428", border: "1px solid rgba(255,255,255,0.1)", fontSize: 11 }}
+              contentStyle={{ background: "#171717", border: "1px solid rgba(255,255,255,0.1)", fontSize: 11 }}
               labelFormatter={(l) => `${l} Hz`}
               formatter={(v: number) => [v.toFixed(4), "Amplitude"]}
             />
@@ -44,7 +44,7 @@ export function OscillationChart({ data }: Props) {
               label={{ value: `${peakHz.toFixed(1)} Hz`, fill: "#FF7A2F", fontSize: 10, position: "top" }} />
             <Line
               type="monotone" dataKey="amp"
-              stroke="#E8A020" strokeWidth={1.5} dot={false}
+              stroke="#B89642" strokeWidth={1.5} dot={false}
             />
           </LineChart>
         </ResponsiveContainer>

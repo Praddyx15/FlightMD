@@ -1,15 +1,10 @@
 import type { Metadata } from "next";
-import { Space_Grotesk } from "next/font/google";
+import { GeistSans } from "geist/font/sans";
+import { GeistMono } from "geist/font/mono";
 import { SmoothScroll } from "@/components/shared/SmoothScroll";
 import PillNav from "@/components/shared/PillNav";
+import Lightfall from "@/components/shared/Lightfall";
 import "./globals.css";
-
-const spaceGrotesk = Space_Grotesk({
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
-  variable: "--font-display",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: "FlightMD — Your drone's flight log, decoded.",
@@ -33,22 +28,39 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={spaceGrotesk.variable}>
+    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
       <body className="min-h-screen">
+        <div className="fixed inset-0 -z-10 pointer-events-none">
+          <Lightfall
+            colors={["#B89642", "#E7C25B", "#D1AE52"]}
+            backgroundColor="#0A0A0A"
+            speed={0.4}
+            streakCount={3}
+            streakWidth={1.2}
+            streakLength={1.4}
+            glow={1.2}
+            density={0.45}
+            twinkle={1.0}
+            zoom={2.5}
+            backgroundGlow={0.5}
+            opacity={0.6}
+            mouseInteraction={false}
+          />
+        </div>
         <SmoothScroll />
-        <div className="sticky top-0 z-50 w-full py-4 bg-[#060B08]/85 backdrop-blur-md border-b border-white/5 flex justify-center">
+        <div className="sticky top-0 z-50 w-full py-4 bg-[#0A0A0A]/85 backdrop-blur-md border-b border-[#2A2A2A] flex justify-center">
           <PillNav
-            logo="https://api.iconify.design/clarity:airplane-solid.svg?color=%238ec970"
+            logo="https://api.iconify.design/clarity:airplane-solid.svg?color=%23B89642"
             logoAlt="FlightMD Logo"
             items={[
               { label: 'Home', href: '/' },
               { label: 'GitHub', href: 'https://github.com/Praddyx15/FlightMD' },
               { label: 'API Docs', href: 'https://flightmd-api.onrender.com/docs' }
             ]}
-            baseColor="#060B08"
-            pillColor="#8EC970"
-            hoveredPillTextColor="#060B08"
-            pillTextColor="#8EC970"
+            baseColor="#111111"
+            pillColor="#B89642"
+            hoveredPillTextColor="#0A0A0A"
+            pillTextColor="#F5F5F2"
             initialLoadAnimation={true}
           />
         </div>

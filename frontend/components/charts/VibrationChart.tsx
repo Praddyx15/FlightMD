@@ -31,13 +31,13 @@ export function VibrationChart({ data }: Props) {
             <CartesianGrid stroke="rgba(255,255,255,0.04)" />
             <XAxis dataKey="t" tickFormatter={(v) => `${v}s`} tick={{ fontSize: 10, fill: "rgba(255,255,255,0.35)" }} />
             <YAxis tick={{ fontSize: 10, fill: "rgba(255,255,255,0.35)" }} />
-            <Tooltip contentStyle={{ background: "#0E1428", border: "1px solid rgba(255,255,255,0.1)", fontSize: 11 }}
+            <Tooltip contentStyle={{ background: "#171717", border: "1px solid rgba(255,255,255,0.1)", fontSize: 11 }}
               labelFormatter={(l) => `${l}s`} />
             <ReferenceLine y={30} stroke="#FF3D3D" strokeDasharray="3 3" />
             <ReferenceLine y={-30} stroke="#FF3D3D" strokeDasharray="3 3" />
             <Line type="monotone" dataKey="x" stroke="#3A9CF8" strokeWidth={1} dot={false} name="X" />
             <Line type="monotone" dataKey="y" stroke="#0DD97C" strokeWidth={1} dot={false} name="Y" />
-            <Line type="monotone" dataKey="z" stroke="#E8A020" strokeWidth={1} dot={false} name="Z" />
+            <Line type="monotone" dataKey="z" stroke="#B89642" strokeWidth={1} dot={false} name="Z" />
           </LineChart>
         </ResponsiveContainer>
       </div>

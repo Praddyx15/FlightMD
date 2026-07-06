@@ -3,40 +3,56 @@
 @tailwind utilities;
 
 :root {
-  --bg-primary:   #060B08; /* Deep Obsidian Pine */
-  --bg-card:      #0D1510; /* Rich Forest Moss */
-  --bg-elevated:  #142019; /* Muted Sage-Pine */
-  --accent:       #8EC970; /* Fresh Sprout Green */
-  --accent-amber: #E8A020; /* Harvest Gold */
-  --border:       rgba(142, 201, 112, 0.08);
-  --text-primary: #F0F4F1; /* Organic Off-white */
-  --text-muted:   #81998E; /* Soft Mossy Gray */
-  --mono:         'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+  --bg-primary:     #0A0A0A;
+  --bg-card:        #111111;
+  --bg-elevated:    #171717;
+  --surface:        #111111;
+  --surface-2:      #171717;
+  --accent:         #B89642; /* Muted gold */
+  --accent-amber:   #B89642;
+  --gold:           #B89642;
+  --gold-light:     #D1AE52;
+  --gold-hover:     #C7A44B;
+  --gold-dark:      #6F5820;
+  --border:         #2A2A2A;
+  --text-primary:   #F5F5F2;
+  --text-secondary: #A2A2A2;
+  --text-muted:     #6E6E6E;
+  --mono:           var(--font-geist-mono), 'JetBrains Mono', 'Fira Code', monospace;
+  --font-display:   var(--font-geist-sans), sans-serif;
 }
 
 * { box-sizing: border-box; }
 
-html, body {
+/* Only `html` carries an opaque background — it's the canvas fallback
+   shown before/without the WebGL layer. `body` must stay transparent:
+   since html already has a non-'none' background, body's background
+   would NOT propagate to the canvas but would instead paint as body's
+   own in-flow box, which renders in front of any position:fixed
+   z-index:-10 child (like the Lightfall background), hiding it entirely. */
+html {
   background-color: var(--bg-primary);
-  background-image: 
-    radial-gradient(at 0% 0%, rgba(142, 201, 112, 0.07) 0px, transparent 50%),
-    radial-gradient(at 100% 100%, rgba(232, 160, 32, 0.04) 0px, transparent 50%),
-    radial-gradient(at 50% 20%, rgba(20, 32, 25, 0.4) 0px, transparent 60%);
+  background-image:
+    radial-gradient(at 0% 0%, rgba(184, 150, 66, 0.05) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, rgba(184, 150, 66, 0.03) 0px, transparent 50%),
+    radial-gradient(at 50% 20%, rgba(23, 23, 23, 0.4) 0px, transparent 60%);
   background-attachment: fixed;
+}
+
+body {
+  background-color: transparent;
   color: var(--text-primary);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
 /* Monospace for all numbers and param names */
 .mono { font-family: var(--mono); }
 
-/* Distinctive display face for headings — avoids the generic
-   Inter/system-font-everywhere look while keeping body text on the fast,
-   readable system stack. */
+/* Distinctive display face for headings */
 h1, h2, h3 {
-  font-family: var(--font-display), system-ui, sans-serif;
-  letter-spacing: -0.01em;
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
 }
 
 /* Custom scrollbar */
@@ -57,7 +73,7 @@ h1, h2, h3 {
   100% { background-position: 200% center; }
 }
 .progress-shimmer {
-  background: linear-gradient(90deg, #E8A020 0%, #FFD080 50%, #E8A020 100%);
+  background: linear-gradient(90deg, #B89642 0%, #E7C25B 50%, #B89642 100%);
   background-size: 200% auto;
   animation: progress-shimmer 1.5s linear infinite;
 }

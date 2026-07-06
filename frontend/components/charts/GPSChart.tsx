@@ -30,7 +30,7 @@ export function GPSChart({ data }: Props) {
             <XAxis dataKey="t" tickFormatter={(v) => `${v}s`} tick={{ fontSize: 10, fill: "rgba(255,255,255,0.35)" }} />
             <YAxis yAxisId="sats" orientation="left" tick={{ fontSize: 10, fill: "#0DD97C" }} />
             <YAxis yAxisId="hdop" orientation="right" tick={{ fontSize: 10, fill: "#FF7A2F" }} />
-            <Tooltip contentStyle={{ background: "#0E1428", border: "1px solid rgba(255,255,255,0.1)", fontSize: 11 }} />
+            <Tooltip contentStyle={{ background: "#171717", border: "1px solid rgba(255,255,255,0.1)", fontSize: 11 }} />
             <ReferenceLine yAxisId="hdop" y={2.0} stroke="#FF7A2F" strokeDasharray="3 3" />
             <Line yAxisId="sats" type="stepAfter" dataKey="sats" stroke="#0DD97C" strokeWidth={1.5} dot={false} name="Satellites" />
             <Line yAxisId="hdop" type="monotone" dataKey="hdop" stroke="#FF7A2F" strokeWidth={1} dot={false} name="HDOP" />

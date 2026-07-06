@@ -86,7 +86,7 @@ function ComparePageContent() {
       <div className="max-w-2xl mx-auto px-4 py-20 text-center">
         <div className="text-red-400 text-xl mb-3">⚠️ Could Not Compare</div>
         <p className="text-white/50">{error}</p>
-        <a href="/" className="mt-6 inline-block text-sm underline" style={{ color: "#E8A020" }}>
+        <a href="/" className="mt-6 inline-block text-sm underline" style={{ color: "#B89642" }}>
           ← Back home
         </a>
       </div>

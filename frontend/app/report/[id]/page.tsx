@@ -73,7 +73,7 @@ export default function ReportPage() {
         <p className="text-white/50">
           {fetchError || "Could not load status. Reports expire after 1 hour."}
         </p>
-        <a href="/" className="mt-6 inline-block text-sm underline" style={{ color: "#E8A020" }}>
+        <a href="/" className="mt-6 inline-block text-sm underline" style={{ color: "#B89642" }}>
           ← Analyse another log
         </a>
       </div>
@@ -85,7 +85,7 @@ export default function ReportPage() {
       <div className="max-w-2xl mx-auto px-4 py-20 text-center">
         <div className="text-red-400 text-xl mb-3">❌ Analysis Failed</div>
         <p className="text-white/50">{status.error || "Unknown error. The log may be corrupted."}</p>
-        <a href="/" className="mt-6 inline-block text-sm underline" style={{ color: "#E8A020" }}>
+        <a href="/" className="mt-6 inline-block text-sm underline" style={{ color: "#B89642" }}>
           ← Try again
         </a>
       </div>
@@ -100,7 +100,7 @@ export default function ReportPage() {
     return (
       <div className="max-w-xl mx-auto px-4 py-24 text-center">
         <div className="text-5xl mb-6">✈️</div>
-        <h2 className="text-2xl font-bold mb-2" style={{ color: "#E8A020" }}>
+        <h2 className="text-2xl font-bold mb-2" style={{ color: "#B89642" }}>
           Analysing your flight log
         </h2>
         <p className="text-white/50 mb-8 text-sm">{message}</p>
@@ -111,7 +111,7 @@ export default function ReportPage() {
             className="h-full rounded-full transition-all duration-500"
             style={{
               width: `${progress}%`,
-              background: "linear-gradient(90deg, #E8A020, #FFD080)",
+              background: "linear-gradient(90deg, #B89642, #E7C25B)",
             }}
           />
         </div>

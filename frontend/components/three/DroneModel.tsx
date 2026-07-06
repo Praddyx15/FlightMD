@@ -15,9 +15,9 @@ import * as THREE from "three";
  * not a cartoon mascot.
  */
 
-const CHASSIS_COLOUR = "#141C35";
-const ARM_COLOUR = "#0E1428";
-const ACCENT_COLOUR = "#E8A020";
+const CHASSIS_COLOUR = "#171717";
+const ARM_COLOUR = "#171717";
+const ACCENT_COLOUR = "#B89642";
 const PROP_COLOUR = "#3A4560";
 
 const ARM_ANGLES = [45, 135, 225, 315]; // degrees — X configuration
@@ -59,7 +59,7 @@ function Arm({ angleDeg }: { angleDeg: number }) {
         {/* Propeller hub */}
         <mesh position={[0, 0.13, 0]}>
           <cylinderGeometry args={[0.03, 0.03, 0.06, 12]} />
-          <meshStandardMaterial color="#080D1A" roughness={0.4} metalness={0.6} />
+          <meshStandardMaterial color="#0A0A0A" roughness={0.4} metalness={0.6} />
         </mesh>
         {/* Propeller — abstracted as a thin translucent disc suggesting a spin blur,
             not literal blade geometry (reads as "product visualization", not a toy). */}
@@ -150,7 +150,7 @@ export function DroneModel({ scrollProgress, ...props }: DroneModelProps) {
       <group position={[0, -0.22, 0.32]}>
         <mesh>
           <cylinderGeometry args={[0.05, 0.05, 0.14, 12]} />
-          <meshStandardMaterial color="#080D1A" roughness={0.35} metalness={0.5} />
+          <meshStandardMaterial color="#0A0A0A" roughness={0.35} metalness={0.5} />
         </mesh>
         <mesh position={[0, -0.09, 0.02]}>
           <sphereGeometry args={[0.075, 20, 16]} />

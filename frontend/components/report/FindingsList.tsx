@@ -108,7 +108,7 @@ function FilterPill({
       onClick={onClick}
       className="text-xs px-2.5 py-1 rounded-full transition-all duration-150 font-medium"
       style={{
-        color: active ? "#080D1A" : colour,
+        color: active ? "#0A0A0A" : colour,
         background: active ? colour : `${colour}22`,
         border: `1px solid ${colour}55`,
       }}

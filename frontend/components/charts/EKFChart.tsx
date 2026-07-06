@@ -4,7 +4,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContai
 
 interface Props { data: Record<string, unknown>; }
 
-const COLOURS = ["#3A9CF8", "#E8A020", "#0DD97C", "#FF7A2F", "#CC88FF"];
+const COLOURS = ["#3A9CF8", "#B89642", "#0DD97C", "#FF7A2F", "#CC88FF"];
 
 export function EKFChart({ data }: Props) {
   const ts     = (data.timestamps    as number[]) ?? [];
@@ -34,7 +34,7 @@ export function EKFChart({ data }: Props) {
             <CartesianGrid stroke="rgba(255,255,255,0.04)" />
             <XAxis dataKey="t" tickFormatter={(v) => `${v}s`} tick={{ fontSize: 10, fill: "rgba(255,255,255,0.35)" }} />
             <YAxis tick={{ fontSize: 10, fill: "rgba(255,255,255,0.35)" }} />
-            <Tooltip contentStyle={{ background: "#0E1428", border: "1px solid rgba(255,255,255,0.1)", fontSize: 10 }} />
+            <Tooltip contentStyle={{ background: "#171717", border: "1px solid rgba(255,255,255,0.1)", fontSize: 10 }} />
             <Legend wrapperStyle={{ fontSize: 9, color: "rgba(255,255,255,0.4)" }} />
             <ReferenceLine y={1.0} stroke="#FF3D3D" strokeDasharray="3 3"
               label={{ value: "fail", fill: "#FF3D3D", fontSize: 9, position: "right" }} />

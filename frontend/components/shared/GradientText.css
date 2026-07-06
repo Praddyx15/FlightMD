@@ -1,7 +1,7 @@
 .animated-gradient-text {
   position: relative;
-  margin: 0 auto;
-  display: flex;
+  margin: 0;
+  display: inline-flex;
   max-width: fit-content;
   flex-direction: row;
   align-items: center;
@@ -40,7 +40,7 @@
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  background-color: #120F17;
+  background-color: #0A0A0A;
   z-index: -1;
 }
 

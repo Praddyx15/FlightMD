@@ -34,8 +34,8 @@ const PillNav: React.FC<PillNavProps> = ({
   className = '',
   ease = 'power3.easeOut',
   baseColor = '#fff',
-  pillColor = '#120F17',
-  hoveredPillTextColor = '#120F17',
+  pillColor = '#B89642',
+  hoveredPillTextColor = '#0A0A0A',
   pillTextColor,
   onMobileMenuClick,
   initialLoadAnimation = true

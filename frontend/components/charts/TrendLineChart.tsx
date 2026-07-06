@@ -27,7 +27,7 @@ const PADDING = { top: 12, right: 12, bottom: 22, left: 34 };
  */
 export function TrendLineChart({
   points,
-  color = "#E8A020",
+  color = "#B89642",
   height = 160,
   unit = "",
   yDomain,
@@ -98,7 +98,7 @@ export function TrendLineChart({
           <circle
             cx={xFor(i)} cy={yFor(p.y)} r={hoverIdx === i ? 5 : 3.5}
             fill={color}
-            stroke="#080D1A" strokeWidth={1.5}
+            stroke="#0A0A0A" strokeWidth={1.5}
             onMouseEnter={() => setHoverIdx(i)}
           />
           {/* wider invisible hit target */}
