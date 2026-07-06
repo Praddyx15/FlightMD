@@ -48,7 +48,7 @@ export default function RootLayout({
           />
         </div>
         <SmoothScroll />
-        <div className="sticky top-0 z-50 w-full py-4 bg-[#0A0A0A]/85 backdrop-blur-md border-b border-[#2A2A2A] flex justify-center">
+        <div className="sticky top-0 z-50 w-full py-4 flex justify-center pointer-events-none [&>*]:pointer-events-auto">
           <PillNav
             logo="https://api.iconify.design/clarity:airplane-solid.svg?color=%23B89642"
             logoAlt="FlightMD Logo"

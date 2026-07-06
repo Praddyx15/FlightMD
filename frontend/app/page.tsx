@@ -12,6 +12,7 @@ import { gradeColour, scoreColour } from "@/lib/utils";
 import { FileText, Calendar, Clock, Cloud, ShieldCheck, Tag, ArrowLeftRight, TrendingUp, Database } from "lucide-react";
 import GradientText from "@/components/shared/GradientText";
 import MagicBento from "@/components/shared/MagicBento";
+import { ScoreScale } from "@/components/shared/ScoreScale";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -282,9 +283,9 @@ export default function HomePage() {
                         <span>{(item.duration_seconds / 60).toFixed(1)} mins</span>
                       </span>
                       {item.weather_desc && item.weather_desc !== "N/A" && (
-                        <span className="flex items-center space-x-1 max-w-[200px] sm:max-w-xs truncate">
-                          <Cloud className="w-3.5 h-3.5 text-slate-500" />
-                          <span className="truncate">{item.weather_desc}</span>
+                        <span className="flex items-center gap-1">
+                          <Cloud className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                          <span>{item.weather_desc}</span>
                         </span>
                       )}
                       <span className="font-mono text-slate-500">
@@ -312,6 +313,12 @@ export default function HomePage() {
       <div className="space-y-6">
         <h2 className="text-xl font-bold text-slate-100">Analysis Capabilities</h2>
         <MagicBento />
+      </div>
+
+      {/* Scoring scale */}
+      <div className="space-y-4">
+        <h2 className="text-xl font-bold text-slate-100">How Scoring Works</h2>
+        <ScoreScale />
       </div>
     </div>
   );

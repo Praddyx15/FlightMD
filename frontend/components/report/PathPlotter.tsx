@@ -1,11 +1,17 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { FlightMDReport } from "../../lib/types";
-import { Compass, RotateCcw, Map, Wind, Radio } from "lucide-react";
+import { Compass, RotateCcw, Map, Box, Wind, Radio } from "lucide-react";
 import {
   FlightPathScene, type FlightPathCameraHandle, type PathColorMode,
 } from "@/components/three/FlightPathScene";
+
+const FlightPathMap = dynamic(
+  () => import("./FlightPathMap").then((m) => m.FlightPathMap),
+  { ssr: false }
+);
 
 interface PathPlotterProps {
   report: FlightMDReport;
@@ -20,6 +26,7 @@ export default function PathPlotter({ report }: PathPlotterProps) {
   const gpsPath = report.metadata.gps_path;
   const cameraApi = useRef<FlightPathCameraHandle | null>(null);
   const [colorMode, setColorMode] = useState<PathColorMode>("standard");
+  const [viewMode, setViewMode] = useState<"map" | "3d">("map");
 
   const hasWindData = useMemo(
     () => (report.metadata.gps_path_wind_speed_ms ?? []).some((v) => v !== null && v !== undefined),
@@ -49,6 +56,24 @@ export default function PathPlotter({ report }: PathPlotterProps) {
           <h3 className="font-semibold text-slate-100">Flight Path</h3>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex bg-slate-850 rounded-lg p-1 border border-slate-800 gap-1">
+            <button
+              onClick={() => setViewMode("map")}
+              title="Real-world map view"
+              className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1 ${viewMode === "map" ? "bg-slate-700 text-slate-100" : "text-slate-400 hover:text-slate-200"}`}
+            >
+              <Map className="w-3.5 h-3.5" />
+              Map
+            </button>
+            <button
+              onClick={() => setViewMode("3d")}
+              title="3D scene view"
+              className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1 ${viewMode === "3d" ? "bg-slate-700 text-slate-100" : "text-slate-400 hover:text-slate-200"}`}
+            >
+              <Box className="w-3.5 h-3.5" />
+              3D
+            </button>
+          </div>
           {(hasWindData || hasSignalData) && (
             <div className="flex bg-slate-850 rounded-lg p-1 border border-slate-800 gap-1">
               <button
@@ -80,39 +105,51 @@ export default function PathPlotter({ report }: PathPlotterProps) {
               )}
             </div>
           )}
-          <div className="flex bg-slate-850 rounded-lg p-1 border border-slate-800 gap-1">
-            <button
-              onClick={() => cameraApi.current?.top()}
-              title="Top-down view"
-              className="px-3 py-1.5 rounded-md text-xs font-semibold transition-all text-slate-400 hover:text-slate-200 flex items-center gap-1.5"
-            >
-              <Compass className="w-3.5 h-3.5" />
-              Top View
-            </button>
-            <button
-              onClick={() => cameraApi.current?.reset()}
-              title="Reset to default orbit view"
-              className="px-3 py-1.5 rounded-md text-xs font-semibold transition-all text-slate-400 hover:text-slate-200 flex items-center gap-1.5"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              Reset View
-            </button>
-          </div>
+          {viewMode === "3d" && (
+            <div className="flex bg-slate-850 rounded-lg p-1 border border-slate-800 gap-1">
+              <button
+                onClick={() => cameraApi.current?.top()}
+                title="Top-down view"
+                className="px-3 py-1.5 rounded-md text-xs font-semibold transition-all text-slate-400 hover:text-slate-200 flex items-center gap-1.5"
+              >
+                <Compass className="w-3.5 h-3.5" />
+                Top View
+              </button>
+              <button
+                onClick={() => cameraApi.current?.reset()}
+                title="Reset to default orbit view"
+                className="px-3 py-1.5 rounded-md text-xs font-semibold transition-all text-slate-400 hover:text-slate-200 flex items-center gap-1.5"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Reset View
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
       <div className="relative bg-slate-950 rounded-xl overflow-hidden border border-slate-850 h-[380px]">
-        <FlightPathScene
-          gpsPath={gpsPath}
-          className="w-full h-full"
-          cameraApiRef={cameraApi}
-          colorMode={colorMode}
-          windSpeedPath={report.metadata.gps_path_wind_speed_ms}
-          signalQualityPath={report.metadata.gps_path_hdop}
-        />
+        {viewMode === "map" ? (
+          <FlightPathMap
+            gpsPath={gpsPath}
+            className="w-full h-full"
+            colorMode={colorMode}
+            windSpeedPath={report.metadata.gps_path_wind_speed_ms}
+            signalQualityPath={report.metadata.gps_path_hdop}
+          />
+        ) : (
+          <FlightPathScene
+            gpsPath={gpsPath}
+            className="w-full h-full"
+            cameraApiRef={cameraApi}
+            colorMode={colorMode}
+            windSpeedPath={report.metadata.gps_path_wind_speed_ms}
+            signalQualityPath={report.metadata.gps_path_hdop}
+          />
+        )}
 
         {/* Legend */}
-        <div className="absolute bottom-4 left-4 bg-slate-900/90 border border-slate-800 rounded-lg px-3 py-2 text-xxs text-slate-300 font-mono space-y-1 backdrop-blur-sm pointer-events-none">
+        <div className="absolute bottom-4 left-4 z-[500] bg-slate-900/90 border border-slate-800 rounded-lg px-3 py-2 text-xxs text-slate-300 font-mono space-y-1 backdrop-blur-sm pointer-events-none">
           {colorMode === "standard" ? (
             <>
               <div className="flex items-center space-x-2">
@@ -138,17 +175,19 @@ export default function PathPlotter({ report }: PathPlotterProps) {
         </div>
 
         {/* Stats */}
-        <div className="absolute top-4 right-4 bg-slate-900/90 border border-slate-800 rounded-lg px-3 py-2 text-xxs text-slate-300 font-mono space-y-1 backdrop-blur-sm pointer-events-none">
+        <div className="absolute top-4 right-4 z-[500] bg-slate-900/90 border border-slate-800 rounded-lg px-3 py-2 text-xxs text-slate-300 font-mono space-y-1 backdrop-blur-sm pointer-events-none">
           <div>Max Altitude: <span className="text-emerald-400">{maxAlt.toFixed(1)} m</span></div>
           {report.metadata.total_distance_m && (
             <div>Distance: <span className="text-gold-500">{report.metadata.total_distance_m.toFixed(0)} m</span></div>
           )}
         </div>
 
-        {/* Interaction hint */}
-        <div className="absolute bottom-4 right-4 text-xxs text-slate-500 pointer-events-none">
-          Drag to orbit · Scroll to zoom
-        </div>
+        {/* Interaction hint (3D only — map controls are self-explanatory) */}
+        {viewMode === "3d" && (
+          <div className="absolute bottom-4 right-4 text-xxs text-slate-500 pointer-events-none">
+            Drag to orbit · Scroll to zoom
+          </div>
+        )}
       </div>
     </div>
   );

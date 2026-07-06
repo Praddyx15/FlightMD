@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import type { Finding, Severity, Category } from "@/lib/types";
+import type { Finding, Severity } from "@/lib/types";
 import { FindingCard } from "./FindingCard";
+import { GroupedFindingCard } from "./GroupedFindingCard";
+import { groupFindings, isFindingGroup } from "@/lib/groupFindings";
 
 const SEVERITY_ORDER: Record<Severity, number> = {
   critical: 0, warning: 1, info: 2, good: 3,
@@ -26,6 +28,8 @@ export function FindingsList({ findings }: Props) {
   const filtered = filter === "all"
     ? sorted
     : sorted.filter((f) => f.severity === filter);
+
+  const grouped = groupFindings(filtered);
 
   const counts = ALL_SEVERITIES.reduce(
     (acc, s) => ({ ...acc, [s]: findings.filter((f) => f.severity === s).length }),
@@ -78,14 +82,14 @@ export function FindingsList({ findings }: Props) {
       </div>
 
       <div className="space-y-3">
-        {filtered.map((f, idx) => (
+        {grouped.map((g, idx) => (
           <motion.div
-            key={f.id}
+            key={isFindingGroup(g) ? `group-${g.groupTitle}-${g.items[0].id}` : g.id}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.25, delay: Math.min(idx * 0.05, 0.5) }}
           >
-            <FindingCard finding={f} />
+            {isFindingGroup(g) ? <GroupedFindingCard group={g} /> : <FindingCard finding={g} />}
           </motion.div>
         ))}
       </div>

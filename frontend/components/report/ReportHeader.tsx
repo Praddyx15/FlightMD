@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import type { FlightMDReport } from "@/lib/types";
 import { ScoreCircle } from "@/components/shared/ScoreCircle";
+import { ModulePerformanceChart } from "@/components/charts/ModulePerformanceChart";
 import { formatDuration, formatFileSize, gradeColour } from "@/lib/utils";
 
 export function ReportHeader({ report }: { report: FlightMDReport }) {
@@ -98,6 +99,14 @@ export function ReportHeader({ report }: { report: FlightMDReport }) {
           </div>
         </div>
       </div>
+
+      {/* Module performance breakdown */}
+      <div className="mt-6 pt-6 border-t border-white/5">
+        <h3 className="text-xs text-white/35 uppercase tracking-wider mb-3">
+          Module Performance
+        </h3>
+        <ModulePerformanceChart analyserResults={report.analyser_results} />
+      </div>
     </motion.div>
   );
 }
@@ -119,7 +128,7 @@ function MetaItem({
         {label}
       </div>
       <div
-        className={`text-white/80 font-medium truncate ${mono ? "font-mono text-[10px]" : ""}`}
+        className={`text-white/80 font-medium break-words ${mono ? "font-mono text-[10px]" : ""}`}
       >
         {value}
       </div>
