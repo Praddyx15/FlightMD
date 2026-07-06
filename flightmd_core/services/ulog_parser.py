@@ -40,6 +40,39 @@ TOPIC_ALIASES: dict[str, list[str]] = {
     "sensor_gnss_relative": ["sensor_gnss_relative_0", "sensor_gnss_relative"],
 }
 
+# Every raw topic name any analyser or metadata field reads (base names —
+# pyulog returns every multi-instance under the same base name, and our own
+# _extract_topics adds the _0/_1/_2 suffixes afterwards). Passed to pyulog's
+# message_name_filter_list by default so it builds DataFrames for fewer
+# topics (lower memory, slightly less post-processing).
+#
+# NOTE: this does NOT fix pathologically slow parsing on very
+# message-dense logs. Profiled on a real 303MB/67-topic/~2.3M-message
+# quadrotor log: message_name_filter_list still took ~190s even
+# restricted to a single topic. pyulog's _read_file_data scans every
+# message's header sequentially regardless of the filter (it has to,
+# to know each message's type/size before deciding to keep or skip it)
+# — confirmed via cProfile: 218M BufferedReader.read() calls and 105M
+# packet-corruption checks, both independent of the topic filter. This
+# is an upstream pyulog performance ceiling (already on the latest
+# release, 1.2.3), not something this filter list can address. Kept
+# anyway for the memory/DataFrame-construction benefit on the other
+# 49/50 real logs tested, where it's a straightforward win.
+REQUIRED_ULOG_TOPICS: list[str] = [
+    "vehicle_angular_velocity",
+    "angular_velocity",
+    "sensor_accel",
+    "estimator_status",
+    "estimator_innovation_test_ratios",
+    "estimator_sensor_bias",
+    "battery_status",
+    "vehicle_gps_position",
+    "sensor_gnss_relative",
+    "esc_status",
+    "vehicle_status",
+    "vehicle_local_position",
+]
+
 # Flight mode mapping (PX4 nav_state values)
 FLIGHT_MODE_NAMES: dict[int, str] = {
     0:  "Manual",
@@ -69,14 +102,16 @@ class ULogParser:
     def parse(
         self,
         ulog_path: str,
-        load_topic_names: Optional[list[str]] = None,
+        load_topic_names: Optional[list[str]] = REQUIRED_ULOG_TOPICS,
     ) -> tuple[dict[str, pd.DataFrame], dict[str, float], FlightMetadata]:
         """
         Parse a .ulg file.
 
         Args:
             ulog_path: absolute path to the .ulg file
-            load_topic_names: if provided, only load these topics (speeds up parsing)
+            load_topic_names: topics to load (default: only what FlightMD's
+                analysers/metadata actually consume — pass None to load
+                every topic in the file instead, e.g. for debugging)
 
         Returns:
             (topics, params, metadata)
