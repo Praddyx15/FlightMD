@@ -65,7 +65,7 @@ export default function RootLayout({
           />
         </div>
         <main>{children}</main>
-        <footer className="border-t border-white/8 py-6 text-center text-xs text-white/30 mt-16">
+        <footer className="border-t border-white/8 py-6 text-center text-xs text-white/70 mt-16">
           FlightMD v1.0 · MIT License · Pradum Behl · India
           <br className="sm:hidden" />
           <span className="hidden sm:inline"> · </span>

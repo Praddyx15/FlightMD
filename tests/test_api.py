@@ -135,6 +135,86 @@ class TestExportEndpoints:
         resp = await client.get("/export/json/no-such-id")
         assert resp.status_code == 404
 
+    @pytest.mark.asyncio
+    async def test_gpx_export_404_for_unknown(self, client):
+        resp = await client.get("/export/gpx/no-such-id")
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_kml_export_404_for_unknown(self, client):
+        resp = await client.get("/export/kml/no-such-id")
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_gpx_export_422_when_no_gps_path(self, client, tmp_path, monkeypatch):
+        from api.storage import JobStore, job_store
+        from flightmd_core.models.findings import FlightMDReport
+        from flightmd_core.models.metadata import FlightMetadata
+
+        # Redirect disk persistence so this synthetic job never touches the
+        # real api/data/reports/ directory used by an actually-running server.
+        monkeypatch.setattr(JobStore, "DATA_DIR", str(tmp_path))
+
+        job_store.create("no-gps-report")
+        report = FlightMDReport(
+            report_id="no-gps-report", overall_score=85.0, score_label="Good", letter_grade="B",
+            executive_summary="s", metadata=FlightMetadata(duration_seconds=60.0),
+            findings=[], param_change_sheet=[], analyser_results=[],
+            processing_time_ms=10, file_name="f.ulg", file_size_bytes=100,
+        )
+        job_store.complete("no-gps-report", report)
+
+        try:
+            resp = await client.get("/export/gpx/no-gps-report")
+            assert resp.status_code == 422
+        finally:
+            job_store._store.pop("no-gps-report", None)
+
+    @pytest.mark.asyncio
+    async def test_gpx_and_kml_export_succeed_with_gps_path(self, client, tmp_path, monkeypatch):
+        from api.storage import JobStore, job_store
+        from flightmd_core.models.findings import FlightMDReport
+        from flightmd_core.models.metadata import FlightMetadata
+
+        monkeypatch.setattr(JobStore, "DATA_DIR", str(tmp_path))
+
+        job_store.create("with-gps-report")
+        report = FlightMDReport(
+            report_id="with-gps-report", overall_score=85.0, score_label="Good", letter_grade="B",
+            executive_summary="s",
+            metadata=FlightMetadata(
+                duration_seconds=60.0,
+                gps_path=[[37.7749, -122.4194, 10.0], [37.7750, -122.4195, 12.0]],
+            ),
+            findings=[], param_change_sheet=[], analyser_results=[],
+            processing_time_ms=10, file_name="f.ulg", file_size_bytes=100,
+        )
+        job_store.complete("with-gps-report", report)
+
+        try:
+            gpx_resp = await client.get("/export/gpx/with-gps-report")
+            assert gpx_resp.status_code == 200
+            assert gpx_resp.headers["content-type"].startswith("application/gpx+xml")
+            assert b"<trkpt" in gpx_resp.content
+
+            kml_resp = await client.get("/export/kml/with-gps-report")
+            assert kml_resp.status_code == 200
+            assert kml_resp.headers["content-type"].startswith("application/vnd.google-earth.kml+xml")
+            assert b"<coordinates>" in kml_resp.content
+        finally:
+            job_store._store.pop("with-gps-report", None)
+
+
+class TestDatasetStatsEndpoint:
+
+    @pytest.mark.asyncio
+    async def test_returns_count_and_bytes(self, client):
+        resp = await client.get("/dataset/stats")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "contributed_logs" in data
+        assert "total_bytes" in data
+
 
 class TestStorageIntegrity:
 

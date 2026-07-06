@@ -1,6 +1,9 @@
 """
 POST /analyse — accepts a PX4 (.ulg), ArduPilot (.bin), or MAVLink telemetry
 (.tlog) flight log, validates it, kicks off background analysis.
+
+GET /dataset/stats — public count of anonymously-contributed logs, so the
+opt-in checkbox's effect is visible rather than a black box.
 """
 
 import asyncio
@@ -18,6 +21,7 @@ from slowapi.util import get_remote_address
 from api.airframe_store import airframe_store, evaluate_alert_rules
 from api.config import get_settings
 from api.storage import job_store, normalise_airframe_label
+from api.training_data_store import training_data_store
 from api.webhook_notifier import send_alert_webhook
 from flightmd_core.orchestrator import run_analysis
 from flightmd_core.services.ai_enhancer import AIEnhancer
@@ -46,6 +50,7 @@ async def analyse_log(
     request: Request,
     file: UploadFile = File(...),
     airframe_label: Optional[str] = Form(None),
+    contribute_to_dataset: bool = Form(False),
 ) -> dict:
     """
     Accept a PX4 .ulg, ArduPilot .bin, or MAVLink .tlog flight log and begin
@@ -56,6 +61,13 @@ async def analyse_log(
     otherwise the report is ephemeral and expires after 1 hour, same as
     always. Nothing is retained long-term unless the uploader opts in by
     naming their airframe.
+
+    contribute_to_dataset is a separate opt-in: if true, the raw log and
+    its resulting report are saved indefinitely to a growing dataset used
+    to validate (and eventually help train) FlightMD's analysis — with no
+    identifying information about the uploader attached. Independent of
+    airframe_label; an uploader can tag for trends, contribute to the
+    dataset, both, or neither.
 
     Returns immediately with a report_id and estimated processing time.
     Poll GET /status/{report_id} for progress.
@@ -97,6 +109,7 @@ async def analyse_log(
             file_size=file_size,
             log_format=log_format,
             airframe_label=normalise_airframe_label(airframe_label),
+            contribute_to_dataset=contribute_to_dataset,
         )
     )
 
@@ -112,6 +125,14 @@ async def analyse_log(
     }
 
 
+@router.get("/dataset/stats")
+async def dataset_stats() -> dict:
+    """Public count of anonymously-contributed logs and their combined
+    size — so anyone opting in can see the effect, not a black box."""
+    stats = training_data_store.stats()
+    return {"contributed_logs": stats.count, "total_bytes": stats.total_bytes}
+
+
 async def _run_analysis_task(
     report_id: str,
     content: bytes,
@@ -119,6 +140,7 @@ async def _run_analysis_task(
     file_size: int,
     log_format: str,
     airframe_label: Optional[str] = None,
+    contribute_to_dataset: bool = False,
 ) -> None:
     """
     Background task: write file to temp disk, run analysis, update job store.
@@ -157,6 +179,17 @@ async def _run_analysis_task(
 
         if airframe_label:
             await _check_alert_rules(airframe_label, report_id, report)
+
+        if contribute_to_dataset:
+            try:
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(
+                    None, training_data_store.save, content, suffix, log_format, report
+                )
+            except Exception as e:
+                # Best-effort — a failed dataset save must never affect the
+                # already-completed analysis the uploader is waiting on.
+                logger.error(f"Failed to save dataset contribution for {report_id}: {e}")
 
     except Exception as e:
         logger.error(f"Job {report_id} failed: {e}", exc_info=True)

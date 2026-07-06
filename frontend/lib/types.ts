@@ -71,6 +71,7 @@ export interface FlightMetadata {
     rain_sum_mm: number | null;
     description: string;
   } | null;
+  location_name?: string | null;
   gps_path?: [number, number, number][] | null;
   gps_path_wind_speed_ms?: (number | null)[] | null;
   gps_path_hdop?: (number | null)[] | null;

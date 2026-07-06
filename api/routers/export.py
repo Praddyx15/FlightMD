@@ -1,6 +1,8 @@
 """
 GET /export/pdf/{report_id}       — returns WeasyPrint-generated PDF
 GET /export/json/{report_id}      — returns FlightMDReport as downloadable JSON
+GET /export/gpx/{report_id}       — returns flight path as GPX track
+GET /export/kml/{report_id}       — returns flight path as KML LineString
 GET /export/airframe/{label}/pdf  — flight/maintenance record for one airframe
 """
 
@@ -14,6 +16,7 @@ from fastapi.responses import Response
 from api.airframe_store import airframe_store, compute_maintenance_status
 from api.storage import job_store, normalise_airframe_label
 from api.services.pdf_generator import PDFGenerator
+from flightmd_core.services.geo_export import generate_gpx, generate_kml
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -39,6 +42,56 @@ async def export_pdf(report_id: str) -> Response:
         media_type="application/pdf",
         headers={
             "Content-Disposition": f'attachment; filename="flightmd_report_{report_id[:8]}.pdf"'
+        },
+    )
+
+
+@router.get("/export/gpx/{report_id}")
+async def export_gpx(report_id: str) -> Response:
+    job = job_store.get(report_id)
+    if job is None or job.report is None:
+        raise HTTPException(status_code=404, detail="Report not found or expired.")
+    if job.status.value != "complete":
+        raise HTTPException(status_code=202, detail="Analysis still in progress.")
+    if not job.report.metadata.gps_path:
+        raise HTTPException(status_code=422, detail="This flight log has no GPS track to export.")
+
+    try:
+        gpx_bytes = generate_gpx(job.report)
+    except Exception as e:
+        logger.error(f"GPX generation failed for {report_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="GPX generation failed.")
+
+    return Response(
+        content=gpx_bytes,
+        media_type="application/gpx+xml",
+        headers={
+            "Content-Disposition": f'attachment; filename="flightmd_track_{report_id[:8]}.gpx"'
+        },
+    )
+
+
+@router.get("/export/kml/{report_id}")
+async def export_kml(report_id: str) -> Response:
+    job = job_store.get(report_id)
+    if job is None or job.report is None:
+        raise HTTPException(status_code=404, detail="Report not found or expired.")
+    if job.status.value != "complete":
+        raise HTTPException(status_code=202, detail="Analysis still in progress.")
+    if not job.report.metadata.gps_path:
+        raise HTTPException(status_code=422, detail="This flight log has no GPS track to export.")
+
+    try:
+        kml_bytes = generate_kml(job.report)
+    except Exception as e:
+        logger.error(f"KML generation failed for {report_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="KML generation failed.")
+
+    return Response(
+        content=kml_bytes,
+        media_type="application/vnd.google-earth.kml+xml",
+        headers={
+            "Content-Disposition": f'attachment; filename="flightmd_track_{report_id[:8]}.kml"'
         },
     )
 

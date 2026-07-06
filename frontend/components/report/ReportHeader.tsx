@@ -84,6 +84,9 @@ export function ReportHeader({ report }: { report: FlightMDReport }) {
             {m.weather && m.weather.description && (
               <MetaItem label="Weather" value={m.weather.description} />
             )}
+            {m.location_name && (
+              <MetaItem label="Location" value={m.location_name} />
+            )}
             <MetaItem
               label="Flight Modes"
               value={m.flight_modes_used.join(", ") || "—"}

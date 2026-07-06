@@ -9,7 +9,7 @@ import { DropZone } from "@/components/upload/DropZone";
 import { UploadProgress } from "@/components/upload/UploadProgress";
 import { uploadLog, getReports, type ReportSummary } from "@/lib/api";
 import { gradeColour, scoreColour } from "@/lib/utils";
-import { FileText, Calendar, Clock, Cloud, ShieldCheck, Tag, ArrowLeftRight, TrendingUp } from "lucide-react";
+import { FileText, Calendar, Clock, Cloud, ShieldCheck, Tag, ArrowLeftRight, TrendingUp, Database } from "lucide-react";
 import GradientText from "@/components/shared/GradientText";
 import MagicBento from "@/components/shared/MagicBento";
 
@@ -24,6 +24,7 @@ export default function HomePage() {
   const router = useRouter();
   const [state, setState] = useState<UploadState>({ phase: "idle" });
   const [airframeLabel, setAirframeLabel] = useState("");
+  const [contributeToDataset, setContributeToDataset] = useState(false);
   const [history, setHistory] = useState<ReportSummary[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [compareSelection, setCompareSelection] = useState<string[]>([]);
@@ -86,7 +87,8 @@ export default function HomePage() {
         (pct) => {
           setState({ phase: "uploading", progress: pct });
         },
-        airframeLabel
+        airframeLabel,
+        contributeToDataset
       );
       router.push(`/report/${resp.report_id}`);
     } catch (err: unknown) {
@@ -125,7 +127,7 @@ export default function HomePage() {
             decoded.
           </GradientText>
         </h1>
-        <p className="text-lg text-slate-400 max-w-xl mx-auto">
+        <p className="text-lg text-white max-w-xl mx-auto">
           Upload a PX4, ArduPilot, or MAVLink telemetry log.
           Get a deterministic diagnostic report in ~20 seconds — no AI required. Free, open-source, no login required.
         </p>
@@ -152,10 +154,30 @@ export default function HomePage() {
                 maxLength={40}
                 className="w-full px-3 py-2 rounded-lg text-sm bg-slate-950 border border-slate-800 text-white/80 placeholder:text-white/25 focus:outline-none focus:border-gold-500/50"
               />
-              <p className="text-xxs text-white/25 mt-1">
+              <p className="text-xxs text-white/80 mt-1">
                 Untagged flights stay ephemeral and expire in 1 hour, as always. Tagging
                 opts this flight into permanent trend history under that label.
               </p>
+            </div>
+            <div className="mb-4 flex items-start gap-2.5 rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2.5">
+              <input
+                type="checkbox"
+                id="contribute-dataset"
+                checked={contributeToDataset}
+                onChange={(e) => setContributeToDataset(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-700 bg-slate-900 accent-gold-500"
+              />
+              <label htmlFor="contribute-dataset" className="text-xxs text-white/70 cursor-pointer">
+                <span className="flex items-center gap-1.5 text-xs font-semibold text-white/50 mb-0.5">
+                  <Database className="w-3.5 h-3.5" />
+                  Contribute this log anonymously
+                </span>
+                Save a copy of this log and its analysis to FlightMD&apos;s open dataset, used to improve
+                the analysis engine and, eventually, train a FlightMD model. No name, account, or upload
+                source is stored with it — just the log file and its report. This is other people&apos;s
+                flight data too, so it&apos;s opt-in and off by default; leave it unchecked if you&apos;d
+                rather not share.
+              </label>
             </div>
             <DropZone onFile={handleFile} disabled={false} />
             {state.phase === "error" && (
@@ -197,11 +219,11 @@ export default function HomePage() {
         </div>
 
         {loadingHistory ? (
-          <div className="text-center py-12 text-slate-500 text-sm">
+          <div className="text-center py-12 text-white/80 text-sm">
             Loading flight logs...
           </div>
         ) : history.length === 0 ? (
-          <div className="text-center py-12 bg-card/40 border border-border rounded-xl text-slate-500 text-sm">
+          <div className="text-center py-12 bg-card/40 border border-border rounded-xl text-white/80 text-sm">
             No previously analysed logs. Upload your first flight log above.
           </div>
         ) : (
@@ -250,7 +272,7 @@ export default function HomePage() {
                         </a>
                       )}
                     </div>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-slate-400">
+                    <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-white/80">
                       <span className="flex items-center space-x-1">
                         <Calendar className="w-3.5 h-3.5 text-slate-500" />
                         <span>{new Date(item.created_at * 1000).toLocaleDateString()}</span>

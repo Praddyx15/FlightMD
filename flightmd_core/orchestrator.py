@@ -32,6 +32,7 @@ from flightmd_core.services.explanation_engine import ExplanationEngine
 from flightmd_core.services.score_calculator import ScoreCalculator
 from flightmd_core.services.report_builder  import ReportBuilder
 from flightmd_core.services.weather_lookup import fetch_weather
+from flightmd_core.services.geocoding import reverse_geocode
 from flightmd_core.analysers import (
     OscillationAnalyser,
     VibrationAnalyser,
@@ -238,12 +239,16 @@ async def run_analysis(
     metadata.gps_path_hdop = gps_path_hdop
     metadata.gps_path_wind_speed_ms = gps_path_wind_speed_ms
 
-    # Run weather fetch in an executor so we don't block
+    # Run weather fetch + reverse geocoding in the executor so we don't block
     if lat and lon:
         await progress(15, "Fetching weather context…")
         metadata.weather = await loop.run_in_executor(
             None,
             lambda: fetch_weather(lat, lon, metadata.log_start_utc)
+        )
+        metadata.location_name = await loop.run_in_executor(
+            None,
+            lambda: reverse_geocode(lat, lon)
         )
     else:
         metadata.weather = {

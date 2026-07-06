@@ -144,7 +144,11 @@ export default function ReportPage() {
       {report.param_change_sheet.length > 0 && (
         <ParamSheet params={report.param_change_sheet} />
       )}
-      <ExportBar reportId={id} fileName={report.file_name} />
+      <ExportBar
+        reportId={id}
+        fileName={report.file_name}
+        hasGpsPath={!!report.metadata.gps_path && report.metadata.gps_path.length > 0}
+      />
 
       {/* Back link */}
       <div className="pb-4">

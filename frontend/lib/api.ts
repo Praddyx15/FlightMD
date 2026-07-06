@@ -16,7 +16,8 @@ const API_URL =
 export function uploadLog(
   file: File,
   onProgress: (pct: number) => void,
-  airframeLabel?: string
+  airframeLabel?: string,
+  contributeToDataset?: boolean
 ): Promise<AnalyseResponse> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -24,6 +25,9 @@ export function uploadLog(
     form.append("file", file);
     if (airframeLabel && airframeLabel.trim()) {
       form.append("airframe_label", airframeLabel.trim());
+    }
+    if (contributeToDataset) {
+      form.append("contribute_to_dataset", "true");
     }
 
     xhr.upload.addEventListener("progress", (e) => {
@@ -65,6 +69,19 @@ export function uploadLog(
   });
 }
 
+// ── Dataset contribution ─────────────────────────────────────────────────────
+
+export interface DatasetStats {
+  contributed_logs: number;
+  total_bytes: number;
+}
+
+export async function getDatasetStats(): Promise<DatasetStats> {
+  const res = await fetch(`${API_URL}/dataset/stats`);
+  if (!res.ok) throw new Error(`Dataset stats fetch error: ${res.status}`);
+  return res.json();
+}
+
 // ── Status polling ───────────────────────────────────────────────────────────
 
 export async function getStatus(reportId: string): Promise<StatusResponse> {
@@ -92,6 +109,14 @@ export function pdfExportUrl(reportId: string): string {
 
 export function jsonExportUrl(reportId: string): string {
   return `${API_URL}/export/json/${reportId}`;
+}
+
+export function gpxExportUrl(reportId: string): string {
+  return `${API_URL}/export/gpx/${reportId}`;
+}
+
+export function kmlExportUrl(reportId: string): string {
+  return `${API_URL}/export/kml/${reportId}`;
 }
 
 export function airframeRecordPdfUrl(airframeLabel: string): string {

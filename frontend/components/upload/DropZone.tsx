@@ -47,18 +47,18 @@ export function DropZone({ onFile, disabled }: Props) {
           <div className="text-3xl mb-3">📄</div>
           <div className="font-semibold text-white/90 mono">{selectedFile.name}</div>
           <div className="text-sm text-white/50 mt-1">{formatFileSize(selectedFile.size)}</div>
-          <div className="mt-3 text-xs text-white/30">Drop another file to replace</div>
+          <div className="mt-3 text-xs text-white/70">Drop another file to replace</div>
         </div>
       ) : (
         <div>
           <div className="text-4xl mb-4">{isDragActive ? "📂" : "📁"}</div>
-          <p className="text-white/70 font-medium">
+          <p className="text-white font-medium">
             {isDragActive
               ? "Drop your flight log here…"
               : "Drag & drop your flight log here"}
           </p>
-          <p className="text-white/40 text-sm mt-1">or click to browse</p>
-          <p className="text-white/25 text-xs mt-4">
+          <p className="text-white/80 text-sm mt-1">or click to browse</p>
+          <p className="text-white/80 text-xs mt-4">
             PX4 (.ulg) · ArduPilot (.bin) · MAVLink telemetry (.tlog) · Max 50MB
           </p>
         </div>

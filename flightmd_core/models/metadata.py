@@ -22,6 +22,7 @@ class FlightMetadata(BaseModel):
     px4_version: Optional[str] = None
     available_topics: list[str] = []
     weather: Optional[dict] = None
+    location_name: Optional[str] = None
     gps_path: Optional[list[list[float]]] = None
     # Parallel arrays, same length/order as gps_path — one entry per path
     # point, None where that point has no reading. Lets the frontend color

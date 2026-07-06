@@ -1,15 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { pdfExportUrl, jsonExportUrl } from "@/lib/api";
+import { pdfExportUrl, jsonExportUrl, gpxExportUrl, kmlExportUrl } from "@/lib/api";
 import { copyToClipboard } from "@/lib/utils";
 
 interface Props {
   reportId: string;
   fileName: string;
+  hasGpsPath?: boolean;
 }
 
-export function ExportBar({ reportId, fileName }: Props) {
+export function ExportBar({ reportId, fileName, hasGpsPath }: Props) {
   const [copiedShare, setCopiedShare] = useState(false);
 
   async function handleShare() {
@@ -45,6 +46,32 @@ export function ExportBar({ reportId, fileName }: Props) {
           📊 Download JSON
           <span className="text-xs opacity-50">raw data</span>
         </a>
+
+        {/* GPX */}
+        {hasGpsPath && (
+          <a
+            href={gpxExportUrl(reportId)}
+            download={`flightmd_track_${reportId.slice(0, 8)}.gpx`}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all hover:opacity-90 hover:scale-[1.01]"
+            style={{ background: "var(--bg-elevated)", color: "var(--text-primary)", border: "1px solid var(--border)" }}
+          >
+            🛰️ Download GPX
+            <span className="text-xs opacity-50">flight path</span>
+          </a>
+        )}
+
+        {/* KML */}
+        {hasGpsPath && (
+          <a
+            href={kmlExportUrl(reportId)}
+            download={`flightmd_track_${reportId.slice(0, 8)}.kml`}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all hover:opacity-90 hover:scale-[1.01]"
+            style={{ background: "var(--bg-elevated)", color: "var(--text-primary)", border: "1px solid var(--border)" }}
+          >
+            🌍 Download KML
+            <span className="text-xs opacity-50">Google Earth</span>
+          </a>
+        )}
 
         {/* Share */}
         <button
