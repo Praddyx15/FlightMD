@@ -50,6 +50,8 @@ export function ModulePerformanceChart({ analyserResults }: Props) {
           <Tooltip
             cursor={{ fill: "rgba(255,255,255,0.03)" }}
             contentStyle={{ background: "#171717", border: "1px solid rgba(255,255,255,0.1)", fontSize: 11 }}
+            labelStyle={{ color: "rgba(255,255,255,0.85)", fontWeight: 600, marginBottom: 4 }}
+            itemStyle={{ color: "#E7C25B" }}
             formatter={(value: number) => [`${value}/100`, "Health score"]}
             labelFormatter={(_label: string, payload: TooltipPayloadItem[]) =>
               payload?.[0]?.payload?.name ?? ""
