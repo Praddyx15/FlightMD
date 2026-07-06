@@ -9,6 +9,11 @@ interface Props {
   disabled: boolean;
 }
 
+// Overridable per-environment via NEXT_PUBLIC_MAX_FILE_SIZE_MB (e.g. for local
+// testing with larger files) — defaults to the same 50MB the hosted API caps
+// uploads at, so the two stay in sync unless deliberately overridden.
+const MAX_FILE_SIZE_MB = Number(process.env.NEXT_PUBLIC_MAX_FILE_SIZE_MB) || 50;
+
 export function DropZone({ onFile, disabled }: Props) {
   const onDrop = useCallback(
     (accepted: File[]) => {
@@ -24,7 +29,7 @@ export function DropZone({ onFile, disabled }: Props) {
         "application/octet-stream": [".ulg", ".ulog", ".bin", ".tlog"],
       },
       maxFiles: 1,
-      maxSize: 50 * 1024 * 1024,
+      maxSize: MAX_FILE_SIZE_MB * 1024 * 1024,
       disabled,
     });
 
@@ -59,7 +64,7 @@ export function DropZone({ onFile, disabled }: Props) {
           </p>
           <p className="text-white/80 text-sm mt-1">or click to browse</p>
           <p className="text-white/80 text-xs mt-4">
-            PX4 (.ulg) · ArduPilot (.bin) · MAVLink telemetry (.tlog) · Max 50MB
+            PX4 (.ulg) · ArduPilot (.bin) · MAVLink telemetry (.tlog) · Max {MAX_FILE_SIZE_MB}MB
           </p>
         </div>
       )}

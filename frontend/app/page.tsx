@@ -65,6 +65,7 @@ export default function HomePage() {
   }, []);
 
   const SUPPORTED_EXTENSIONS = [".ulg", ".ulog", ".bin", ".tlog"];
+  const MAX_FILE_SIZE_MB = Number(process.env.NEXT_PUBLIC_MAX_FILE_SIZE_MB) || 50;
 
   async function handleFile(file: File) {
     const lowerName = file.name.toLowerCase();
@@ -75,8 +76,8 @@ export default function HomePage() {
       });
       return;
     }
-    if (file.size > 50 * 1024 * 1024) {
-      setState({ phase: "error", message: "File too large. Maximum size is 50MB." });
+    if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+      setState({ phase: "error", message: `File too large. Maximum size is ${MAX_FILE_SIZE_MB}MB.` });
       return;
     }
 
