@@ -189,6 +189,17 @@ export default function QAAssistant({ report }: QAAssistantProps) {
         </label>
       </div>
 
+      {aiUnavailable && (
+        <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2 text-xs text-amber-200">
+          <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-400" />
+          <span>
+            No AI provider is configured on this server (no Groq or Anthropic API key set), so the
+            &quot;Ask AI&quot; toggle is disabled and every question uses local keyword search instead.
+            This is expected without a key — it&apos;s not an error in your question.
+          </span>
+        </div>
+      )}
+
       {/* History */}
       <div className="space-y-4 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
         {history.length === 0 && !thinking ? (

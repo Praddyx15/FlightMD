@@ -11,6 +11,8 @@ import { ParamSheet } from "@/components/report/ParamSheet";
 import { ExportBar } from "@/components/report/ExportBar";
 import PathPlotter from "@/components/report/PathPlotter";
 import QAAssistant from "@/components/report/QAAssistant";
+import { Quantum } from "ldrs/react";
+import "ldrs/react/Quantum.css";
 
 const STATUS_MESSAGES: Record<number, string> = {
   0:  "Preparing analysis…",
@@ -99,7 +101,9 @@ export default function ReportPage() {
 
     return (
       <div className="max-w-xl mx-auto px-4 py-24 text-center">
-        <div className="text-5xl mb-6">✈️</div>
+        <div className="mb-6 flex justify-center">
+          <Quantum size="60" speed="1.75" color="#B89642" />
+        </div>
         <h2 className="text-2xl font-bold mb-2" style={{ color: "#B89642" }}>
           Analysing your flight log
         </h2>
