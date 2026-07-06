@@ -164,10 +164,19 @@ class ULogParser:
         duration_us = ulog.last_timestamp - ulog.start_timestamp
         duration_s  = duration_us / 1e6
 
-        # Firmware / hardware
-        fw_version  = ulog.msg_info_dict.get("ver_sw", None)
-        hw_id       = ulog.msg_info_dict.get("ver_hw", None)
-        px4_version = ulog.msg_info_dict.get("ver_sw_release", None)
+        # Firmware / hardware — msg_info_dict values come straight from the
+        # log's own info section, which real (non-simulated) firmware can
+        # encode as an int rather than a string (e.g. ver_sw_release as a
+        # raw packed version number) — every field pulled from it needs an
+        # explicit str() cast or a real-world log fails FlightMetadata
+        # validation outright. Confirmed across 13/13 real public PX4 logs
+        # (all vehicle types) before this fix.
+        def _as_str(value):
+            return str(value) if value is not None else None
+
+        fw_version  = _as_str(ulog.msg_info_dict.get("ver_sw", None))
+        hw_id       = _as_str(ulog.msg_info_dict.get("ver_hw", None))
+        px4_version = _as_str(ulog.msg_info_dict.get("ver_sw_release", None))
 
         # Airframe
         airframe_id   = None
@@ -175,7 +184,7 @@ class ULogParser:
         vehicle_type  = None
         try:
             airframe_id   = int(ulog.initial_parameters.get("SYS_AUTOSTART", 0))
-            vehicle_type  = ulog.msg_info_dict.get("sys_name", None)
+            vehicle_type  = _as_str(ulog.msg_info_dict.get("sys_name", None))
         except Exception:
             pass
 

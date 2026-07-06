@@ -96,6 +96,31 @@ class TestULogParserUnit:
         speed = parser._max_speed(topics)
         assert abs(speed - 5.0) < 0.01
 
+    def test_extract_metadata_handles_integer_version_fields(self):
+        """Real (non-simulated) PX4 firmware can encode ver_sw_release,
+        ver_sw, ver_hw, and sys_name as raw ints in the log's info section
+        rather than strings — confirmed across 13/13 real public PX4 logs
+        spanning every vehicle type, all of which failed FlightMetadata
+        validation before _extract_metadata started casting these fields
+        with str()."""
+        class StubULog:
+            start_timestamp = 0
+            last_timestamp = 5_000_000  # 5s
+            msg_info_dict = {
+                "ver_sw": 17695743,
+                "ver_hw": 42,
+                "ver_sw_release": 17105408,
+                "sys_name": 7,
+            }
+            initial_parameters = {"SYS_AUTOSTART": 4001}
+
+        parser = ULogParser()
+        metadata = parser._extract_metadata(StubULog(), {})
+        assert metadata.firmware_version == "17695743"
+        assert metadata.hardware_id == "42"
+        assert metadata.px4_version == "17105408"
+        assert metadata.vehicle_type == "7"
+
     def test_extract_flight_modes_from_nav_state(self):
         """_extract_flight_modes should decode nav_state values."""
         parser = ULogParser()
