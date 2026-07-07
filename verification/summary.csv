@@ -1,0 +1,51 @@
+mav_type,airframe_name,log_id,log_date,file_size_bytes,px4_duration_s,px4_logged_errors,px4_logged_warnings,wall_clock_s,overall_score,letter_grade,score_label,num_findings,analysers_ran,analysers_skipped
+Quadrotor,Generic Quadcopter,e159e728-6a7c-4d8d-a975-4da6b6a67f88,2017-01-16,41879148,598,0,15,1.55,95.0,A,Excellent,3,ekf|battery|gps|parameters,ascent_profile|oscillation|vibration|motors
+Quadrotor,Generic Quadcopter,0c94b99c-110f-4c69-85ea-689d2a14fa09,2026-04-15,28031984,617,1,9,0.51,61.2,D,Caution,19,oscillation|vibration|ekf|battery|parameters,gps|motors|ascent_profile
+Quadrotor,SIH Quadcopter X,99301e50-f46e-4d69-b383-0139bdb6410b,2020-09-03,20513809,390,0,3,3.03,76.9,C,Good,13,oscillation|vibration|ekf|gps|parameters,ascent_profile|battery|motors
+Hexarotor,Generic Hexarotor x geometry,299e6eb3-6783-4bc4-bfc9-09a3a8347012,2020-09-04,7999488,204,0,1,2.47,89.7,B,Good,12,oscillation|ekf|battery|gps|parameters,ascent_profile|vibration|motors
+Hexarotor,Generic Hexarotor x geometry,e7f7587c-1c6f-498b-94d3-94a75a9853bb,2025-10-14,22584934,516,11,75,0.43,36.6,F,Critical,43,oscillation|vibration|ekf|battery|gps|parameters,ascent_profile|motors
+Fixed Wing,Generic Standard Plane,dbcbd537-a74f-497e-bf1c-d66988abb51f,2025-07-22,22238122,511,0,0,1.25,66.3,D,Caution,16,oscillation|vibration|ekf|battery|gps|parameters,ascent_profile|motors
+Fixed Wing,Generic Standard Plane,7a072156-15e6-4f67-9ea3-c26b5f38acf2,2024-01-28,11883161,317,0,1,2.68,81.2,B,Good,10,oscillation|vibration|ekf|battery|gps|parameters|motors,ascent_profile
+VTOL Standard,Generic Standard VTOL,4d3756f3-de96-4d4f-8805-d86d8fb6eb47,2024-05-12,45826342,1214,0,3,0.83,64.1,D,Caution,16,oscillation|vibration|ekf|gps|parameters,ascent_profile|battery|motors
+VTOL Standard,Generic Standard VTOL,f584542e-6aba-427e-92e4-ad9c47643912,2024-08-07,24210218,215,0,0,1.71,78.9,C,Good,16,oscillation|vibration|ekf|battery|gps|parameters,ascent_profile|motors
+Octorotor,Generic Octocopter X geometry,67de104c-e6ac-4927-a322-5027fa85aae5,2025-02-16,13133929,316,0,2,0.25,83.9,B,Good,14,oscillation|vibration|ekf|battery|gps|parameters,ascent_profile|motors
+Tiltrotor VTOL,Generic Quadplane VTOL Tiltrotor,950c4194-6562-4193-95d9-64d3d71f3d35,2024-04-27,24747829,218,0,17,1.3,58.7,E,Warning,31,oscillation|vibration|ekf|battery|gps|parameters,ascent_profile|motors
+Ground Rover,Generic Rover Differential,2f9ba468-3c1f-4c50-887a-77c584ffd3ff,2024-10-03,86183989,272,0,5,3.5,83.4,B,Good,9,oscillation|vibration|ekf|battery|gps|parameters,ascent_profile|motors
+Coaxial helicopter,UVify Draco-R,7d7fa699-8508-4518-8f6a-c32ac795f6bf,2026-04-10,25366160,229,0,5,0.46,68.8,D,Caution,18,oscillation|vibration|ekf|battery|parameters,gps|motors|ascent_profile
+Quadrotor,Generic Quadcopter,393b7717-3458-452f-a7ca-8dedd6fcda90,2026-03-07,257203022,5726,0,0,3.95,70.8,C,Caution,17,oscillation|vibration|ekf|battery|gps|parameters,ascent_profile|motors
+Quadrotor,Holybro S500,fc8f8c70-b03d-4552-9a9c-5b294672f9ec,2026-04-09,221569858,6190,733,1363,3.45,64.2,D,Caution,32,oscillation|vibration|ekf|battery|gps|parameters,ascent_profile|motors
+Quadrotor,Generic Quadcopter,541ff8bc-2805-4930-bf17-203471aeacbd,2024-07-05,219019336,7127,0,2217,5.21,71.8,C,Caution,17,oscillation|vibration|ekf|battery|gps|parameters|motors,ascent_profile
+Quadrotor,Generic Quadcopter,7afdb208-b816-49f5-a7c6-4519cb392f70,2024-06-03,238808929,5407,0,3,4.74,61.8,D,Caution,23,oscillation|vibration|ekf|battery|gps|parameters,ascent_profile|motors
+Quadrotor,Holybro S500,8d40019d-9d2b-4047-a852-6fa2b6098d32,2026-02-12,221569858,6190,733,1363,3.59,64.2,D,Caution,32,oscillation|vibration|ekf|battery|gps|parameters,ascent_profile|motors
+Quadrotor,Generic Quadcopter,e81cce87-60ec-4028-be4f-b43f9a1df2b2,2024-07-03,237931024,7267,25,162,5.39,77.0,C,Good,18,oscillation|vibration|ekf|battery|gps|parameters|motors|ascent_profile,
+Quadrotor,Generic Quadcopter,7145fd73-3b95-4b71-8156-a1643608b1a3,2025-11-19,264195917,7513,0,0,4.81,61.8,D,Caution,23,oscillation|vibration|ekf|battery|gps|parameters,ascent_profile|motors
+Quadrotor,Generic Quadcopter,a3990cf6-2b54-44b6-8ea4-275ab28c05c9,2024-07-05,237931024,7267,25,162,7.17,77.0,C,Good,18,oscillation|vibration|ekf|battery|gps|parameters|motors|ascent_profile,
+Quadrotor,Generic Quadcopter,5bcd89ca-0c6a-4119-a655-0251bb074e1f,2024-07-03,237931024,7267,25,162,6.52,77.0,C,Good,18,oscillation|vibration|ekf|battery|gps|parameters|motors|ascent_profile,
+Quadrotor,Generic Quadcopter,c7663200-8ddf-4471-9748-b922b89366bd,2026-05-06,303355389,6086,0,1,196.89,66.2,D,Caution,16,oscillation|vibration|ekf|battery|parameters,gps|motors|ascent_profile
+Quadrotor,HIL Quadcopter X,93b25b68-0d36-4dbf-af0c-a4be5ef577b9,2024-09-05,204398741,6669,0,18,4.32,86.3,B,Good,14,oscillation|vibration|ekf|battery|gps|parameters|ascent_profile,motors
+Quadrotor,Generic Quadcopter,b1353a86-3133-4d60-b92b-ebc8f95280ab,2025-09-08,276652626,7990,0,184,4.31,61.5,D,Caution,19,oscillation|vibration|ekf|parameters,battery|gps|motors|ascent_profile
+Hexarotor,Generic Hexarotor x geometry,d8f4ef23-8d11-4b7d-8e9c-b64218a01089,2025-07-05,213199380,6979,0,2,4.46,61.2,D,Caution,13,ekf|battery|parameters,oscillation|vibration|gps|motors|ascent_profile
+Hexarotor,Generic Hexarotor x geometry,d7f0dcd7-a101-4a85-a21a-8361029c57a0,2025-12-31,269077281,5869,16,86,3.9,65.0,D,Caution,25,oscillation|vibration|ekf|battery|gps|parameters,ascent_profile|motors
+Hexarotor,Generic Hexarotor x geometry,30652013-ad77-498f-b897-1c41d6bc455d,2025-03-01,205166762,4050,8851,734,5.25,96.4,A,Excellent,8,ekf|battery|gps|parameters,ascent_profile|oscillation|vibration|motors
+Hexarotor,Generic Hexarotor x geometry,de61bb7f-8620-4a11-88ba-a316e945c0e3,2025-05-27,251953327,7238,63918,1,6.1,92.3,A,Excellent,9,ekf|battery|gps|parameters,ascent_profile|oscillation|vibration|motors
+Fixed Wing,Generic Standard Plane,fa0b5ac0-c781-458b-9c42-0198d01cad41,2025-04-05,181657600,5594,0,0,4.97,56.1,E,Warning,17,oscillation|vibration|ekf|battery|gps|parameters,ascent_profile|motors
+Fixed Wing,Generic Standard Plane,56f2e99d-c488-4012-9ea6-79e154c0248d,2025-10-17,195967112,5288,0,20,4.76,59.5,E,Warning,12,ekf|battery|gps|parameters,ascent_profile|oscillation|vibration|motors
+Fixed Wing,Generic Standard Plane,442af9f4-d3d8-40ef-881e-17f5a1c15410,2025-12-01,224899088,4777,1,615,3.24,45.9,F,Warning,25,oscillation|vibration|ekf|gps|parameters,ascent_profile|battery|motors
+Fixed Wing,Generic Standard Plane,79c86e07-b2e7-4eb6-9fc7-26d4ef61bcba,2025-07-24,143946723,4482,0,1,3.15,77.9,C,Good,10,oscillation|vibration|ekf|battery|gps|parameters|ascent_profile,motors
+VTOL Standard,Generic Standard VTOL,5ecfb440-4120-4e0a-bf79-52c84488972f,2024-05-08,270722893,5525,2,3,6.14,74.7,C,Caution,16,oscillation|vibration|ekf|battery|gps|parameters,ascent_profile|motors
+VTOL Standard,HIL Standard VTOL QuadPlane,f8fbbda8-bbee-4c9f-a6c7-b83f33e756a5,2024-10-15,198796177,7357,12,24,5.18,70.7,C,Caution,15,oscillation|ekf|battery|gps|parameters,ascent_profile|vibration|motors
+VTOL Standard,Generic Standard VTOL,8c864402-39c5-4316-ab4a-b9c43c560f7f,2024-06-24,269935901,5499,1,1,5.11,72.9,C,Caution,18,oscillation|vibration|ekf|battery|gps|parameters,ascent_profile|motors
+Octorotor,Generic Octocopter X geometry,186a2505-1079-4761-bcd2-0d14fbd2b7cd,2024-08-26,180452571,4090,0,8,6.19,87.4,B,Good,15,oscillation|vibration|ekf|battery|gps|parameters|ascent_profile,motors
+Octorotor,Generic Octocopter X geometry,f922385d-5c94-4dae-9595-59e4328ea17f,2024-06-17,206641039,4548,0,5,7.59,73.8,C,Caution,17,oscillation|vibration|battery|gps|parameters|motors|ascent_profile,ekf
+Octorotor,Generic Octocopter X geometry,fd9a3636-f741-4a62-a4b8-bf02f6492594,2024-12-06,237711706,5455,0,4,7.98,75.5,C,Good,19,oscillation|vibration|ekf|battery|gps|parameters|ascent_profile,motors
+Tiltrotor VTOL,Generic Quadplane VTOL Tiltrotor,8733bc36-7872-4700-96d8-7d97a693da91,2025-09-25,145809424,3098,0,6,2.29,67.6,D,Caution,22,oscillation|vibration|ekf|battery|gps|parameters,ascent_profile|motors
+Tiltrotor VTOL,Generic Tiltrotor VTOL,bc29728b-e418-44be-8492-d9410bd50d69,2025-05-23,153849856,3578,0,31,2.48,71.2,C,Caution,18,oscillation|vibration|ekf|battery|parameters,gps|motors|ascent_profile
+Ground Rover,Generic Rover Differential,62045563-dac6-4c82-a8ff-36b1227cf69c,2026-03-27,117033556,3189,0,0,2.91,81.2,B,Good,10,oscillation|vibration|ekf|gps|parameters|motors,ascent_profile|battery
+Ground Rover,Generic Rover Differential,822865bd-5675-46db-b079-51d3aedb6d59,2024-12-10,144586604,5615,0,3142,4.82,85.0,B,Good,10,oscillation|vibration|ekf|battery|gps|parameters,ascent_profile|motors
+Two-rotor VTOL (Tailsitter),Generic VTOL Tailsitter,9250f406-50cc-4195-81a0-510e153010e5,2025-10-02,279724350,2625,0,46,8.45,65.5,D,Caution,19,oscillation|vibration|ekf|battery|gps|parameters,ascent_profile|motors
+Two-rotor VTOL (Tailsitter),Generic VTOL Tailsitter,7671bf18-66af-4fa3-8f7c-9443a2e24374,2026-06-04,297130351,2793,1,6,6.92,75.8,C,Good,16,oscillation|vibration|ekf|battery|gps|parameters,ascent_profile|motors
+Quad-rotor VTOL (Tailsitter),Generic VTOL Tailsitter,8264d042-72f6-4f79-82b6-c11ced80b9dc,2025-11-12,121853952,11107,1,1345,2.94,80.0,B,Good,17,oscillation|vibration|gps|parameters|ascent_profile,ekf|battery|motors
+Quad-rotor VTOL (Tailsitter),Generic VTOL Tailsitter,3f9b295a-f6a7-4d6e-a2b7-bba5ce010d24,2025-06-24,192108778,4262,5,72,3.15,59.5,E,Warning,30,oscillation|vibration|ekf|battery|gps|parameters,ascent_profile|motors
+Normal helicopter with tail rotor,Generic Helicopter (Tail ESC),a8cd558b-e184-43d6-a85e-473631c8b99e,2025-11-04,161357338,3921,0,10,2.44,61.6,D,Caution,20,oscillation|vibration|ekf|battery|gps|parameters,ascent_profile|motors
+Fixed Wing,Generic Standard Plane,f71a0400-4471-464b-a82f-c422e235dcc3,2025-12-01,224899088,4777,1,615,3.36,45.9,F,Warning,25,oscillation|vibration|ekf|gps|parameters,ascent_profile|battery|motors
+VTOL Standard,Generic Standard VTOL,bfdcc68b-66c0-440e-9764-a183e82f35a6,2025-07-15,215045425,5437,0,0,3.52,83.2,B,Good,17,oscillation|vibration|ekf|battery|gps|parameters,ascent_profile|motors

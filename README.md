@@ -86,6 +86,16 @@ features below now closing the gap without needing an account.
 | Interactive 3D flight-path visualization | ✅ | ❌ | Basic 2D | ✅ |
 | Time to report | ~20s | Instant (client-side plots) | Instant (client-side plots) | Varies |
 
+## Verified Against 50 Real Flights, Not Just Test Fixtures
+
+Rather than trust synthetic test data alone, FlightMD was run against 50 real flight logs pulled
+from PX4's own public Flight Review database — 11 vehicle types (quads, hexes, VTOLs, fixed-wing,
+even a coaxial helicopter and a rover), 8.4GB total, selected by vehicle type and file size only,
+before any of them were analysed. 49 of 50 processed in under 4 seconds; the one outlier is
+root-caused and disclosed, not hidden from the average. Full methodology, the honest cross-check
+against PX4's own (occasionally noisy) error metadata, and every bug the effort surfaced are in
+**[`verification/VERIFICATION_REPORT.md`](verification/VERIFICATION_REPORT.md)**.
+
 ## Live Demo
 
 - **Frontend**: [https://flightmd.vercel.app](https://flightmd.vercel.app)

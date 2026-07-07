@@ -1,0 +1,3532 @@
+[
+  {
+    "log_id": "e159e728-6a7c-4d8d-a975-4da6b6a67f88",
+    "log_date": "2017-01-16",
+    "description": "Master(6)",
+    "feedback": "- Aggresive takeoff on Position mode\r\n- Delay when Takeoff waypoint completed\r\n- Small jumps when switching from Non- GPS flight modes to GPS flight modes\r\n- Perfect flight on Stabilize, Altitude, Position, Mission, Land and RTL\r\n",
+    "type": "flightreport",
+    "wind_speed": 0,
+    "rating": "great",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 598,
+    "mav_type": "Quadrotor",
+    "estimator": "EKF2",
+    "sys_autostart_id": 4001,
+    "sys_hw": "PX4FMU_V2",
+    "ver_sw": "7fd06ee913375f6cdc338be0b783fe7f811f54b6",
+    "ver_sw_release": "v1.5.2 0",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 15,
+    "flight_modes": [
+      0,
+      1,
+      2,
+      3,
+      5,
+      18
+    ],
+    "vehicle_uuid": "0052003d3335510933373538",
+    "flight_mode_durations": [
+      [
+        2,
+        10
+      ],
+      [
+        3,
+        138
+      ],
+      [
+        2,
+        35
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        2,
+        0
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        2,
+        55
+      ],
+      [
+        1,
+        114
+      ],
+      [
+        5,
+        34
+      ],
+      [
+        1,
+        41
+      ],
+      [
+        0,
+        100
+      ],
+      [
+        1,
+        52
+      ],
+      [
+        18,
+        5
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Quadcopter",
+    "airframe_type": "Quadrotor x",
+    "download_url": "https://cdn.logs.px4.io/e159e728-6a7c-4d8d-a975-4da6b6a67f88.ulg",
+    "local_file": "Quadrotor_e159e728.ulg",
+    "download_status": "ok",
+    "bytes": 41879148
+  },
+  {
+    "log_id": "0c94b99c-110f-4c69-85ea-689d2a14fa09",
+    "log_date": "2026-04-15",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 617,
+    "mav_type": "Quadrotor",
+    "estimator": "EKF2",
+    "sys_autostart_id": 4001,
+    "sys_hw": "PX4_FMU_V6C",
+    "ver_sw": "1dacb4cdef2d7145754fc788fa8dc482eed74b40",
+    "ver_sw_release": "v1.14.3 255",
+    "num_logged_errors": 1,
+    "num_logged_warnings": 9,
+    "flight_modes": [
+      2,
+      14
+    ],
+    "vehicle_uuid": "0006000000003930393035335113001a0036",
+    "flight_mode_durations": [
+      [
+        14,
+        606
+      ],
+      [
+        2,
+        9
+      ],
+      [
+        14,
+        0
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Quadcopter",
+    "airframe_type": "Quadrotor x",
+    "download_url": "https://cdn.logs.px4.io/0c94b99c-110f-4c69-85ea-689d2a14fa09.ulg",
+    "local_file": "Quadrotor_0c94b99c.ulg",
+    "download_status": "ok",
+    "bytes": 28031984
+  },
+  {
+    "log_id": "99301e50-f46e-4d69-b383-0139bdb6410b",
+    "log_date": "2020-09-03",
+    "description": "1243",
+    "feedback": "None Given",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "https://logs.px4.io/upload",
+    "error_labels": [],
+    "source": "QGroundControl",
+    "duration_s": 390,
+    "mav_type": "Quadrotor",
+    "estimator": "EKF2",
+    "sys_autostart_id": 1100,
+    "sys_hw": "Spot-1",
+    "ver_sw": "7c894b50260c7e0c16f368a3ec0c483ab2120f4c",
+    "ver_sw_release": "v2.1.2 0",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 3,
+    "flight_modes": [
+      2
+    ],
+    "vehicle_uuid": "0001000000003633343631355101002d0046",
+    "flight_mode_durations": [
+      [
+        2,
+        390
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "SIH Quadcopter X",
+    "airframe_type": "Simulation",
+    "download_url": "https://cdn.logs.px4.io/99301e50-f46e-4d69-b383-0139bdb6410b.ulg",
+    "local_file": "Quadrotor_99301e50.ulg",
+    "download_status": "ok",
+    "bytes": 20513809
+  },
+  {
+    "log_id": "299e6eb3-6783-4bc4-bfc9-09a3a8347012",
+    "log_date": "2020-09-04",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 204,
+    "mav_type": "Hexarotor",
+    "estimator": "EKF2",
+    "sys_autostart_id": 6001,
+    "sys_hw": "PX4_FMU_V3",
+    "ver_sw": "e0f016c2b3db160284bbaaadaf70bef84592d81e",
+    "ver_sw_release": "v1.10.1 0",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 1,
+    "flight_modes": [
+      2,
+      3,
+      15
+    ],
+    "vehicle_uuid": "000100000000373538323337510e0029003d",
+    "flight_mode_durations": [
+      [
+        3,
+        193
+      ],
+      [
+        15,
+        0
+      ],
+      [
+        2,
+        8
+      ],
+      [
+        15,
+        2
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Hexarotor x geometry",
+    "airframe_type": "Hexarotor x",
+    "download_url": "https://cdn.logs.px4.io/299e6eb3-6783-4bc4-bfc9-09a3a8347012.ulg",
+    "local_file": "Hexarotor_299e6eb3.ulg",
+    "download_status": "ok",
+    "bytes": 7999488
+  },
+  {
+    "log_id": "e7f7587c-1c6f-498b-94d3-94a75a9853bb",
+    "log_date": "2025-10-14",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 516,
+    "mav_type": "Hexarotor",
+    "estimator": "EKF2",
+    "sys_autostart_id": 6001,
+    "sys_hw": "PX4_FMU_V5",
+    "ver_sw": "93eef0c78719a9ac972d46593262c76c978ed3c4",
+    "ver_sw_release": "v1.15.1 255",
+    "num_logged_errors": 11,
+    "num_logged_warnings": 75,
+    "flight_modes": [
+      1,
+      2,
+      3,
+      12,
+      18
+    ],
+    "vehicle_uuid": "000200000000203331354e30500e0022003c",
+    "flight_mode_durations": [
+      [
+        1,
+        10
+      ],
+      [
+        2,
+        9
+      ],
+      [
+        3,
+        33
+      ],
+      [
+        12,
+        4
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        2,
+        6
+      ],
+      [
+        3,
+        12
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        3,
+        221
+      ],
+      [
+        12,
+        2
+      ],
+      [
+        3,
+        15
+      ],
+      [
+        12,
+        8
+      ],
+      [
+        1,
+        66
+      ],
+      [
+        12,
+        99
+      ],
+      [
+        18,
+        20
+      ],
+      [
+        2,
+        0
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Hexarotor x geometry",
+    "airframe_type": "Hexarotor x",
+    "download_url": "https://cdn.logs.px4.io/e7f7587c-1c6f-498b-94d3-94a75a9853bb.ulg",
+    "local_file": "Hexarotor_e7f7587c.ulg",
+    "download_status": "ok",
+    "bytes": 22584934
+  },
+  {
+    "log_id": "dbcbd537-a74f-497e-bf1c-d66988abb51f",
+    "log_date": "2025-07-22",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 511,
+    "mav_type": "Fixed Wing",
+    "estimator": "EKF2",
+    "sys_autostart_id": 2100,
+    "sys_hw": "PX4_FMU_V6C",
+    "ver_sw": "1c8ab2a0d7db2d14a6f320ebd8766b5ffaea28fa",
+    "ver_sw_release": "v1.13.3 255",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 0,
+    "flight_modes": [
+      4,
+      15
+    ],
+    "vehicle_uuid": "000600000000393334373131511700340028",
+    "flight_mode_durations": [
+      [
+        15,
+        53
+      ],
+      [
+        4,
+        158
+      ],
+      [
+        15,
+        299
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Standard Plane",
+    "airframe_type": "Standard Plane",
+    "download_url": "https://cdn.logs.px4.io/dbcbd537-a74f-497e-bf1c-d66988abb51f.ulg",
+    "local_file": "Fixed_Wing_dbcbd537.ulg",
+    "download_status": "ok",
+    "bytes": 22238122
+  },
+  {
+    "log_id": "7a072156-15e6-4f67-9ea3-c26b5f38acf2",
+    "log_date": "2024-01-28",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 317,
+    "mav_type": "Fixed Wing",
+    "estimator": "EKF2",
+    "sys_autostart_id": 2100,
+    "sys_hw": "PX4_FMU_V5",
+    "ver_sw": "2e8918da66af37922ededee1cc2d2efffec4cfb2",
+    "ver_sw_release": "v1.12.3 255",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 1,
+    "flight_modes": [
+      0,
+      1,
+      15
+    ],
+    "vehicle_uuid": "000200000000203335395931500400360033",
+    "flight_mode_durations": [
+      [
+        0,
+        107
+      ],
+      [
+        1,
+        20
+      ],
+      [
+        15,
+        0
+      ],
+      [
+        0,
+        30
+      ],
+      [
+        1,
+        16
+      ],
+      [
+        0,
+        26
+      ],
+      [
+        1,
+        15
+      ],
+      [
+        15,
+        0
+      ],
+      [
+        0,
+        27
+      ],
+      [
+        1,
+        15
+      ],
+      [
+        15,
+        0
+      ],
+      [
+        0,
+        56
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Standard Plane",
+    "airframe_type": "Standard Plane",
+    "download_url": "https://cdn.logs.px4.io/7a072156-15e6-4f67-9ea3-c26b5f38acf2.ulg",
+    "local_file": "Fixed_Wing_7a072156.ulg",
+    "download_status": "ok",
+    "bytes": 11883161
+  },
+  {
+    "log_id": "4d3756f3-de96-4d4f-8805-d86d8fb6eb47",
+    "log_date": "2024-05-12",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 1214,
+    "mav_type": "VTOL Standard",
+    "estimator": "EKF2",
+    "sys_autostart_id": 13000,
+    "sys_hw": "PX4_FMU_V6X",
+    "ver_sw": "c13e3bae1237ded25fa91e97176b86fed34896a0",
+    "ver_sw_release": "v1.15.0 0",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 3,
+    "flight_modes": [
+      1,
+      2,
+      3,
+      15
+    ],
+    "vehicle_uuid": "000600000000373833333430510c00280037",
+    "flight_mode_durations": [
+      [
+        15,
+        376
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        15,
+        16
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        2,
+        5
+      ],
+      [
+        3,
+        761
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        2,
+        51
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Standard VTOL",
+    "airframe_type": "Standard VTOL",
+    "download_url": "https://cdn.logs.px4.io/4d3756f3-de96-4d4f-8805-d86d8fb6eb47.ulg",
+    "local_file": "VTOL_Standard_4d3756f3.ulg",
+    "download_status": "ok",
+    "bytes": 45826342
+  },
+  {
+    "log_id": "f584542e-6aba-427e-92e4-ad9c47643912",
+    "log_date": "2024-08-07",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 215,
+    "mav_type": "VTOL Standard",
+    "estimator": "EKF2",
+    "sys_autostart_id": 13000,
+    "sys_hw": "CUAV_X7PRO",
+    "ver_sw": "1dacb4cdef2d7145754fc788fa8dc482eed74b40",
+    "ver_sw_release": "v1.14.3 255",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 0,
+    "flight_modes": [
+      2
+    ],
+    "vehicle_uuid": "00060000000031373432353251050026002e",
+    "flight_mode_durations": [
+      [
+        2,
+        215
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Standard VTOL",
+    "airframe_type": "Standard VTOL",
+    "download_url": "https://cdn.logs.px4.io/f584542e-6aba-427e-92e4-ad9c47643912.ulg",
+    "local_file": "VTOL_Standard_f584542e.ulg",
+    "download_status": "ok",
+    "bytes": 24210218
+  },
+  {
+    "log_id": "67de104c-e6ac-4927-a322-5027fa85aae5",
+    "log_date": "2025-02-16",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 316,
+    "mav_type": "Octorotor",
+    "estimator": "EKF2",
+    "sys_autostart_id": 8001,
+    "sys_hw": "CUAV_X7PRO",
+    "ver_sw": "4817c0618a1286846116e90c6eb8919efaa013cf",
+    "ver_sw_release": "v1.15.2 255",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 2,
+    "flight_modes": [
+      3,
+      4
+    ],
+    "vehicle_uuid": "000600000000363837373033511300350045",
+    "flight_mode_durations": [
+      [
+        3,
+        8
+      ],
+      [
+        4,
+        9
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        4,
+        7
+      ],
+      [
+        3,
+        288
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Octocopter X geometry",
+    "airframe_type": "Octorotor x",
+    "download_url": "https://cdn.logs.px4.io/67de104c-e6ac-4927-a322-5027fa85aae5.ulg",
+    "local_file": "Octorotor_67de104c.ulg",
+    "download_status": "ok",
+    "bytes": 13133929
+  },
+  {
+    "log_id": "950c4194-6562-4193-95d9-64d3d71f3d35",
+    "log_date": "2024-04-27",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 218,
+    "mav_type": "Tiltrotor VTOL",
+    "estimator": "EKF2",
+    "sys_autostart_id": 13030,
+    "sys_hw": "PX4_FMU_V6C",
+    "ver_sw": "b8c541dd7277ed735139d7d1bfb829d61fbe29fb",
+    "ver_sw_release": "v1.14.0 255",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 17,
+    "flight_modes": [
+      1,
+      2
+    ],
+    "vehicle_uuid": "00060000000034373938303151090021003e",
+    "flight_mode_durations": [
+      [
+        2,
+        93
+      ],
+      [
+        1,
+        34
+      ],
+      [
+        2,
+        11
+      ],
+      [
+        1,
+        4
+      ],
+      [
+        2,
+        16
+      ],
+      [
+        1,
+        7
+      ],
+      [
+        2,
+        17
+      ],
+      [
+        1,
+        4
+      ],
+      [
+        2,
+        19
+      ],
+      [
+        1,
+        4
+      ],
+      [
+        2,
+        4
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Quadplane VTOL Tiltrotor",
+    "airframe_type": "VTOL Tiltrotor",
+    "download_url": "https://cdn.logs.px4.io/950c4194-6562-4193-95d9-64d3d71f3d35.ulg",
+    "local_file": "Tiltrotor_VTOL_950c4194.ulg",
+    "download_status": "ok",
+    "bytes": 24747829
+  },
+  {
+    "log_id": "2f9ba468-3c1f-4c50-887a-77c584ffd3ff",
+    "log_date": "2024-10-03",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 272,
+    "mav_type": "Ground Rover",
+    "estimator": "EKF2",
+    "sys_autostart_id": 50000,
+    "sys_hw": "PX4_FMU_V6C",
+    "ver_sw": "1c8ab2a0d7db2d14a6f320ebd8766b5ffaea28fa",
+    "ver_sw_release": "v1.13.3 255",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 5,
+    "flight_modes": [
+      0,
+      3,
+      5
+    ],
+    "vehicle_uuid": "000600000000383033343430510d001b003a",
+    "flight_mode_durations": [
+      [
+        0,
+        1
+      ],
+      [
+        3,
+        59
+      ],
+      [
+        5,
+        2
+      ],
+      [
+        0,
+        209
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Rover Differential",
+    "airframe_type": "Rover",
+    "download_url": "https://cdn.logs.px4.io/2f9ba468-3c1f-4c50-887a-77c584ffd3ff.ulg",
+    "local_file": "Ground_Rover_2f9ba468.ulg",
+    "download_status": "ok",
+    "bytes": 86183989
+  },
+  {
+    "log_id": "7d7fa699-8508-4518-8f6a-c32ac795f6bf",
+    "log_date": "2026-04-10",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 229,
+    "mav_type": "Coaxial helicopter",
+    "estimator": "EKF2",
+    "sys_autostart_id": 6002,
+    "sys_hw": "HKUST_NXT_DUAL",
+    "ver_sw": "6ea3539157ca358c70a515878b77077af7d4611d",
+    "ver_sw_release": "v1.16.0 255",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 5,
+    "flight_modes": [
+      0,
+      1,
+      2
+    ],
+    "vehicle_uuid": "0006000000003532393932335106004e0042",
+    "flight_mode_durations": [
+      [
+        2,
+        224
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        0,
+        4
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "UVify Draco-R",
+    "airframe_type": "Hexarotor x",
+    "download_url": "https://cdn.logs.px4.io/7d7fa699-8508-4518-8f6a-c32ac795f6bf.ulg",
+    "local_file": "Coaxial_helicopter_7d7fa699.ulg",
+    "download_status": "ok",
+    "bytes": 25366160
+  },
+  {
+    "log_id": "393b7717-3458-452f-a7ca-8dedd6fcda90",
+    "log_date": "2026-03-07",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 5726,
+    "mav_type": "Quadrotor",
+    "estimator": "EKF2",
+    "sys_autostart_id": 4001,
+    "sys_hw": "PX4_FMU_V6C",
+    "ver_sw": "6ea3539157ca358c70a515878b77077af7d4611d",
+    "ver_sw_release": "v1.16.0 255",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 0,
+    "flight_modes": [
+      2
+    ],
+    "vehicle_uuid": "000600000000333137373333510500430027",
+    "flight_mode_durations": [
+      [
+        2,
+        5726
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Quadcopter",
+    "airframe_type": "Quadrotor x",
+    "download_url": "https://cdn.logs.px4.io/393b7717-3458-452f-a7ca-8dedd6fcda90.ulg",
+    "local_file": "Quadrotor_393b7717.ulg",
+    "download_status": "ok",
+    "bytes": 257203022
+  },
+  {
+    "log_id": "fc8f8c70-b03d-4552-9a9c-5b294672f9ec",
+    "log_date": "2026-04-09",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 6190,
+    "mav_type": "Quadrotor",
+    "estimator": "EKF2",
+    "sys_autostart_id": 4015,
+    "sys_hw": "PX4_FMU_V6X",
+    "ver_sw": "b2ad1768d93d78fe6d249d936b5def4dd00306fc",
+    "ver_sw_release": "v1.15.4 0",
+    "num_logged_errors": 733,
+    "num_logged_warnings": 1363,
+    "flight_modes": [
+      4
+    ],
+    "vehicle_uuid": "00060000000037333437323351180030002b",
+    "flight_mode_durations": [
+      [
+        4,
+        6190
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Holybro S500",
+    "airframe_type": "Quadrotor x",
+    "download_url": "https://cdn.logs.px4.io/fc8f8c70-b03d-4552-9a9c-5b294672f9ec.ulg",
+    "local_file": "Quadrotor_fc8f8c70.ulg",
+    "download_status": "ok",
+    "bytes": 221569858
+  },
+  {
+    "log_id": "541ff8bc-2805-4930-bf17-203471aeacbd",
+    "log_date": "2024-07-05",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 7127,
+    "mav_type": "Quadrotor",
+    "estimator": "EKF2",
+    "sys_autostart_id": 4001,
+    "sys_hw": "PX4_FMU_V5",
+    "ver_sw": "7f06f55a490bd975f38ba8e07b853de64f6f1de4",
+    "ver_sw_release": "v1.11.3 255",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 2217,
+    "flight_modes": [
+      0
+    ],
+    "vehicle_uuid": "0002000000003339343430335118002d001c",
+    "flight_mode_durations": [
+      [
+        0,
+        7127
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Quadcopter",
+    "airframe_type": "Quadrotor x",
+    "download_url": "https://cdn.logs.px4.io/541ff8bc-2805-4930-bf17-203471aeacbd.ulg",
+    "local_file": "Quadrotor_541ff8bc.ulg",
+    "download_status": "ok",
+    "bytes": 219019336
+  },
+  {
+    "log_id": "7afdb208-b816-49f5-a7c6-4519cb392f70",
+    "log_date": "2024-06-03",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 5407,
+    "mav_type": "Quadrotor",
+    "estimator": "EKF2",
+    "sys_autostart_id": 4001,
+    "sys_hw": "EFYTECH_FIREFLY",
+    "ver_sw": "e989d2c150084c81a00ec416cfe339b3a604fc00",
+    "ver_sw_release": "v1.11.4 0",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 3,
+    "flight_modes": [
+      0,
+      18,
+      4,
+      14
+    ],
+    "vehicle_uuid": "00060000000035323936333051030043001f",
+    "flight_mode_durations": [
+      [
+        0,
+        45
+      ],
+      [
+        4,
+        2573
+      ],
+      [
+        14,
+        75
+      ],
+      [
+        18,
+        2324
+      ],
+      [
+        14,
+        210
+      ],
+      [
+        18,
+        177
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Quadcopter",
+    "airframe_type": "Quadrotor x",
+    "download_url": "https://cdn.logs.px4.io/7afdb208-b816-49f5-a7c6-4519cb392f70.ulg",
+    "local_file": "Quadrotor_7afdb208.ulg",
+    "download_status": "ok",
+    "bytes": 238808929
+  },
+  {
+    "log_id": "8d40019d-9d2b-4047-a852-6fa2b6098d32",
+    "log_date": "2026-02-12",
+    "description": "test_20min",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 6190,
+    "mav_type": "Quadrotor",
+    "estimator": "EKF2",
+    "sys_autostart_id": 4015,
+    "sys_hw": "PX4_FMU_V6X",
+    "ver_sw": "b2ad1768d93d78fe6d249d936b5def4dd00306fc",
+    "ver_sw_release": "v1.15.4 0",
+    "num_logged_errors": 733,
+    "num_logged_warnings": 1363,
+    "flight_modes": [
+      4
+    ],
+    "vehicle_uuid": "00060000000037333437323351180030002b",
+    "flight_mode_durations": [
+      [
+        4,
+        6190
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Holybro S500",
+    "airframe_type": "Quadrotor x",
+    "download_url": "https://cdn.logs.px4.io/8d40019d-9d2b-4047-a852-6fa2b6098d32.ulg",
+    "local_file": "Quadrotor_8d40019d.ulg",
+    "download_status": "ok",
+    "bytes": 221569858
+  },
+  {
+    "log_id": "e81cce87-60ec-4028-be4f-b43f9a1df2b2",
+    "log_date": "2024-07-03",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 7267,
+    "mav_type": "Quadrotor",
+    "estimator": "EKF2",
+    "sys_autostart_id": 4001,
+    "sys_hw": "PX4_FMU_V5",
+    "ver_sw": "7f06f55a490bd975f38ba8e07b853de64f6f1de4",
+    "ver_sw_release": "v1.11.3 255",
+    "num_logged_errors": 25,
+    "num_logged_warnings": 162,
+    "flight_modes": [
+      0,
+      1,
+      2,
+      21
+    ],
+    "vehicle_uuid": "0002000000003339343430335118002d001c",
+    "flight_mode_durations": [
+      [
+        2,
+        30
+      ],
+      [
+        21,
+        7175
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        2,
+        58
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Quadcopter",
+    "airframe_type": "Quadrotor x",
+    "download_url": "https://cdn.logs.px4.io/e81cce87-60ec-4028-be4f-b43f9a1df2b2.ulg",
+    "local_file": "Quadrotor_e81cce87.ulg",
+    "download_status": "ok",
+    "bytes": 237931024
+  },
+  {
+    "log_id": "7145fd73-3b95-4b71-8156-a1643608b1a3",
+    "log_date": "2025-11-19",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 7513,
+    "mav_type": "Quadrotor",
+    "estimator": "EKF2",
+    "sys_autostart_id": 4001,
+    "sys_hw": "PX4_FMU_V6X",
+    "ver_sw": "99c40407ffd7ac184e2d7b4b293f36f10fe561ef",
+    "ver_sw_release": "v1.15.4 255",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 0,
+    "flight_modes": [
+      2
+    ],
+    "vehicle_uuid": "000600000000363637353033510c00360048",
+    "flight_mode_durations": [
+      [
+        2,
+        7513
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Quadcopter",
+    "airframe_type": "Quadrotor x",
+    "download_url": "https://cdn.logs.px4.io/7145fd73-3b95-4b71-8156-a1643608b1a3.ulg",
+    "local_file": "Quadrotor_7145fd73.ulg",
+    "download_status": "ok",
+    "bytes": 264195917
+  },
+  {
+    "log_id": "a3990cf6-2b54-44b6-8ea4-275ab28c05c9",
+    "log_date": "2024-07-05",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 7267,
+    "mav_type": "Quadrotor",
+    "estimator": "EKF2",
+    "sys_autostart_id": 4001,
+    "sys_hw": "PX4_FMU_V5",
+    "ver_sw": "7f06f55a490bd975f38ba8e07b853de64f6f1de4",
+    "ver_sw_release": "v1.11.3 255",
+    "num_logged_errors": 25,
+    "num_logged_warnings": 162,
+    "flight_modes": [
+      0,
+      1,
+      2,
+      21
+    ],
+    "vehicle_uuid": "0002000000003339343430335118002d001c",
+    "flight_mode_durations": [
+      [
+        2,
+        30
+      ],
+      [
+        21,
+        7175
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        2,
+        58
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Quadcopter",
+    "airframe_type": "Quadrotor x",
+    "download_url": "https://cdn.logs.px4.io/a3990cf6-2b54-44b6-8ea4-275ab28c05c9.ulg",
+    "local_file": "Quadrotor_a3990cf6.ulg",
+    "download_status": "ok",
+    "bytes": 237931024
+  },
+  {
+    "log_id": "5bcd89ca-0c6a-4119-a655-0251bb074e1f",
+    "log_date": "2024-07-03",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 7267,
+    "mav_type": "Quadrotor",
+    "estimator": "EKF2",
+    "sys_autostart_id": 4001,
+    "sys_hw": "PX4_FMU_V5",
+    "ver_sw": "7f06f55a490bd975f38ba8e07b853de64f6f1de4",
+    "ver_sw_release": "v1.11.3 255",
+    "num_logged_errors": 25,
+    "num_logged_warnings": 162,
+    "flight_modes": [
+      0,
+      1,
+      2,
+      21
+    ],
+    "vehicle_uuid": "0002000000003339343430335118002d001c",
+    "flight_mode_durations": [
+      [
+        2,
+        30
+      ],
+      [
+        21,
+        7175
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        2,
+        58
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Quadcopter",
+    "airframe_type": "Quadrotor x",
+    "download_url": "https://cdn.logs.px4.io/5bcd89ca-0c6a-4119-a655-0251bb074e1f.ulg",
+    "local_file": "Quadrotor_5bcd89ca.ulg",
+    "download_status": "ok",
+    "bytes": 237931024
+  },
+  {
+    "log_id": "c7663200-8ddf-4471-9748-b922b89366bd",
+    "log_date": "2026-05-06",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 6086,
+    "mav_type": "Quadrotor",
+    "estimator": "EKF2",
+    "sys_autostart_id": 4001,
+    "sys_hw": "HKUST_NXT_DUAL",
+    "ver_sw": "4a0e65f2331b23b9c8352656e9ccb6edeaea5d6c",
+    "ver_sw_release": "v1.14.3 0",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 1,
+    "flight_modes": [
+      14
+    ],
+    "vehicle_uuid": "0006000000003632393233335109002e001e",
+    "flight_mode_durations": [
+      [
+        14,
+        6086
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Quadcopter",
+    "airframe_type": "Quadrotor x",
+    "download_url": "https://cdn.logs.px4.io/c7663200-8ddf-4471-9748-b922b89366bd.ulg",
+    "local_file": "Quadrotor_c7663200.ulg",
+    "download_status": "ok",
+    "bytes": 303355389
+  },
+  {
+    "log_id": "93b25b68-0d36-4dbf-af0c-a4be5ef577b9",
+    "log_date": "2024-09-05",
+    "description": "QGroundControl Session",
+    "feedback": "None Given",
+    "type": "flightreport",
+    "wind_speed": 10,
+    "rating": "good",
+    "video_url": "",
+    "error_labels": [],
+    "source": "QGroundControl",
+    "duration_s": 6669,
+    "mav_type": "Quadrotor",
+    "estimator": "EKF2",
+    "sys_autostart_id": 1001,
+    "sys_hw": "PX4_FMU_V3",
+    "ver_sw": "1682fd5671421ea52120c17aa2ed73dbd2457921",
+    "ver_sw_release": "v1.12.1 255",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 18,
+    "flight_modes": [
+      2,
+      3,
+      4,
+      5,
+      14,
+      15
+    ],
+    "vehicle_uuid": "000100000000323737373238510400310046",
+    "flight_mode_durations": [
+      [
+        4,
+        252
+      ],
+      [
+        14,
+        4970
+      ],
+      [
+        15,
+        6
+      ],
+      [
+        2,
+        0
+      ],
+      [
+        14,
+        5
+      ],
+      [
+        2,
+        753
+      ],
+      [
+        14,
+        407
+      ],
+      [
+        3,
+        206
+      ],
+      [
+        5,
+        66
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "HIL Quadcopter X",
+    "airframe_type": "Simulation",
+    "download_url": "https://cdn.logs.px4.io/93b25b68-0d36-4dbf-af0c-a4be5ef577b9.ulg",
+    "local_file": "Quadrotor_93b25b68.ulg",
+    "download_status": "ok",
+    "bytes": 204398741
+  },
+  {
+    "log_id": "b1353a86-3133-4d60-b92b-ebc8f95280ab",
+    "log_date": "2025-09-08",
+    "description": " Log analysis for humidity test",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 7990,
+    "mav_type": "Quadrotor",
+    "estimator": "EKF2",
+    "sys_autostart_id": 4001,
+    "sys_hw": "PX4_FMU_V6XRT",
+    "ver_sw": "99c40407ffd7ac184e2d7b4b293f36f10fe561ef",
+    "ver_sw_release": "v1.15.4 255",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 184,
+    "flight_modes": [
+      4
+    ],
+    "vehicle_uuid": "0009000000000000000082935afd1f0ab80e",
+    "flight_mode_durations": [
+      [
+        4,
+        7990
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Quadcopter",
+    "airframe_type": "Quadrotor x",
+    "download_url": "https://cdn.logs.px4.io/b1353a86-3133-4d60-b92b-ebc8f95280ab.ulg",
+    "local_file": "Quadrotor_b1353a86.ulg",
+    "download_status": "ok",
+    "bytes": 276652626
+  },
+  {
+    "log_id": "d8f4ef23-8d11-4b7d-8e9c-b64218a01089",
+    "log_date": "2025-07-05",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 6979,
+    "mav_type": "Hexarotor",
+    "estimator": "EKF2",
+    "sys_autostart_id": 6001,
+    "sys_hw": "PX4FMU_V2",
+    "ver_sw": "65e24bd57f9ab0dbb16a6157265ba541cf4bef7e",
+    "ver_sw_release": "v65.24.57 0",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 2,
+    "flight_modes": [
+      0
+    ],
+    "vehicle_uuid": "0020003A3439511430323935",
+    "flight_mode_durations": [
+      [
+        0,
+        6979
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Hexarotor x geometry",
+    "airframe_type": "Hexarotor x",
+    "download_url": "https://cdn.logs.px4.io/d8f4ef23-8d11-4b7d-8e9c-b64218a01089.ulg",
+    "local_file": "Hexarotor_d8f4ef23.ulg",
+    "download_status": "ok",
+    "bytes": 213199380
+  },
+  {
+    "log_id": "d7f0dcd7-a101-4a85-a21a-8361029c57a0",
+    "log_date": "2025-12-31",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 5869,
+    "mav_type": "Hexarotor",
+    "estimator": "EKF2",
+    "sys_autostart_id": 6001,
+    "sys_hw": "PX4_FMU_V6X",
+    "ver_sw": "6ea3539157ca358c70a515878b77077af7d4611d",
+    "ver_sw_release": "v1.16.0 255",
+    "num_logged_errors": 16,
+    "num_logged_warnings": 86,
+    "flight_modes": [
+      2,
+      4,
+      5,
+      15
+    ],
+    "vehicle_uuid": "0006000000003339343834335118002b0039",
+    "flight_mode_durations": [
+      [
+        4,
+        0
+      ],
+      [
+        2,
+        4428
+      ],
+      [
+        5,
+        0
+      ],
+      [
+        15,
+        2
+      ],
+      [
+        2,
+        9
+      ],
+      [
+        15,
+        0
+      ],
+      [
+        2,
+        1427
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Hexarotor x geometry",
+    "airframe_type": "Hexarotor x",
+    "download_url": "https://cdn.logs.px4.io/d7f0dcd7-a101-4a85-a21a-8361029c57a0.ulg",
+    "local_file": "Hexarotor_d7f0dcd7.ulg",
+    "download_status": "ok",
+    "bytes": 269077281
+  },
+  {
+    "log_id": "30652013-ad77-498f-b897-1c41d6bc455d",
+    "log_date": "2025-03-01",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 4050,
+    "mav_type": "Hexarotor",
+    "estimator": "EKF2",
+    "sys_autostart_id": 6001,
+    "sys_hw": "PX4FMU_V2",
+    "ver_sw": "65e24bd57f9ab0dbb16a6157265ba541cf4bef7e",
+    "ver_sw_release": "v65.24.57 0",
+    "num_logged_errors": 8851,
+    "num_logged_warnings": 734,
+    "flight_modes": [
+      1,
+      2,
+      15
+    ],
+    "vehicle_uuid": "0022001D3332510233313832",
+    "flight_mode_durations": [
+      [
+        2,
+        4042
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        15,
+        7
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Hexarotor x geometry",
+    "airframe_type": "Hexarotor x",
+    "download_url": "https://cdn.logs.px4.io/30652013-ad77-498f-b897-1c41d6bc455d.ulg",
+    "local_file": "Hexarotor_30652013.ulg",
+    "download_status": "ok",
+    "bytes": 205166762
+  },
+  {
+    "log_id": "de61bb7f-8620-4a11-88ba-a316e945c0e3",
+    "log_date": "2025-05-27",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 7238,
+    "mav_type": "Hexarotor",
+    "estimator": "EKF2",
+    "sys_autostart_id": 6001,
+    "sys_hw": "PX4FMU_V2",
+    "ver_sw": "65e24bd57f9ab0dbb16a6157265ba541cf4bef7e",
+    "ver_sw_release": "v65.24.57 0",
+    "num_logged_errors": 63918,
+    "num_logged_warnings": 1,
+    "flight_modes": [
+      1,
+      2,
+      15
+    ],
+    "vehicle_uuid": "004E00233431511132343336",
+    "flight_mode_durations": [
+      [
+        2,
+        7235
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        2,
+        0
+      ],
+      [
+        15,
+        2
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Hexarotor x geometry",
+    "airframe_type": "Hexarotor x",
+    "download_url": "https://cdn.logs.px4.io/de61bb7f-8620-4a11-88ba-a316e945c0e3.ulg",
+    "local_file": "Hexarotor_de61bb7f.ulg",
+    "download_status": "ok",
+    "bytes": 251953327
+  },
+  {
+    "log_id": "fa0b5ac0-c781-458b-9c42-0198d01cad41",
+    "log_date": "2025-04-05",
+    "description": "2025-04-03_fail_baro_2",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 5594,
+    "mav_type": "Fixed Wing",
+    "estimator": "EKF2",
+    "sys_autostart_id": 2100,
+    "sys_hw": "PX4_FMU_V2",
+    "ver_sw": "96dede2b1c1374c7b6e4fa3e09477c47ef36dfe9",
+    "ver_sw_release": "v1.13.0 128",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 0,
+    "flight_modes": [
+      12
+    ],
+    "vehicle_uuid": "000100000000363934323532511400210030",
+    "flight_mode_durations": [
+      [
+        12,
+        5594
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Standard Plane",
+    "airframe_type": "Standard Plane",
+    "download_url": "https://cdn.logs.px4.io/fa0b5ac0-c781-458b-9c42-0198d01cad41.ulg",
+    "local_file": "Fixed_Wing_fa0b5ac0.ulg",
+    "download_status": "ok",
+    "bytes": 181657600
+  },
+  {
+    "log_id": "56f2e99d-c488-4012-9ea6-79e154c0248d",
+    "log_date": "2025-10-17",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 5288,
+    "mav_type": "Fixed Wing",
+    "estimator": "EKF2",
+    "sys_autostart_id": 2100,
+    "sys_hw": "PX4FMU_V2",
+    "ver_sw": "82aa24adfca29321cfd1209e287eab6c2b16780e",
+    "ver_sw_release": "v1.8.1 0",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 20,
+    "flight_modes": [
+      0,
+      3,
+      4,
+      14,
+      15
+    ],
+    "vehicle_uuid": "0030001C3036510E32363637",
+    "flight_mode_durations": [
+      [
+        0,
+        4138
+      ],
+      [
+        15,
+        0
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        15,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        15,
+        2
+      ],
+      [
+        0,
+        8
+      ],
+      [
+        15,
+        29
+      ],
+      [
+        3,
+        264
+      ],
+      [
+        14,
+        760
+      ],
+      [
+        15,
+        0
+      ],
+      [
+        14,
+        1
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        14,
+        2
+      ],
+      [
+        15,
+        0
+      ],
+      [
+        14,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        14,
+        0
+      ],
+      [
+        15,
+        0
+      ],
+      [
+        14,
+        1
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        14,
+        0
+      ],
+      [
+        15,
+        0
+      ],
+      [
+        14,
+        1
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        14,
+        1
+      ],
+      [
+        4,
+        1
+      ],
+      [
+        15,
+        54
+      ],
+      [
+        0,
+        17
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Standard Plane",
+    "airframe_type": "Standard Plane",
+    "download_url": "https://cdn.logs.px4.io/56f2e99d-c488-4012-9ea6-79e154c0248d.ulg",
+    "local_file": "Fixed_Wing_56f2e99d.ulg",
+    "download_status": "ok",
+    "bytes": 195967112
+  },
+  {
+    "log_id": "442af9f4-d3d8-40ef-881e-17f5a1c15410",
+    "log_date": "2025-12-01",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 4777,
+    "mav_type": "Fixed Wing",
+    "estimator": "EKF2",
+    "sys_autostart_id": 2100,
+    "sys_hw": "PX4_FMU_V6X",
+    "ver_sw": "6ea3539157ca358c70a515878b77077af7d4611d",
+    "ver_sw_release": "v1.16.0 255",
+    "num_logged_errors": 1,
+    "num_logged_warnings": 615,
+    "flight_modes": [
+      4
+    ],
+    "vehicle_uuid": "000600000000343736383433510900430038",
+    "flight_mode_durations": [
+      [
+        4,
+        4777
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Standard Plane",
+    "airframe_type": "Standard Plane",
+    "download_url": "https://cdn.logs.px4.io/442af9f4-d3d8-40ef-881e-17f5a1c15410.ulg",
+    "local_file": "Fixed_Wing_442af9f4.ulg",
+    "download_status": "ok",
+    "bytes": 224899088
+  },
+  {
+    "log_id": "79c86e07-b2e7-4eb6-9fc7-26d4ef61bcba",
+    "log_date": "2025-07-24",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 4482,
+    "mav_type": "Fixed Wing",
+    "estimator": "EKF2",
+    "sys_autostart_id": 2100,
+    "sys_hw": "",
+    "ver_sw": "fd8350fc402c297972210197f545d7d8d796fa60",
+    "ver_sw_release": "v1.13.2 0",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 1,
+    "flight_modes": [
+      0,
+      4
+    ],
+    "vehicle_uuid": "0006000000003530333834315104001c003b",
+    "flight_mode_durations": [
+      [
+        0,
+        36
+      ],
+      [
+        4,
+        4446
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Standard Plane",
+    "airframe_type": "Standard Plane",
+    "download_url": "https://cdn.logs.px4.io/79c86e07-b2e7-4eb6-9fc7-26d4ef61bcba.ulg",
+    "local_file": "Fixed_Wing_79c86e07.ulg",
+    "download_status": "ok",
+    "bytes": 143946723
+  },
+  {
+    "log_id": "5ecfb440-4120-4e0a-bf79-52c84488972f",
+    "log_date": "2024-05-08",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 5525,
+    "mav_type": "VTOL Standard",
+    "estimator": "EKF2",
+    "sys_autostart_id": 13000,
+    "sys_hw": "CUBEPILOT_CUBEORANGE",
+    "ver_sw": "b8c541dd7277ed735139d7d1bfb829d61fbe29fb",
+    "ver_sw_release": "v1.14.0 255",
+    "num_logged_errors": 2,
+    "num_logged_warnings": 3,
+    "flight_modes": [
+      2,
+      3,
+      15
+    ],
+    "vehicle_uuid": "0006000000003035373533325112003b0036",
+    "flight_mode_durations": [
+      [
+        2,
+        11
+      ],
+      [
+        15,
+        0
+      ],
+      [
+        3,
+        5496
+      ],
+      [
+        2,
+        17
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Standard VTOL",
+    "airframe_type": "Standard VTOL",
+    "download_url": "https://cdn.logs.px4.io/5ecfb440-4120-4e0a-bf79-52c84488972f.ulg",
+    "local_file": "VTOL_Standard_5ecfb440.ulg",
+    "download_status": "ok",
+    "bytes": 270722893
+  },
+  {
+    "log_id": "f8fbbda8-bbee-4c9f-a6c7-b83f33e756a5",
+    "log_date": "2024-10-15",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 7357,
+    "mav_type": "VTOL Standard",
+    "estimator": "EKF2",
+    "sys_autostart_id": 1002,
+    "sys_hw": "PX4_FMU_V5",
+    "ver_sw": "1dacb4cdef2d7145754fc788fa8dc482eed74b40",
+    "ver_sw_release": "v1.14.3 255",
+    "num_logged_errors": 12,
+    "num_logged_warnings": 24,
+    "flight_modes": [
+      17,
+      4,
+      13
+    ],
+    "vehicle_uuid": "0002000000003632363530335111002c0032",
+    "flight_mode_durations": [
+      [
+        17,
+        17
+      ],
+      [
+        4,
+        948
+      ],
+      [
+        13,
+        6391
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "HIL Standard VTOL QuadPlane",
+    "airframe_type": "Standard VTOL",
+    "download_url": "https://cdn.logs.px4.io/f8fbbda8-bbee-4c9f-a6c7-b83f33e756a5.ulg",
+    "local_file": "VTOL_Standard_f8fbbda8.ulg",
+    "download_status": "ok",
+    "bytes": 198796177
+  },
+  {
+    "log_id": "8c864402-39c5-4316-ab4a-b9c43c560f7f",
+    "log_date": "2024-06-24",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 5499,
+    "mav_type": "VTOL Standard",
+    "estimator": "EKF2",
+    "sys_autostart_id": 13000,
+    "sys_hw": "CUBEPILOT_CUBEORANGE",
+    "ver_sw": "1dacb4cdef2d7145754fc788fa8dc482eed74b40",
+    "ver_sw_release": "v1.14.3 255",
+    "num_logged_errors": 1,
+    "num_logged_warnings": 1,
+    "flight_modes": [
+      2,
+      3
+    ],
+    "vehicle_uuid": "000600000000313234323332511800380049",
+    "flight_mode_durations": [
+      [
+        2,
+        13
+      ],
+      [
+        3,
+        5471
+      ],
+      [
+        2,
+        14
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Standard VTOL",
+    "airframe_type": "Standard VTOL",
+    "download_url": "https://cdn.logs.px4.io/8c864402-39c5-4316-ab4a-b9c43c560f7f.ulg",
+    "local_file": "VTOL_Standard_8c864402.ulg",
+    "download_status": "ok",
+    "bytes": 269935901
+  },
+  {
+    "log_id": "186a2505-1079-4761-bcd2-0d14fbd2b7cd",
+    "log_date": "2024-08-26",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 4090,
+    "mav_type": "Octorotor",
+    "estimator": "EKF2",
+    "sys_autostart_id": 8001,
+    "sys_hw": "CUBEPILOT_CUBEORANGE",
+    "ver_sw": "2e8918da66af37922ededee1cc2d2efffec4cfb2",
+    "ver_sw_release": "v1.12.3 255",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 8,
+    "flight_modes": [
+      18,
+      3,
+      4
+    ],
+    "vehicle_uuid": "00060000000037373930343051070038001b",
+    "flight_mode_durations": [
+      [
+        4,
+        1
+      ],
+      [
+        3,
+        3878
+      ],
+      [
+        4,
+        18
+      ],
+      [
+        18,
+        14
+      ],
+      [
+        4,
+        101
+      ],
+      [
+        18,
+        75
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Octocopter X geometry",
+    "airframe_type": "Octorotor x",
+    "download_url": "https://cdn.logs.px4.io/186a2505-1079-4761-bcd2-0d14fbd2b7cd.ulg",
+    "local_file": "Octorotor_186a2505.ulg",
+    "download_status": "ok",
+    "bytes": 180452571
+  },
+  {
+    "log_id": "f922385d-5c94-4dae-9595-59e4328ea17f",
+    "log_date": "2024-06-17",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 4548,
+    "mav_type": "Octorotor",
+    "estimator": "EKF2",
+    "sys_autostart_id": 8001,
+    "sys_hw": "CUBEPILOT_CUBEORANGE",
+    "ver_sw": "2e8918da66af37922ededee1cc2d2efffec4cfb2",
+    "ver_sw_release": "v1.12.3 255",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 5,
+    "flight_modes": [
+      2,
+      3,
+      4
+    ],
+    "vehicle_uuid": "000600000000373739303430510a002d003b",
+    "flight_mode_durations": [
+      [
+        3,
+        2014
+      ],
+      [
+        2,
+        35
+      ],
+      [
+        3,
+        7
+      ],
+      [
+        2,
+        107
+      ],
+      [
+        3,
+        1506
+      ],
+      [
+        4,
+        45
+      ],
+      [
+        3,
+        763
+      ],
+      [
+        2,
+        66
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Octocopter X geometry",
+    "airframe_type": "Octorotor x",
+    "download_url": "https://cdn.logs.px4.io/f922385d-5c94-4dae-9595-59e4328ea17f.ulg",
+    "local_file": "Octorotor_f922385d.ulg",
+    "download_status": "ok",
+    "bytes": 206641039
+  },
+  {
+    "log_id": "fd9a3636-f741-4a62-a4b8-bf02f6492594",
+    "log_date": "2024-12-06",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 5455,
+    "mav_type": "Octorotor",
+    "estimator": "EKF2",
+    "sys_autostart_id": 8001,
+    "sys_hw": "CUBEPILOT_CUBEORANGE",
+    "ver_sw": "52f35654a64bf929fe663f9aa8c99e08a235fcda",
+    "ver_sw_release": "v1.12.3 0",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 4,
+    "flight_modes": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "vehicle_uuid": "00060000000037373930343051070029002c",
+    "flight_mode_durations": [
+      [
+        2,
+        88
+      ],
+      [
+        3,
+        2857
+      ],
+      [
+        5,
+        61
+      ],
+      [
+        4,
+        2173
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        2,
+        272
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Octocopter X geometry",
+    "airframe_type": "Octorotor x",
+    "download_url": "https://cdn.logs.px4.io/fd9a3636-f741-4a62-a4b8-bf02f6492594.ulg",
+    "local_file": "Octorotor_fd9a3636.ulg",
+    "download_status": "ok",
+    "bytes": 237711706
+  },
+  {
+    "log_id": "8733bc36-7872-4700-96d8-7d97a693da91",
+    "log_date": "2025-09-25",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 3098,
+    "mav_type": "Tiltrotor VTOL",
+    "estimator": "EKF2",
+    "sys_autostart_id": 13030,
+    "sys_hw": "PX4_FMU_V6C",
+    "ver_sw": "c1df375ce5c432dc7d7f6a709d81c86e1f83c528",
+    "ver_sw_release": "v1.14.0 0",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 6,
+    "flight_modes": [
+      2,
+      3,
+      5
+    ],
+    "vehicle_uuid": "00060000000039393737323351130052002f",
+    "flight_mode_durations": [
+      [
+        3,
+        2730
+      ],
+      [
+        2,
+        70
+      ],
+      [
+        5,
+        86
+      ],
+      [
+        2,
+        28
+      ],
+      [
+        5,
+        25
+      ],
+      [
+        2,
+        156
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Quadplane VTOL Tiltrotor",
+    "airframe_type": "VTOL Tiltrotor",
+    "download_url": "https://cdn.logs.px4.io/8733bc36-7872-4700-96d8-7d97a693da91.ulg",
+    "local_file": "Tiltrotor_VTOL_8733bc36.ulg",
+    "download_status": "ok",
+    "bytes": 145809424
+  },
+  {
+    "log_id": "bc29728b-e418-44be-8492-d9410bd50d69",
+    "log_date": "2025-05-23",
+    "description": "QGroundControl Session",
+    "feedback": "None Given",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "QGroundControl",
+    "duration_s": 3578,
+    "mav_type": "Tiltrotor VTOL",
+    "estimator": "EKF2",
+    "sys_autostart_id": 13100,
+    "sys_hw": "CUBEPILOT_CUBEORANGEPLUS",
+    "ver_sw": "99c40407ffd7ac184e2d7b4b293f36f10fe561ef",
+    "ver_sw_release": "v1.15.4 255",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 31,
+    "flight_modes": [
+      0,
+      15
+    ],
+    "vehicle_uuid": "0006000000003038353332335102004a0046",
+    "flight_mode_durations": [
+      [
+        0,
+        2112
+      ],
+      [
+        15,
+        1466
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Tiltrotor VTOL",
+    "airframe_type": "VTOL Tiltrotor",
+    "download_url": "https://cdn.logs.px4.io/bc29728b-e418-44be-8492-d9410bd50d69.ulg",
+    "local_file": "Tiltrotor_VTOL_bc29728b.ulg",
+    "download_status": "ok",
+    "bytes": 153849856
+  },
+  {
+    "log_id": "62045563-dac6-4c82-a8ff-36b1227cf69c",
+    "log_date": "2026-03-27",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 3189,
+    "mav_type": "Ground Rover",
+    "estimator": "EKF2",
+    "sys_autostart_id": 50000,
+    "sys_hw": "JFB_JFB110",
+    "ver_sw": "4d99796a7b88548cac2307e599898a30dec7a82d",
+    "ver_sw_release": "v0.10.0 255",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 0,
+    "flight_modes": [
+      0
+    ],
+    "vehicle_uuid": "0006000000003430373032335118001f002b",
+    "flight_mode_durations": [
+      [
+        0,
+        3189
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Rover Differential",
+    "airframe_type": "Rover",
+    "download_url": "https://cdn.logs.px4.io/62045563-dac6-4c82-a8ff-36b1227cf69c.ulg",
+    "local_file": "Ground_Rover_62045563.ulg",
+    "download_status": "ok",
+    "bytes": 117033556
+  },
+  {
+    "log_id": "822865bd-5675-46db-b079-51d3aedb6d59",
+    "log_date": "2024-12-10",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 5615,
+    "mav_type": "Ground Rover",
+    "estimator": "EKF2",
+    "sys_autostart_id": 50000,
+    "sys_hw": "PX4_FMU_V3",
+    "ver_sw": "b754baaf1ecaff905de4246d4619f9ad25eae9e9",
+    "ver_sw_release": "v1.13.3 0",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 3142,
+    "flight_modes": [
+      0,
+      2,
+      3
+    ],
+    "vehicle_uuid": "000100000000323835373137510800510020",
+    "flight_mode_durations": [
+      [
+        0,
+        1913
+      ],
+      [
+        2,
+        0
+      ],
+      [
+        3,
+        2690
+      ],
+      [
+        2,
+        0
+      ],
+      [
+        0,
+        1010
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Rover Differential",
+    "airframe_type": "Rover",
+    "download_url": "https://cdn.logs.px4.io/822865bd-5675-46db-b079-51d3aedb6d59.ulg",
+    "local_file": "Ground_Rover_822865bd.ulg",
+    "download_status": "ok",
+    "bytes": 144586604
+  },
+  {
+    "log_id": "9250f406-50cc-4195-81a0-510e153010e5",
+    "log_date": "2025-10-02",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 2625,
+    "mav_type": "Two-rotor VTOL (Tailsitter)",
+    "estimator": "EKF2",
+    "sys_autostart_id": 13200,
+    "sys_hw": "PX4_FMU_V5",
+    "ver_sw": "b8c541dd7277ed735139d7d1bfb829d61fbe29fb",
+    "ver_sw_release": "v1.14.0 0",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 46,
+    "flight_modes": [
+      1,
+      2,
+      3,
+      4,
+      15
+    ],
+    "vehicle_uuid": "00020000000036363937323351120021002c",
+    "flight_mode_durations": [
+      [
+        4,
+        0
+      ],
+      [
+        2,
+        733
+      ],
+      [
+        1,
+        3
+      ],
+      [
+        15,
+        3
+      ],
+      [
+        1,
+        5
+      ],
+      [
+        15,
+        1
+      ],
+      [
+        1,
+        14
+      ],
+      [
+        3,
+        304
+      ],
+      [
+        2,
+        41
+      ],
+      [
+        15,
+        122
+      ],
+      [
+        1,
+        7
+      ],
+      [
+        3,
+        281
+      ],
+      [
+        2,
+        39
+      ],
+      [
+        15,
+        707
+      ],
+      [
+        1,
+        7
+      ],
+      [
+        3,
+        283
+      ],
+      [
+        2,
+        36
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        15,
+        32
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic VTOL Tailsitter",
+    "airframe_type": "VTOL Tailsitter",
+    "download_url": "https://cdn.logs.px4.io/9250f406-50cc-4195-81a0-510e153010e5.ulg",
+    "local_file": "Two-rotor_VTOL__Tailsitter__9250f406.ulg",
+    "download_status": "ok",
+    "bytes": 279724350
+  },
+  {
+    "log_id": "7671bf18-66af-4fa3-8f7c-9443a2e24374",
+    "log_date": "2026-06-04",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 2793,
+    "mav_type": "Two-rotor VTOL (Tailsitter)",
+    "estimator": "EKF2",
+    "sys_autostart_id": 13200,
+    "sys_hw": "PX4_FMU_V5",
+    "ver_sw": "75cca9fc2056569ac33e0537a2038dbd9340cd64",
+    "ver_sw_release": "v1.14.0 0",
+    "num_logged_errors": 1,
+    "num_logged_warnings": 6,
+    "flight_modes": [
+      1,
+      2,
+      15
+    ],
+    "vehicle_uuid": "000200000000303036373033510e002f0032",
+    "flight_mode_durations": [
+      [
+        2,
+        1400
+      ],
+      [
+        15,
+        53
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        2,
+        644
+      ],
+      [
+        15,
+        467
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        2,
+        12
+      ],
+      [
+        1,
+        4
+      ],
+      [
+        15,
+        209
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic VTOL Tailsitter",
+    "airframe_type": "VTOL Tailsitter",
+    "download_url": "https://cdn.logs.px4.io/7671bf18-66af-4fa3-8f7c-9443a2e24374.ulg",
+    "local_file": "Two-rotor_VTOL__Tailsitter__7671bf18.ulg",
+    "download_status": "ok",
+    "bytes": 297130351
+  },
+  {
+    "log_id": "8264d042-72f6-4f79-82b6-c11ced80b9dc",
+    "log_date": "2025-11-12",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 11107,
+    "mav_type": "Quad-rotor VTOL (Tailsitter)",
+    "estimator": "EKF2",
+    "sys_autostart_id": 13200,
+    "sys_hw": "FW_STM32F427",
+    "ver_sw": "5cdeccfae0170f2ac3785ee8d34c8d72265bc90c",
+    "ver_sw_release": "v0.0.0 0",
+    "num_logged_errors": 1,
+    "num_logged_warnings": 1345,
+    "flight_modes": [
+      1,
+      2,
+      4,
+      5,
+      12,
+      15,
+      18
+    ],
+    "vehicle_uuid": "0001000000003732383035335114002e0024",
+    "flight_mode_durations": [
+      [
+        2,
+        593
+      ],
+      [
+        4,
+        5
+      ],
+      [
+        5,
+        74
+      ],
+      [
+        15,
+        106
+      ],
+      [
+        5,
+        39
+      ],
+      [
+        2,
+        61
+      ],
+      [
+        5,
+        9
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        4
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        18,
+        3
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        4
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        0
+      ],
+      [
+        18,
+        3
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        7
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        0
+      ],
+      [
+        18,
+        3
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        18,
+        4
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        4
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        18,
+        4
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        4
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        4
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        6
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        8
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        4
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        10
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        8
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        2
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        5,
+        5
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        1
+      ],
+      [
+        4,
+        4
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        9
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        0
+      ],
+      [
+        18,
+        3
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        5
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        7
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        0
+      ],
+      [
+        18,
+        3
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        4
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        7
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        9
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        8
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        18,
+        4
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        9
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        0
+      ],
+      [
+        18,
+        3
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        6
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        6
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        0
+      ],
+      [
+        18,
+        3
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        4
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        18,
+        4
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        4
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        4
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        8
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        6
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        7
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        8
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        4
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        7
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        10
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        8
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        0
+      ],
+      [
+        18,
+        3
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        4
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        8
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        88
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        563
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        453
+      ],
+      [
+        2,
+        29
+      ],
+      [
+        5,
+        47
+      ],
+      [
+        2,
+        692
+      ],
+      [
+        5,
+        104
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        39
+      ],
+      [
+        2,
+        15
+      ],
+      [
+        1,
+        7
+      ],
+      [
+        2,
+        4
+      ],
+      [
+        1,
+        7
+      ],
+      [
+        2,
+        87
+      ],
+      [
+        1,
+        7
+      ],
+      [
+        2,
+        116
+      ],
+      [
+        1,
+        7
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        5,
+        0
+      ],
+      [
+        2,
+        0
+      ],
+      [
+        5,
+        0
+      ],
+      [
+        2,
+        0
+      ],
+      [
+        5,
+        0
+      ],
+      [
+        2,
+        0
+      ],
+      [
+        5,
+        473
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        0
+      ],
+      [
+        18,
+        3
+      ],
+      [
+        12,
+        4
+      ],
+      [
+        5,
+        403
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        70
+      ],
+      [
+        2,
+        186
+      ],
+      [
+        4,
+        5
+      ],
+      [
+        5,
+        151
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        4
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        501
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        10
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        0
+      ],
+      [
+        18,
+        3
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        25
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        5,
+        0
+      ],
+      [
+        18,
+        3
+      ],
+      [
+        12,
+        0
+      ],
+      [
+        2,
+        5338
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic VTOL Tailsitter",
+    "airframe_type": "VTOL Tailsitter",
+    "download_url": "https://cdn.logs.px4.io/8264d042-72f6-4f79-82b6-c11ced80b9dc.ulg",
+    "local_file": "Quad-rotor_VTOL__Tailsitter__8264d042.ulg",
+    "download_status": "ok",
+    "bytes": 121853952
+  },
+  {
+    "log_id": "3f9b295a-f6a7-4d6e-a2b7-bba5ce010d24",
+    "log_date": "2025-06-24",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 4262,
+    "mav_type": "Quad-rotor VTOL (Tailsitter)",
+    "estimator": "EKF2",
+    "sys_autostart_id": 13200,
+    "sys_hw": "PX4_FMU_V6C",
+    "ver_sw": "99c40407ffd7ac184e2d7b4b293f36f10fe561ef",
+    "ver_sw_release": "v1.15.4 255",
+    "num_logged_errors": 5,
+    "num_logged_warnings": 72,
+    "flight_modes": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      12,
+      15
+    ],
+    "vehicle_uuid": "000600000000363835323133511900290047",
+    "flight_mode_durations": [
+      [
+        2,
+        3
+      ],
+      [
+        3,
+        40
+      ],
+      [
+        4,
+        9
+      ],
+      [
+        12,
+        2
+      ],
+      [
+        15,
+        12
+      ],
+      [
+        4,
+        0
+      ],
+      [
+        2,
+        3349
+      ],
+      [
+        4,
+        5
+      ],
+      [
+        5,
+        427
+      ],
+      [
+        2,
+        386
+      ],
+      [
+        1,
+        11
+      ],
+      [
+        2,
+        11
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic VTOL Tailsitter",
+    "airframe_type": "VTOL Tailsitter",
+    "download_url": "https://cdn.logs.px4.io/3f9b295a-f6a7-4d6e-a2b7-bba5ce010d24.ulg",
+    "local_file": "Quad-rotor_VTOL__Tailsitter__3f9b295a.ulg",
+    "download_status": "ok",
+    "bytes": 192108778
+  },
+  {
+    "log_id": "a8cd558b-e184-43d6-a85e-473631c8b99e",
+    "log_date": "2025-11-04",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 3921,
+    "mav_type": "Normal helicopter with tail rotor",
+    "estimator": "EKF2",
+    "sys_autostart_id": 16001,
+    "sys_hw": "CUAV_X7PRO",
+    "ver_sw": "99c40407ffd7ac184e2d7b4b293f36f10fe561ef",
+    "ver_sw_release": "v1.15.4 255",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 10,
+    "flight_modes": [
+      2,
+      3
+    ],
+    "vehicle_uuid": "00060000000031373432353251030035004f",
+    "flight_mode_durations": [
+      [
+        2,
+        59
+      ],
+      [
+        3,
+        3758
+      ],
+      [
+        2,
+        103
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Helicopter (Tail ESC)",
+    "airframe_type": "Helicopter",
+    "download_url": "https://cdn.logs.px4.io/a8cd558b-e184-43d6-a85e-473631c8b99e.ulg",
+    "local_file": "Normal_helicopter_with_tail_rotor_a8cd558b.ulg",
+    "download_status": "ok",
+    "bytes": 161357338
+  },
+  {
+    "log_id": "f71a0400-4471-464b-a82f-c422e235dcc3",
+    "log_date": "2025-12-01",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 4777,
+    "mav_type": "Fixed Wing",
+    "estimator": "EKF2",
+    "sys_autostart_id": 2100,
+    "sys_hw": "PX4_FMU_V6X",
+    "ver_sw": "6ea3539157ca358c70a515878b77077af7d4611d",
+    "ver_sw_release": "v1.16.0 255",
+    "num_logged_errors": 1,
+    "num_logged_warnings": 615,
+    "flight_modes": [
+      4
+    ],
+    "vehicle_uuid": "000600000000343736383433510900430038",
+    "flight_mode_durations": [
+      [
+        4,
+        4777
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Standard Plane",
+    "airframe_type": "Standard Plane",
+    "download_url": "https://cdn.logs.px4.io/f71a0400-4471-464b-a82f-c422e235dcc3.ulg",
+    "local_file": "Fixed_Wing_f71a0400.ulg",
+    "download_status": "ok",
+    "bytes": 224899088
+  },
+  {
+    "log_id": "bfdcc68b-66c0-440e-9764-a183e82f35a6",
+    "log_date": "2025-07-15",
+    "description": "",
+    "feedback": "",
+    "type": "flightreport",
+    "wind_speed": -1,
+    "rating": "",
+    "video_url": "",
+    "error_labels": [],
+    "source": "webui",
+    "duration_s": 5437,
+    "mav_type": "VTOL Standard",
+    "estimator": "EKF2",
+    "sys_autostart_id": 13000,
+    "sys_hw": "PX4_FMU_V5",
+    "ver_sw": "99c40407ffd7ac184e2d7b4b293f36f10fe561ef",
+    "ver_sw_release": "v1.15.4 255",
+    "num_logged_errors": 0,
+    "num_logged_warnings": 0,
+    "flight_modes": [
+      0
+    ],
+    "vehicle_uuid": "000200000000203331354e3050050020003d",
+    "flight_mode_durations": [
+      [
+        0,
+        5437
+      ]
+    ],
+    "vehicle_name": "",
+    "airframe_name": "Generic Standard VTOL",
+    "airframe_type": "Standard VTOL",
+    "download_url": "https://cdn.logs.px4.io/bfdcc68b-66c0-440e-9764-a183e82f35a6.ulg",
+    "local_file": "VTOL_Standard_bfdcc68b.ulg",
+    "download_status": "ok",
+    "bytes": 215045425
+  }
+]
