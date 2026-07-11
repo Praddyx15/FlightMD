@@ -2,7 +2,6 @@
 Tests for ParameterAnalyser — safe ranges, dangerous combos, deprecated params.
 """
 
-import pytest
 from flightmd_core.analysers.parameters import ParameterAnalyser
 from flightmd_core.models.findings import Severity, Category
 
@@ -102,3 +101,28 @@ class TestParameterAnalyser:
     def test_health_score_penalised(self):
         result = run({"BAT_LOW_THR": 0.05, "BAT_CRIT_THR": 0.10})
         assert result.health_score < 100.0
+
+    def test_below_safe_range_emits_structured_param_change(self):
+        """Out-of-range findings must carry a ParamRecommendation, not just prose —
+        otherwise the report's parameter-change sheet only ever reflects oscillation
+        fixes, regardless of what else the log actually needs changed."""
+        result = run({"MC_ROLLRATE_P": 0.001})
+        below = [f for f in result.findings if "below" in f.title.lower()]
+        assert len(below) >= 1
+        rec = below[0].param_changes
+        assert len(rec) == 1
+        assert rec[0].param_name == "MC_ROLLRATE_P"
+        assert rec[0].current_value == 0.001
+        assert rec[0].change_direction == "increase"
+        assert rec[0].suggested_value > rec[0].current_value
+
+    def test_above_safe_range_emits_structured_param_change(self):
+        result = run({"MC_ROLLRATE_P": 0.7})
+        above = [f for f in result.findings if "above" in f.title.lower()]
+        assert len(above) >= 1
+        rec = above[0].param_changes
+        assert len(rec) == 1
+        assert rec[0].param_name == "MC_ROLLRATE_P"
+        assert rec[0].current_value == 0.7
+        assert rec[0].change_direction == "decrease"
+        assert rec[0].suggested_value < rec[0].current_value

@@ -13,7 +13,7 @@ import pandas as pd
 
 from flightmd_core.analysers.base import BaseAnalyser
 from flightmd_core.models.findings import (
-    AnalyserResult, Finding, Severity, Category
+    AnalyserResult, Finding, ParamRecommendation, Severity, Category
 )
 
 # Deprecated parameters (PX4 v1.13 → v1.14 migrations)
@@ -136,6 +136,14 @@ class ParameterAnalyser(BaseAnalyser):
                     plain_english=tech,
                     recommendation=f"Set {pname} to at least {mn}{' ' + unit if unit else ''} for safe operation.",
                     confidence=0.9,
+                    param_changes=[ParamRecommendation(
+                        param_name=pname,
+                        current_value=pval,
+                        suggested_value=mn,
+                        unit=unit,
+                        change_direction="increase",
+                        reason=f"{pname} is below the minimum safe value of {mn}{' ' + unit if unit else ''}.",
+                    )],
                 ))
 
             elif mx is not None and pval > mx:
@@ -155,6 +163,14 @@ class ParameterAnalyser(BaseAnalyser):
                     plain_english=tech,
                     recommendation=f"Reduce {pname} to at most {mx}{' ' + unit if unit else ''} for safe operation.",
                     confidence=0.9,
+                    param_changes=[ParamRecommendation(
+                        param_name=pname,
+                        current_value=pval,
+                        suggested_value=mx,
+                        unit=unit,
+                        change_direction="decrease",
+                        reason=f"{pname} exceeds the maximum safe value of {mx}{' ' + unit if unit else ''}.",
+                    )],
                 ))
 
         # ── 3. Dangerous combinations ────────────────────────────────────────
