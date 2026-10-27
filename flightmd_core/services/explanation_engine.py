@@ -56,6 +56,12 @@ TEMPLATES: dict[str, tuple[str, str]] = {
         "Inspect the flight controller mounting. Verify that one side is not touching the frame "
         "directly or pinched by wires, bypassing the damping.",
     ),
+    "vibration.imu_errors": (
+        "The IMU driver reported read errors during the flight. A few are harmless; a steady stream "
+        "means the sensor or its connection is unreliable.",
+        "Watch whether the count grows from flight to flight; check the flight controller's connectors "
+        "and replace the board if it keeps rising.",
+    ),
     "motors.rpm_imbalance": (
         "At hover, one motor had to spin noticeably faster or slower than the others to keep the "
         "aircraft level. That points at that motor, its prop, its arm, or an off-centre load.",
@@ -137,6 +143,21 @@ TEMPLATES: dict[str, tuple[str, str]] = {
         "as inconsistent with the filter's estimate.",
         "Check for vibration issues or magnetic disturbances affecting the sensors.",
     ),
+    "ekf.innovation_ratio_high": (
+        "An EKF test ratio stayed close to the point where the filter starts rejecting that sensor. "
+        "It still trusted the sensor, but with little margin left.",
+        "Check the calibration and mounting of that sensor before it gets worse.",
+    ),
+    "ekf.filter_fault": (
+        "ArduPilot's EKF flagged a fault in its own state or in a sensor it was fusing.",
+        "Check the sensor named in the finding; for a NaN fault, don't fly again until the cause is found.",
+    ),
+    "ekf.sensor_timeout": (
+        "The EKF stopped getting usable measurements from a sensor for a while during flight, so it "
+        "was estimating without it.",
+        "Check that sensor's wiring and health, and whether something blocked it (GPS shading, a "
+        "magnetometer swamped by current).",
+    ),
     "ekf.wind_jump": (
         "The EKF wind estimate jumped suddenly, which usually follows a sensor anomaly rather than "
         "a real gust.",
@@ -190,6 +211,20 @@ TEMPLATES: dict[str, tuple[str, str]] = {
         "tends to oscillate.",
         "Lower the P gain or raise the D gain towards the firmware default.",
     ),
+    "params.arming_checks_off": (
+        "Pre-arm safety checks are turned off, so the vehicle will arm with problems it would "
+        "normally refuse to fly with.",
+        "Set ARMING_CHECK back to 1 (all checks) and fix whatever check was failing instead.",
+    ),
+    "power.vcc_out_of_range": (
+        "The flight controller's own supply voltage left the safe band while armed. A deep dip can "
+        "reboot the autopilot in the air.",
+        "Check the power module and its cable, and take servos and LEDs off the flight controller's supply.",
+    ),
+    "power.overcurrent": (
+        "A device on the flight controller's peripheral ports drew more current than the port allows.",
+        "Find the device drawing too much (radio, GPS, camera, LEDs) and power it separately.",
+    ),
     "params.pos_loop_risk": (
         "The position loop P gain is high relative to the velocity loop, which may cause position "
         "overshoot and oscillation.",
@@ -205,8 +240,9 @@ CATEGORY_FALLBACK = {
     Category.EKF: "Verify sensor calibration and check for vibration or magnetic interference.",
     Category.BATTERY: "Inspect battery connections, age, and cell balance.",
     Category.PARAMETERS: "Verify the parameter values against safe default ranges.",
+    Category.SYSTEM: "Check the flight controller's power and wiring.",
 }
-DEFAULT_RECOMMENDATION = "Consult the log details or PX4 documentation for troubleshooting."
+DEFAULT_RECOMMENDATION = "Consult the log details or the autopilot's documentation for troubleshooting."
 
 
 class ExplanationEngine:

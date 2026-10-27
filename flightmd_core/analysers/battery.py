@@ -40,6 +40,7 @@ class BatteryAnalyser(BaseAnalyser):
     name            = "battery"
     display_name    = "Battery Analysis"
     required_topics = ["battery_status"]
+    weight          = 15.0
 
     def analyse(self, topics, params):
         raw = topics["battery_status"]

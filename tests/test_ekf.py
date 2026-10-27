@@ -194,3 +194,118 @@ class TestEKFAnalyser:
         for f in result.findings:
             assert 0.0 <= f.confidence <= 1.0
             assert f.confidence_level in ("high", "medium", "low")
+
+
+ARDU = {"FRAME_CLASS": 1.0, "ATC_RAT_RLL_P": 0.135}
+PX4 = {"MAV_TYPE": 2.0, "EKF2_GPS_DELAY": 110.0}
+GOOD = 0b111111 | (1 << 16)     # attitude..vert pos valid, initialised
+
+
+def ap_ratios(n: int = 1000, **cols) -> pd.DataFrame:
+    """ekf_test_ratios from an ArduPilot .bin at 50 Hz, ratios already squared."""
+    df = pd.DataFrame({
+        "timestamp": np.arange(n) * 20_000,
+        "vel_test_ratio": np.full(n, 0.1),
+        "pos_test_ratio": np.full(n, 0.1),
+        "hgt_test_ratio": np.full(n, 0.1),
+        "mag_test_ratio": np.full(n, 0.1),
+        "tas_test_ratio": np.zeros(n),
+        "solution_status": np.full(n, GOOD),
+        "fault_status": np.zeros(n, dtype=int),
+        "timeout_status": np.full(n, 0b110000),   # airspeed and drag: never fused on a copter
+    })
+    for k, v in cols.items():
+        df[k] = v
+    return df
+
+
+def run_ap(df, params=ARDU):
+    return EKFAnalyser().safe_analyse({"ekf_test_ratios": df}, params)
+
+
+def window(n, start, stop, on, off):
+    v = np.full(n, off)
+    v[start:stop] = on
+    return v
+
+
+class TestArduPilotEKF:
+
+    def test_ekf_test_ratios_alone_is_enough(self):
+        assert EKFAnalyser().is_applicable({"ekf_test_ratios"})
+
+    def test_healthy(self):
+        result = run_ap(ap_ratios())
+        assert not result.skipped
+        assert result.findings == []
+        assert result.key_metrics["max_innovation_ratio"] == 0.1
+
+    def test_rejected_mag_ratio(self):
+        result = run_ap(ap_ratios(mag_test_ratio=window(1000, 200, 400, 1.5, 0.1)))
+        [f] = result.findings
+        assert f.kind == "ekf.innovation_ratio"
+        assert f.severity == Severity.WARNING
+        assert f.title == "EKF Innovation Ratio Exceeded: Magnetometer"
+        assert "compass" in f.recommendation.lower()
+
+    def test_sustained_near_limit_warns(self):
+        """0.7 squared-scale = 0.84 in Mission Planner, over its 0.8."""
+        result = run_ap(ap_ratios(vel_test_ratio=window(1000, 200, 350, 0.7, 0.1)))
+        [f] = result.findings
+        assert f.kind == "ekf.innovation_ratio_high"
+        assert f.severity == Severity.WARNING
+
+    def test_brief_near_limit_is_ignored(self):
+        assert run_ap(ap_ratios(vel_test_ratio=window(1000, 200, 250, 0.7, 0.1))).findings == []
+
+    def test_gps_glitch_is_bit_14(self):
+        sol = window(1000, 300, 340, GOOD | (1 << 14), GOOD)
+        [f] = run_ap(ap_ratios(solution_status=sol)).findings
+        assert f.kind == "ekf.gps_glitch"
+
+    def test_takeoff_detected_bit_is_not_a_glitch(self):
+        """nav_filter_status bit 10 is takeoff_detected, PX4's bit 10 is gps_glitch."""
+        assert run_ap(ap_ratios(solution_status=np.full(1000, GOOD | (1 << 10)))).findings == []
+
+    def test_nan_fault_is_critical(self):
+        [f] = run_ap(ap_ratios(fault_status=window(1000, 500, 510, 1, 0))).findings
+        assert f.kind == "ekf.filter_fault"
+        assert f.severity == Severity.CRITICAL
+
+    def test_position_timeout_after_it_was_fine(self):
+        tmo = window(1000, 400, 500, 0b110001, 0b110000)
+        [f] = run_ap(ap_ratios(timeout_status=tmo)).findings
+        assert f.kind == "ekf.sensor_timeout"
+        assert "position" in f.technical_summary
+
+    def test_no_gps_at_all_is_not_a_timeout(self):
+        assert run_ap(ap_ratios(timeout_status=np.full(1000, 0b110011))).findings == []
+
+    def test_ardupilot_tlog_flags(self):
+        df = ap_ratios().drop(columns=["solution_status", "fault_status", "timeout_status"])
+        df["flags"] = GOOD & 0xFFFF | (1 << 10)       # EKF_UNINITIALIZED, not a glitch
+        assert run_ap(df).findings == []
+        df["flags"] = window(1000, 300, 340, 0b111111 | (1 << 15), 0b111111)
+        assert [f.kind for f in run_ap(df).findings] == ["ekf.gps_glitch"]
+
+    def test_px4_tlog_flags_glitch_is_bit_10(self):
+        df = ap_ratios().drop(columns=["solution_status", "fault_status", "timeout_status"])
+        df["flags"] = window(1000, 300, 340, 0b111111 | (1 << 10), 0b111111)
+        assert [f.kind for f in run_ap(df, PX4).findings] == ["ekf.gps_glitch"]
+
+    def test_estimator_status_ratios_share_the_near_limit(self):
+        """PX4's estimator_status ratio is the same innov²/(gate²·var) as the
+        squared ArduPilot values, so 0.64 applies to both."""
+        df = make_healthy_estimator_status()
+        df["vel_test_ratio"] = window(1000, 200, 350, 0.6, 0.1)
+        assert run({"estimator_status": df}).findings == []
+        df["vel_test_ratio"] = window(1000, 200, 350, 0.7, 0.1)
+        assert [f.kind for f in run({"estimator_status": df}).findings] == ["ekf.innovation_ratio_high"]
+
+    def test_px4_gps_advice_names_the_delay_param(self):
+        df = make_flagged_estimator_status(flag_bit=2)
+        [f] = EKFAnalyser().safe_analyse({"estimator_status": df}, PX4).findings
+        assert f.params == ["EKF2_GPS_DELAY"]
+        assert "EKF2_GPS_DELAY" in f.recommendation
+        [f] = EKFAnalyser().safe_analyse({"estimator_status": df}, ARDU).findings
+        assert f.params == []

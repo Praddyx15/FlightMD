@@ -56,6 +56,7 @@ class GPSAnalyser(BaseAnalyser):
     name            = "gps"
     display_name    = "GPS Analysis"
     required_topics = ["vehicle_gps_position"]
+    weight          = 15.0
     optional_topics = ["vehicle_status", "vehicle_land_detected"]
 
     def analyse(self, topics, params):

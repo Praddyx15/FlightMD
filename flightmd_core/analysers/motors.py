@@ -43,6 +43,7 @@ class MotorAnalyser(BaseAnalyser):
     name            = "motors"
     display_name    = "Motor / ESC Analysis"
     required_topics = ["esc_status"]
+    weight          = 5.0
 
     def analyse(self, topics, params):
         df = topics["esc_status"]

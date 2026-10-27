@@ -7,6 +7,7 @@ JSON-safe (NaN/inf -> None) so the API never emits a bare NaN.
 import math
 import time
 import uuid
+from datetime import datetime, timezone
 from typing import Optional
 
 from flightmd_core.analysers.helpers import clean
@@ -74,6 +75,7 @@ class ReportBuilder:
             file_name=file_name,
             file_size_bytes=file_size,
             assessed_fraction=ScoreCalculator().assessed_fraction(results),
+            generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         )
 
     def _sanitise_finding(self, f: Finding) -> None:
@@ -83,6 +85,8 @@ class ReportBuilder:
             p for p in f.param_changes
             if math.isfinite(p.current_value) and math.isfinite(p.suggested_value)
         ]
+        # a change appended after the Finding was built isn't in params yet
+        f.params = list(dict.fromkeys(f.params + [p.param_name for p in f.param_changes]))
 
     def _sanitise_metadata(self, metadata: FlightMetadata) -> FlightMetadata:
         data = clean(metadata.model_dump())

@@ -52,11 +52,20 @@ MIN_RATE_HZ = 10.0      # tlog ATTITUDE at 2-4 Hz can't see a control-loop oscil
 CHART_FREQ_MIN = 0.5
 CHART_MAX_BINS = 512
 
+# what the D-band and mechanical advice point at, for Finding.params
+D_FILTER = {"px4": "IMU_DGYRO_CUTOFF", "ardupilot": "ATC_RAT_{ax}_FLTD"}
+NOTCH = {
+    "px4": ["IMU_GYRO_NF0_FRQ", "IMU_GYRO_NF0_BW"],
+    "ardupilot": ["INS_HNTCH_ENABLE", "INS_HNTCH_FREQ"],
+}
+_AP_AXIS = {"roll": "RLL", "pitch": "PIT", "yaw": "YAW"}
+
 
 class OscillationAnalyser(BaseAnalyser):
     name          = "oscillation"
     display_name  = "Oscillation Analysis"
     required_topics = ["vehicle_angular_velocity"]
+    weight        = 20.0
 
     def analyse(self, topics, params):
         df = topics["vehicle_angular_velocity"]
@@ -238,8 +247,10 @@ class OscillationAnalyser(BaseAnalyser):
         p_name, d_name = rate_gain_names(vehicle, axis)
 
         changes: list[ParamRecommendation] = []
+        touched: list[str] = []
         if hz < MID_BAND_HZ:
             kind = "oscillation.rate_p"
+            touched = [p_name] if p_name else []
             rec = f"Lower the {axis} rate P gain by about 13%."
             cur = params.get(p_name) if p_name else None
             if cur is not None and cur > 0:
@@ -253,6 +264,11 @@ class OscillationAnalyser(BaseAnalyser):
         elif hz < HIGH_BAND_HZ:
             kind = "oscillation.rate_d"
             rec = f"Lower the {axis} rate D gain by about 15%, or lower the D-term filter cutoff."
+            if d_name:
+                touched = [d_name]
+                filt = D_FILTER.get(vehicle.autopilot)
+                if filt and vehicle.frame == "multirotor":
+                    touched.append(filt.format(ax=_AP_AXIS[axis]))
             cur = params.get(d_name) if d_name else None
             if cur is not None and cur > 0:
                 new = round(cur * 0.85, 5)
@@ -267,6 +283,7 @@ class OscillationAnalyser(BaseAnalyser):
             kind = "oscillation.mechanical"
             rec = ("Check props, motor mounts and flight-controller mounting before touching gains; "
                    "if it persists, set up a notch filter at this frequency.")
+            touched = list(NOTCH.get(vehicle.autopilot, []))
 
         if not changes and kind != "oscillation.mechanical" and p_name is None:
             rec += f" (No {axis} gain is suggested for this vehicle type: {vehicle.frame}, {vehicle.autopilot}.)"
@@ -289,5 +306,6 @@ class OscillationAnalyser(BaseAnalyser):
             confidence=confidence(amp / threshold - 1, res["duration_s"], quality),
             chart_data=chart,
             param_changes=changes,
+            params=touched,
             **when(res["t0"], res["t1"]),
         )

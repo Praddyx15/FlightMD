@@ -15,7 +15,7 @@ trusted to gate this. When the altitude trace doesn't have that shape,
 this analyser skips gracefully — not an error, the same way
 MotorAnalyser skips when ESC telemetry isn't present.
 
-Not included in score_calculator.MODULE_WEIGHTS: it's inapplicable to
+Unweighted (weight 0, so it never moves the score): it's inapplicable to
 the vast majority of flights, and its safety-relevant-but-narrow
 findings (e.g. "no parachute deployment detected") shouldn't dilute or
 be diluted by the general multirotor scoring.

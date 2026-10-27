@@ -1,0 +1,705 @@
+{
+  "$defs": {
+    "AnalyserResult": {
+      "properties": {
+        "analyser": {
+          "type": "string",
+          "title": "Analyser"
+        },
+        "display_name": {
+          "type": "string",
+          "title": "Display Name"
+        },
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/Finding"
+          },
+          "type": "array",
+          "title": "Findings"
+        },
+        "health_score": {
+          "type": "number",
+          "title": "Health Score",
+          "default": 100.0
+        },
+        "skipped": {
+          "type": "boolean",
+          "title": "Skipped",
+          "default": false
+        },
+        "skip_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Skip Reason",
+          "default": null
+        },
+        "processing_ms": {
+          "type": "integer",
+          "title": "Processing Ms",
+          "default": 0
+        },
+        "key_metrics": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "type": "object",
+          "title": "Key Metrics",
+          "default": {}
+        },
+        "assessed": {
+          "type": "boolean",
+          "title": "Assessed",
+          "default": true
+        }
+      },
+      "title": "AnalyserResult",
+      "type": "object",
+      "required": [
+        "analyser",
+        "display_name",
+        "findings"
+      ]
+    },
+    "Category": {
+      "enum": [
+        "oscillation",
+        "vibration",
+        "ekf",
+        "battery",
+        "gps",
+        "parameters",
+        "motors",
+        "ascent_profile",
+        "system"
+      ],
+      "title": "Category",
+      "type": "string"
+    },
+    "Finding": {
+      "properties": {
+        "id": {
+          "type": "string",
+          "title": "Id"
+        },
+        "category": {
+          "$ref": "#/$defs/Category"
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity"
+        },
+        "title": {
+          "type": "string",
+          "title": "Title"
+        },
+        "technical_summary": {
+          "type": "string",
+          "title": "Technical Summary"
+        },
+        "plain_english": {
+          "type": "string",
+          "title": "Plain English"
+        },
+        "recommendation": {
+          "type": "string",
+          "title": "Recommendation"
+        },
+        "confidence": {
+          "type": "number",
+          "title": "Confidence"
+        },
+        "timestamp_start_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Timestamp Start Ms",
+          "default": null
+        },
+        "timestamp_end_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Timestamp End Ms",
+          "default": null
+        },
+        "t_start_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "T Start S",
+          "default": null
+        },
+        "t_end_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "T End S",
+          "default": null
+        },
+        "chart_data": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Chart Data",
+          "default": null
+        },
+        "param_changes": {
+          "items": {
+            "$ref": "#/$defs/ParamRecommendation"
+          },
+          "type": "array",
+          "title": "Param Changes",
+          "default": []
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Kind",
+          "default": null
+        },
+        "confidence_level": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Confidence Level",
+          "default": null
+        },
+        "params": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Params",
+          "default": []
+        }
+      },
+      "title": "Finding",
+      "type": "object",
+      "required": [
+        "category",
+        "severity",
+        "title",
+        "technical_summary",
+        "plain_english",
+        "recommendation",
+        "confidence"
+      ]
+    },
+    "FlightMetadata": {
+      "properties": {
+        "duration_seconds": {
+          "type": "number",
+          "title": "Duration Seconds"
+        },
+        "firmware_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Firmware Version",
+          "default": null
+        },
+        "hardware_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Hardware Id",
+          "default": null
+        },
+        "airframe_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Airframe Id",
+          "default": null
+        },
+        "airframe_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Airframe Name",
+          "default": null
+        },
+        "vehicle_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Vehicle Type",
+          "default": null
+        },
+        "log_start_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Log Start Utc",
+          "default": null
+        },
+        "arm_count": {
+          "type": "integer",
+          "title": "Arm Count",
+          "default": 0
+        },
+        "flight_modes_used": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Flight Modes Used",
+          "default": []
+        },
+        "max_altitude_m": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Max Altitude M",
+          "default": null
+        },
+        "max_speed_ms": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Max Speed Ms",
+          "default": null
+        },
+        "total_distance_m": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Total Distance M",
+          "default": null
+        },
+        "px4_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Px4 Version",
+          "default": null
+        },
+        "available_topics": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Available Topics",
+          "default": []
+        },
+        "weather": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Weather",
+          "default": null
+        },
+        "location_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Location Name",
+          "default": null
+        },
+        "gps_path": {
+          "anyOf": [
+            {
+              "items": {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Gps Path",
+          "default": null
+        },
+        "gps_path_wind_speed_ms": {
+          "anyOf": [
+            {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Gps Path Wind Speed Ms",
+          "default": null
+        },
+        "gps_path_hdop": {
+          "anyOf": [
+            {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Gps Path Hdop",
+          "default": null
+        },
+        "gps_path_t_s": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Gps Path T S",
+          "default": null
+        },
+        "armed_windows": {
+          "anyOf": [
+            {
+              "items": {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Armed Windows",
+          "default": null
+        },
+        "parse_warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Parse Warnings",
+          "default": []
+        },
+        "log_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Log Sha256",
+          "default": null
+        },
+        "source_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source Format",
+          "default": null
+        },
+        "planning_brief_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Planning Brief Sha256",
+          "default": null
+        }
+      },
+      "title": "FlightMetadata",
+      "type": "object",
+      "required": [
+        "duration_seconds"
+      ]
+    },
+    "ParamRecommendation": {
+      "properties": {
+        "param_name": {
+          "type": "string",
+          "title": "Param Name"
+        },
+        "current_value": {
+          "type": "number",
+          "title": "Current Value"
+        },
+        "suggested_value": {
+          "type": "number",
+          "title": "Suggested Value"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Unit",
+          "default": null
+        },
+        "change_direction": {
+          "type": "string",
+          "title": "Change Direction"
+        },
+        "reason": {
+          "type": "string",
+          "title": "Reason"
+        }
+      },
+      "title": "ParamRecommendation",
+      "type": "object",
+      "required": [
+        "param_name",
+        "current_value",
+        "suggested_value",
+        "change_direction",
+        "reason"
+      ]
+    },
+    "Severity": {
+      "enum": [
+        "critical",
+        "warning",
+        "info",
+        "good"
+      ],
+      "title": "Severity",
+      "type": "string"
+    }
+  },
+  "properties": {
+    "report_id": {
+      "type": "string",
+      "title": "Report Id"
+    },
+    "schema_version": {
+      "type": "string",
+      "title": "Schema Version",
+      "default": "1.7"
+    },
+    "overall_score": {
+      "type": "number",
+      "title": "Overall Score"
+    },
+    "score_label": {
+      "type": "string",
+      "title": "Score Label"
+    },
+    "letter_grade": {
+      "type": "string",
+      "title": "Letter Grade"
+    },
+    "executive_summary": {
+      "type": "string",
+      "title": "Executive Summary"
+    },
+    "metadata": {
+      "$ref": "#/$defs/FlightMetadata"
+    },
+    "findings": {
+      "items": {
+        "$ref": "#/$defs/Finding"
+      },
+      "type": "array",
+      "title": "Findings"
+    },
+    "param_change_sheet": {
+      "items": {
+        "$ref": "#/$defs/ParamRecommendation"
+      },
+      "type": "array",
+      "title": "Param Change Sheet"
+    },
+    "analyser_results": {
+      "items": {
+        "$ref": "#/$defs/AnalyserResult"
+      },
+      "type": "array",
+      "title": "Analyser Results"
+    },
+    "processing_time_ms": {
+      "type": "integer",
+      "title": "Processing Time Ms"
+    },
+    "file_name": {
+      "type": "string",
+      "title": "File Name"
+    },
+    "file_size_bytes": {
+      "type": "integer",
+      "title": "File Size Bytes"
+    },
+    "assessed_fraction": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Assessed Fraction",
+      "default": null
+    },
+    "generated_at": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Generated At",
+      "default": null
+    }
+  },
+  "title": "FlightMDReport",
+  "type": "object",
+  "required": [
+    "report_id",
+    "overall_score",
+    "score_label",
+    "letter_grade",
+    "executive_summary",
+    "metadata",
+    "findings",
+    "param_change_sheet",
+    "analyser_results",
+    "processing_time_ms",
+    "file_name",
+    "file_size_bytes"
+  ]
+}

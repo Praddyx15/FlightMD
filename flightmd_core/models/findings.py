@@ -3,6 +3,8 @@ FlightMD report models: the data contract.
 
 The web app and UAOP (as a package import) both consume these. Don't rename
 fields; add new ones as optional, and bump schema_version when you do.
+The published JSON Schema is docs/schema/flightmd-report-<version>.json
+(scripts/export_schema.py), with the history in docs/schema/CHANGELOG.md.
 """
 
 import math
@@ -62,6 +64,9 @@ class Finding(BaseModel):
     # explanation templates key on it, never on the title.
     kind: Optional[str] = None
     confidence_level: Optional[str] = None   # "high" | "medium" | "low"
+    # 1.7: every parameter the recommendation touches, including the ones in
+    # param_changes; tune-fly-verify matches applied changes on these
+    params: list[str] = []
 
     @model_validator(mode="after")
     def _fill_derived(self):
@@ -78,6 +83,8 @@ class Finding(BaseModel):
             self.t_start_s = self.timestamp_start_ms / 1000.0
         if self.t_end_s is None and self.timestamp_end_ms is not None:
             self.t_end_s = self.timestamp_end_ms / 1000.0
+        names = list(self.params) + [p.param_name for p in self.param_changes]
+        self.params = list(dict.fromkeys(n for n in names if n))
         return self
 
 
@@ -106,7 +113,7 @@ class AnalyserResult(BaseModel):
 
 class FlightMDReport(BaseModel):
     report_id: str
-    schema_version: str = "1.6"          # UAOP and AeroAtlas check this
+    schema_version: str = "1.7"          # UAOP and AeroAtlas check this
     overall_score: float                 # 0 when nothing could be assessed
     score_label: str                     # Excellent/Good/Caution/Warning/Critical, or "Not assessed"
     letter_grade: str                    # A-F, "-" when not assessed
@@ -120,6 +127,8 @@ class FlightMDReport(BaseModel):
     file_size_bytes: int
     # share of the scoring weight that was actually assessed, 0.0-1.0
     assessed_fraction: Optional[float] = None
+    # ISO-8601 UTC of when the report was built, e.g. "2026-10-27T09:12:33Z"
+    generated_at: Optional[str] = None
 
 
 from flightmd_core.models.metadata import FlightMetadata  # noqa: E402

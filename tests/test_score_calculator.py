@@ -72,3 +72,22 @@ def test_assessed_fraction():
     results = [result("oscillation"), result("vibration"), result("ekf", skipped=True)]
     ScoreCalculator().calculate(results)
     assert ScoreCalculator().assessed_fraction(results) == 0.4
+
+
+def test_weights_come_from_the_analyser_classes():
+    w = ScoreCalculator().weights
+    assert w["oscillation"] == 20.0
+    assert w["parameters"] == 5.0
+    assert "ascent_profile" not in w
+    assert "power" not in w
+
+
+def test_custom_weights():
+    calc = ScoreCalculator({"x": 1.0, "y": 3.0})
+    assert calc.calculate([result("x", 0.0), result("y", 100.0)])[0] == 75.0
+    assert calc.assessed_fraction([result("y")]) == 0.75
+
+
+def test_zero_weight_module_never_moves_the_score():
+    results = [result("oscillation", 80.0), result("power", 0.0)]
+    assert ScoreCalculator().calculate(results)[0] == 80.0

@@ -4,6 +4,7 @@ Tests for ReportBuilder — parameter-sheet dedupe, NaN sanitising, schema versi
 
 import json
 import math
+import re
 
 from flightmd_core.models.findings import (
     AnalyserResult, Finding, Category, Severity, ParamRecommendation,
@@ -34,7 +35,26 @@ def build(findings, results=None, metadata=None, score=(90.0, "Excellent", "A"))
 
 
 def test_schema_version_is_current():
-    assert build([]).schema_version == "1.6"
+    assert build([]).schema_version == "1.7"
+
+
+def test_generated_at_is_utc_iso():
+    stamp = build([]).generated_at
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", stamp)
+
+
+def test_params_list_includes_param_changes():
+    f = finding(Severity.WARNING, [rec("MC_ROLLRATE_D", 0.004, 0.0034, "decrease")])
+    f.params = ["IMU_DGYRO_CUTOFF"]
+    [out] = build([f]).findings
+    assert out.params == ["IMU_DGYRO_CUTOFF", "MC_ROLLRATE_D"]
+
+
+def test_change_appended_after_construction_reaches_params():
+    f = finding(Severity.WARNING)
+    f.param_changes.append(rec("MPC_XY_P", 1.8, 0.95, "decrease"))
+    [out] = build([f]).findings
+    assert out.params == ["MPC_XY_P"]
 
 
 def test_conflicting_directions_keep_the_more_severe_and_say_so():

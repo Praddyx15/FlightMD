@@ -1,19 +1,33 @@
 """
-Tests for ParameterAnalyser — safe ranges, dangerous combos, deprecated params.
+Tests for ParameterAnalyser — firmware and recommended ranges, per-version
+tables, dangerous combos, PX4 and ArduPilot.
 """
-
-import json
-import os
 
 import numpy as np
 import pytest
 
-from flightmd_core.analysers.parameters import ParameterAnalyser, DATA_DIR
+from flightmd_core.analysers.parameters import ParameterAnalyser, load_tables, pick_table
 from flightmd_core.models.findings import Severity, Category
+from flightmd_core.models.metadata import FlightMetadata
 
 
-def run(params: dict):
-    return ParameterAnalyser().safe_analyse({}, params)
+def run(params: dict, metadata=None):
+    a = ParameterAnalyser()
+    a.metadata = metadata
+    return a.safe_analyse({}, params)
+
+
+def px4(version):
+    return FlightMetadata(duration_seconds=60.0, px4_version=version)
+
+
+def copter(version="ArduCopter V4.7.1 (dbe79216)"):
+    return FlightMetadata(duration_seconds=60.0, firmware_version=version, vehicle_type="Copter")
+
+
+def table(autopilot, series, vehicle=None):
+    return next(t for t in load_tables() if t["autopilot"] == autopilot
+                and t["series"] == series and t["vehicle"] == vehicle)
 
 
 def warn_or_worse(result):
@@ -39,12 +53,50 @@ class TestParameterAnalyser:
         assert not result.skipped
         assert warn_or_worse(result) == []
 
-    def test_stock_v1_14_defaults_produce_no_findings(self):
+    @pytest.mark.parametrize("series", [(1, 13), (1, 14), (1, 15)])
+    def test_stock_defaults_produce_no_findings(self, series):
         """Every stock PX4 log used to get 7 'deprecated' INFO findings."""
-        with open(os.path.join(DATA_DIR, "px4_param_defaults", "v1_14.json"), encoding="utf-8") as f:
-            params = {k: float(v) for k, v in json.load(f).items()}
-        params.update({"LND_FLIGHT_T_LO": 12345.0, "LND_FLIGHT_T_HI": 0.0, "EKF2_MAG_DECL": 0.0})
+        params = {k: float(e["default"]) for k, e in table("px4", series)["params"].items() if "default" in e}
+        params.update({"SYS_AUTOSTART": 4001.0, "LND_FLIGHT_T_LO": 12345.0})
+        assert run(params, px4("v%d.%d.0" % series)).findings == []
         assert run(params).findings == []
+
+    def test_firmware_version_picks_the_table(self):
+        """EKF2_DECL_TYPE's default 7 in 1.14 is above 1.15's maximum of 3."""
+        assert run({"EKF2_DECL_TYPE": 7.0, "MAV_TYPE": 2}, px4("v1.14.3")).findings == []
+        [f] = run({"EKF2_DECL_TYPE": 7.0, "MAV_TYPE": 2}, px4("v1.15.0")).findings
+        assert f.kind == "params.above_range"
+        assert "firmware's allowed maximum" in f.technical_summary
+        assert "PX4 1.15" in f.technical_summary
+
+    def test_unknown_version_uses_the_widest_range(self):
+        assert run({"EKF2_DECL_TYPE": 7.0, "MAV_TYPE": 2}).findings == []
+
+    @pytest.mark.parametrize("autopilot, vehicle, series, expected", [
+        ("px4", None, (1, 14), "1.14"),
+        ("px4", None, (1, 16), "1.15"),
+        ("px4", None, (1, 12), "1.13"),
+        ("ardupilot", "copter", (4, 6), "4.6"),
+        ("ardupilot", "plane", (4, 8), "4.7"),
+    ])
+    def test_closest_table(self, autopilot, vehicle, series, expected):
+        _, source = pick_table(autopilot, vehicle, series)
+        assert source.endswith(f"{expected} metadata")
+
+    def test_recommended_range_says_why(self):
+        [f] = run({"MC_YAWRATE_P": 0.01, "MAV_TYPE": 2}, px4("v1.14.0")).findings
+        assert "recommended minimum" in f.technical_summary
+        assert "no feedback" in f.technical_summary
+        assert f.param_changes[0].suggested_value == 0.2
+
+    def test_reboot_required_is_mentioned(self):
+        [f] = run({"IMU_DGYRO_CUTOFF": 2000.0, "MAV_TYPE": 2}, px4("v1.14.0")).findings
+        assert "reboot" in f.recommendation.lower()
+        assert f.param_changes[0].suggested_value == 30.0
+
+    def test_range_finding_lists_its_param(self):
+        [f] = run({"MC_ROLLRATE_P": 0.7}).findings
+        assert f.params == ["MC_ROLLRATE_P"]
 
     @pytest.mark.parametrize("name", [
         "MC_ACRO_EXPO", "MC_ACRO_EXPO_Y", "MC_ACRO_SUPEXPO", "MC_ACRO_SUPEXPOY",
@@ -53,17 +105,15 @@ class TestParameterAnalyser:
     def test_live_params_are_not_deprecated(self, name):
         assert run({name: 0.5, "SYS_AUTOSTART": 4001}).findings == []
 
-    def test_deprecated_param_info(self):
-        result = run({"MPC_VELD_LP": 5.0})
-        info = [f for f in result.findings if f.severity == Severity.INFO]
-        assert len(info) == 1
-        assert "deprecated" in info[0].title.lower()
+    def test_live_param_is_not_called_deprecated(self):
+        """MPC_VELD_LP is in PX4 1.13-1.15's metadata; it used to be flagged."""
+        assert run({"MPC_VELD_LP": 5.0}).findings == []
 
     def test_float32_values_on_the_bound_are_in_range(self):
         """Autopilots store float32, so 0.05 arrives as 0.05000000074505806.
         On the bound is in range."""
         params = {name: float(np.float32(v)) for name, v in {
-            "MC_ROLLRATE_P": 0.01, "MPC_THR_MIN": 0.4, "BAT_CRIT_THR": 0.3, "MC_ROLLRATE_D": 0.01,
+            "MC_ROLLRATE_P": 0.01, "MPC_THR_MIN": 0.4, "BAT_CRIT_THR": 0.25, "MC_ROLLRATE_D": 0.01,
         }.items()}
         assert run(params).findings == []
 
@@ -110,9 +160,42 @@ class TestParameterAnalyser:
         params = {"MAV_TYPE": 1, "MC_ROLLRATE_P": 0.9, "MPC_XY_P": 1.8, "MPC_XY_VEL_P_ACC": 1.2}
         assert run(params).findings == []
 
-    def test_ardupilot_params_not_assessed(self):
-        result = run({"ATC_RAT_RLL_P": 0.135, "FRAME_CLASS": 1})
-        assert result.skipped
+    def test_ardupilot_params_are_assessed(self):
+        result = run({"ATC_RAT_RLL_P": 0.135, "FRAME_CLASS": 1}, copter())
+        assert not result.skipped
+        assert result.findings == []
+
+    def test_ardupilot_out_of_firmware_range(self):
+        [f] = run({"ATC_RAT_RLL_P": 0.9, "FRAME_CLASS": 1}, copter()).findings
+        assert f.kind == "params.above_range"
+        assert "ArduCopter 4.7" in f.technical_summary
+        rec = f.param_changes[0]
+        # no defaults in ArduPilot's metadata, so the bound is suggested
+        assert rec.suggested_value == 0.5
+        assert rec.change_direction == "decrease"
+
+    def test_ardupilot_without_version_still_checks(self):
+        [f] = run({"ATC_RAT_RLL_P": 0.9, "FRAME_CLASS": 1}).findings
+        assert f.kind == "params.above_range"
+
+    def test_ardupilot_battery_failsafes_inverted(self):
+        result = run({"BATT_LOW_VOLT": 10.5, "BATT_CRT_VOLT": 10.8, "FRAME_CLASS": 1}, copter())
+        [f] = [f for f in result.findings if f.kind == "params.bat_thr_inverted"]
+        assert f.severity == Severity.CRITICAL
+        assert f.params == ["BATT_LOW_VOLT", "BATT_CRT_VOLT"]
+        assert f.param_changes == []
+
+    def test_ardupilot_disabled_failsafe_is_not_inverted(self):
+        result = run({"BATT_LOW_VOLT": 0.0, "BATT_CRT_VOLT": 10.8, "FRAME_CLASS": 1}, copter())
+        assert not any(f.kind == "params.bat_thr_inverted" for f in result.findings)
+
+    def test_ardupilot_arming_checks_off(self):
+        result = run({"ARMING_CHECK": 0.0, "FRAME_CLASS": 1}, copter("ArduCopter V4.6.3"))
+        assert [f.kind for f in result.findings] == ["params.arming_checks_off"]
+
+    def test_px4_combos_dont_run_on_ardupilot(self):
+        result = run({"COM_RC_LOSS_T": 0.1, "FRAME_CLASS": 1, "ATC_RAT_RLL_P": 0.1}, copter())
+        assert not any(f.kind == "params.rc_loss_short" for f in result.findings)
 
     def test_inverted_battery_thresholds_critical(self):
         result = run({"BAT_LOW_THR": 0.05, "BAT_CRIT_THR": 0.10})
@@ -128,6 +211,7 @@ class TestParameterAnalyser:
         assert rec.param_name == "BAT_LOW_THR"
         assert rec.suggested_value > 0.10
         assert "BAT_CRIT_THR=0.1" in combo.technical_summary
+        assert combo.params == ["BAT_LOW_THR", "BAT_CRIT_THR"]
 
     def test_oscillation_risk_combo_warning(self):
         result = run({"MC_ROLLRATE_P": 0.35, "MC_ROLLRATE_D": 0.0005})

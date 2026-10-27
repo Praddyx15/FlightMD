@@ -7,18 +7,14 @@ are left out of the mean, and when none could be assessed the report is
 "Not assessed", never 100 / A.
 """
 
+from typing import Optional
+
+from flightmd_core.analysers.registry import module_weights
 from flightmd_core.models.findings import AnalyserResult, Severity
 
-# sum to 100; ascent_profile is deliberately unweighted (see its docstring)
-MODULE_WEIGHTS: dict[str, float] = {
-    "oscillation": 20.0,
-    "vibration":   20.0,
-    "ekf":         20.0,
-    "battery":     15.0,
-    "gps":         15.0,
-    "parameters":   5.0,
-    "motors":       5.0,
-}
+# Weights live on the analyser classes (BaseAnalyser.weight) so a plugin can
+# bring its own; the built-ins sum to 100. Modules with weight 0 (ascent
+# profile, board power) are reported but never scored.
 
 # the usual per-finding penalties; analysers apply their own variants
 SEVERITY_PENALTY: dict[str, float] = {
@@ -45,6 +41,9 @@ SCORE_LABELS = [(floor, label) for floor, label, _ in BANDS]
 
 
 class ScoreCalculator:
+    def __init__(self, weights: Optional[dict[str, float]] = None):
+        self.weights = module_weights() if weights is None else weights
+
     def calculate(self, results: list[AnalyserResult]) -> tuple[float, str, str]:
         """(score 0-100, label, letter grade). Marks unassessed results
         (assessed=False) as a side effect. Nothing assessed gives
@@ -55,9 +54,9 @@ class ScoreCalculator:
         for r in results:
             if r.skipped:
                 r.assessed = False
-            if r.analyser not in MODULE_WEIGHTS or not r.assessed:
+            weight = self.weights.get(r.analyser, 0.0)
+            if weight <= 0 or not r.assessed:
                 continue
-            weight = MODULE_WEIGHTS[r.analyser]
             r.health_score = max(0.0, min(100.0, r.health_score))
             weighted_sum += r.health_score * weight
             total_weight += weight
@@ -70,9 +69,12 @@ class ScoreCalculator:
 
     def assessed_fraction(self, results: list[AnalyserResult]) -> float:
         """Share of the total weight that was actually assessed, 0-1."""
-        done = sum(MODULE_WEIGHTS.get(r.analyser, 0.0) for r in results
+        total = sum(self.weights.values())
+        if total <= 0:
+            return 0.0
+        done = sum(self.weights.get(r.analyser, 0.0) for r in results
                    if r.assessed and not r.skipped)
-        return round(done / sum(MODULE_WEIGHTS.values()), 3)
+        return round(done / total, 3)
 
     def get_letter_grade(self, score: float) -> str:
         for floor, _, grade in BANDS:
