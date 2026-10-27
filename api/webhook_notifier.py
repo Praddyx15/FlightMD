@@ -1,73 +1,82 @@
 """
-Best-effort webhook notifier for airframe alert rules — fires a POST to an
-operator-configured URL (Slack/Discord-compatible payload shape) when a
-tagged flight breaches one of that airframe's alert rules.
+Alert webhooks (Slack/Discord-shaped JSON) for airframe alert rules.
 
-Since any operator of a shared instance can set an airframe's webhook_url
-to an arbitrary URL with no authentication, this validates the target to
-reduce SSRF risk before ever making a request: https-only, and the
-resolved IP must not be a private/loopback/link-local/reserved address.
-This isn't perfect (DNS can still change between check and request on a
-sufficiently adversarial setup), but it closes the easy cases — pointing
-the webhook at localhost, a RFC1918 address, or a link-local metadata
-endpoint.
+The target URL is user-supplied, so before every send we resolve the host,
+refuse anything that isn't a public address, connect to exactly the address
+we checked (no second DNS lookup to rebind), and never follow redirects.
 """
 
+import http.client
 import ipaddress
 import json
 import logging
 import socket
-import urllib.request
 from urllib.parse import urlparse
+
+from api.config import get_settings
 
 logger = logging.getLogger(__name__)
 
 REQUEST_TIMEOUT_S = 5.0
+MAX_URL_LEN = 2048
 
 
 class UnsafeWebhookURLError(ValueError):
     pass
 
 
-def validate_webhook_url(url: str) -> None:
-    """Raises UnsafeWebhookURLError if the URL isn't safe to POST to."""
+def validate_webhook_url(url: str) -> list[str]:
+    """Return the host's resolved addresses, or raise UnsafeWebhookURLError."""
+    if len(url) > MAX_URL_LEN or any(c.isspace() or ord(c) < 32 for c in url):
+        raise UnsafeWebhookURLError("Webhook URL is too long or contains whitespace")
+
     parsed = urlparse(url)
-    if parsed.scheme != "https":
+    schemes = ("https", "http") if get_settings().allow_http_webhooks else ("https",)
+    if parsed.scheme not in schemes:
         raise UnsafeWebhookURLError("Webhook URL must use https://")
     if not parsed.hostname:
         raise UnsafeWebhookURLError("Webhook URL must include a hostname")
+    try:
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    except ValueError:
+        raise UnsafeWebhookURLError("Webhook URL has an invalid port")
 
     try:
-        addr_infos = socket.getaddrinfo(parsed.hostname, None)
+        infos = socket.getaddrinfo(parsed.hostname, port, proto=socket.IPPROTO_TCP)
     except socket.gaierror as e:
         raise UnsafeWebhookURLError(f"Could not resolve webhook hostname: {e}") from e
 
-    for family, _, _, _, sockaddr in addr_infos:
-        ip = ipaddress.ip_address(sockaddr[0])
-        if (
-            ip.is_private
-            or ip.is_loopback
-            or ip.is_link_local
-            or ip.is_reserved
-            or ip.is_multicast
-            or ip.is_unspecified
-        ):
+    addrs = []
+    for *_, sockaddr in infos:
+        ip = ipaddress.ip_address(sockaddr[0].split("%")[0])
+        if ip.version == 6 and ip.ipv4_mapped:
+            ip = ip.ipv4_mapped
+        # is_global rules out private, loopback, link-local (cloud metadata),
+        # CGNAT and reserved ranges in one go
+        if not ip.is_global or ip.is_multicast:
             raise UnsafeWebhookURLError(
-                f"Webhook hostname resolves to a non-public address ({ip}) — refusing to send."
+                f"Webhook hostname resolves to a non-public address ({ip}), refusing to send."
             )
+        addrs.append(str(ip))
+    if not addrs:
+        raise UnsafeWebhookURLError("Webhook hostname did not resolve")
+    return addrs
+
+
+def _open_connection(scheme: str, host: str, port, ip: str, timeout: float):
+    cls = http.client.HTTPSConnection if scheme == "https" else http.client.HTTPConnection
+    conn = cls(host, port, timeout=timeout)
+    # TLS still checks the cert against `host`; only the socket target is pinned
+    conn._create_connection = lambda addr, *a, **kw: socket.create_connection((ip, addr[1]), *a, **kw)
+    return conn
 
 
 def send_alert_webhook(webhook_url: str, airframe_label: str, report_id: str, triggered: list[dict]) -> bool:
-    """
-    Best-effort: validates the URL, posts a Slack/Discord-compatible
-    payload, and swallows any error (never raises) — a broken webhook
-    must never break analysis. Returns True if the request was sent
-    successfully.
-    """
+    """POST the alert. Never raises; True only on a 2xx."""
     try:
-        validate_webhook_url(webhook_url)
+        addrs = validate_webhook_url(webhook_url)
     except UnsafeWebhookURLError as e:
-        logger.warning(f"Refusing to send alert webhook for airframe {airframe_label!r}: {e}")
+        logger.warning(f"refusing alert webhook for report {report_id}: {e}")
         return False
 
     lines = [f"⚠️ FlightMD alert — *{airframe_label}* (report `{report_id}`)"]
@@ -76,17 +85,24 @@ def send_alert_webhook(webhook_url: str, airframe_label: str, report_id: str, tr
         label = rule.label or rule.metric
         lines.append(f"• {label}: {item['value']:.3g} ({'<' if rule.comparison == 'lt' else '>'} {rule.threshold:g})")
     text = "\n".join(lines)
-
     payload = json.dumps({"content": text, "text": text}).encode("utf-8")
-    req = urllib.request.Request(
-        webhook_url,
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
+
+    parsed = urlparse(webhook_url)
+    target = parsed.path or "/"
+    if parsed.query:
+        target += "?" + parsed.query
+
+    conn = _open_connection(parsed.scheme, parsed.hostname, parsed.port, addrs[0], REQUEST_TIMEOUT_S)
     try:
-        with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_S) as response:
-            return 200 <= response.status < 300
-    except Exception as e:
-        logger.warning(f"Alert webhook delivery failed for airframe {airframe_label!r}: {e}")
+        conn.request("POST", target, body=payload, headers={
+            "Content-Type": "application/json",
+            "User-Agent": "FlightMD-webhook",
+        })
+        resp = conn.getresponse()
+        # a 3xx is not followed, it just counts as a failed delivery
+        return 200 <= resp.status < 300
+    except (OSError, ValueError, http.client.HTTPException) as e:
+        logger.warning(f"alert webhook for report {report_id} failed: {e}")
         return False
+    finally:
+        conn.close()

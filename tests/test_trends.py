@@ -1,9 +1,8 @@
 """
-Tests for GET /trends/{airframe_label} and GET /diff.
+GET /trends/{airframe_label} and GET /diff.
 
-Populates the real job_store singleton directly (pointed at a temp
-directory) rather than running the full upload pipeline — these endpoints
-are pure read/reshape views over already-completed reports.
+Fills the job_store singleton directly (pointed at a temp dir) instead of
+running uploads; both endpoints only reshape finished reports.
 """
 
 import os
@@ -22,7 +21,7 @@ from flightmd_core.models.metadata import FlightMetadata
 
 
 def make_report(report_id: str, score: float, roll_hz: float, sag_v: float,
-                 findings: list[Finding] = None) -> FlightMDReport:
+                 findings: list[Finding] = None, battery_skipped: bool = False) -> FlightMDReport:
     meta = FlightMetadata(duration_seconds=120.0, firmware_version="1.14.0")
     return FlightMDReport(
         report_id=report_id,
@@ -41,7 +40,7 @@ def make_report(report_id: str, score: float, roll_hz: float, sag_v: float,
             ),
             AnalyserResult(
                 analyser="battery", display_name="Battery Analysis",
-                findings=[], health_score=100.0,
+                findings=[], health_score=100.0, skipped=battery_skipped,
                 key_metrics={"sag_per_cell_v": sag_v},
             ),
         ],
@@ -53,24 +52,44 @@ def make_report(report_id: str, score: float, roll_hz: float, sag_v: float,
 
 @pytest_asyncio.fixture
 async def client(tmp_path, monkeypatch):
-    from api.storage import JobStore
-    import api.storage as storage_module
-    monkeypatch.setattr(JobStore, "DATA_DIR", str(tmp_path))
-    storage_module.job_store = JobStore()
-    monkeypatch.setattr("api.routers.trends.job_store", storage_module.job_store)
-    monkeypatch.setattr("api.routers.report.job_store", storage_module.job_store)
+    from api import airframe_store as afs
+    from api.storage import JobStore, job_store
+
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "airframes").mkdir()
+    monkeypatch.setattr(JobStore, "DATA_DIR", str(tmp_path / "reports"))
+    monkeypatch.setattr(job_store, "_store", {})
+    monkeypatch.setattr(afs.airframe_store, "data_dir", str(tmp_path / "airframes"))
 
     from api.main import app
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c, storage_module.job_store
+        yield c, job_store
+
+
+def claim(label):
+    from api import airframe_store as afs
+    return {"X-Airframe-Token": afs.airframe_store.authorise(label, None, claim=True)}
 
 
 class TestTrendsEndpoint:
     @pytest.mark.asyncio
-    async def test_no_flights_for_unknown_airframe(self, client):
+    async def test_unclaimed_airframe_needs_a_token(self, client):
         c, _ = client
         resp = await c.get("/trends/NoSuchDrone")
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_wrong_token_rejected(self, client):
+        c, _ = client
+        claim("Quad-1")
+        resp = await c.get("/trends/Quad-1", headers={"X-Airframe-Token": "guess"})
+        assert resp.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_no_flights_for_a_new_airframe(self, client):
+        c, _ = client
+        resp = await c.get("/trends/NoSuchDrone", headers=claim("NoSuchDrone"))
         assert resp.status_code == 200
         data = resp.json()
         assert data["flight_count"] == 0
@@ -86,7 +105,7 @@ class TestTrendsEndpoint:
         store.create("r3", airframe_label="Other-Drone")
         store.complete("r3", make_report("r3", score=95.0, roll_hz=0.1, sag_v=0.1))
 
-        resp = await c.get("/trends/Quad-1")
+        resp = await c.get("/trends/Quad-1", headers=claim("Quad-1"))
         assert resp.status_code == 200
         data = resp.json()
         assert data["flight_count"] == 2
@@ -95,6 +114,18 @@ class TestTrendsEndpoint:
         assert data["flights"][1]["key_metrics"]["oscillation.roll_peak_hz"] == 1.1
         assert data["flights"][1]["key_metrics"]["battery.sag_per_cell_v"] == 0.6
         assert data["flights"][0]["module_scores"]["oscillation"] == 100.0
+
+
+    @pytest.mark.asyncio
+    async def test_skipped_module_score_is_null_not_100(self, client):
+        c, store = client
+        store.create("r1", airframe_label="Quad-1")
+        store.complete("r1", make_report("r1", 80.0, 0.5, 0.2, battery_skipped=True))
+
+        resp = await c.get("/trends/Quad-1", headers=claim("Quad-1"))
+        scores = resp.json()["flights"][0]["module_scores"]
+        assert scores["battery"] is None
+        assert scores["oscillation"] == 100.0
 
 
 class TestDiffEndpoint:
@@ -143,6 +174,17 @@ class TestDiffEndpoint:
 
         resp = await c.get("/diff", params={"a": "r1", "b": "r1"})
         assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_diff_skipped_module_has_no_delta(self, client):
+        c, store = client
+        store.create("r1")
+        store.complete("r1", make_report("r1", 70.0, 1.1, 0.6, battery_skipped=True))
+        store.create("r2")
+        store.complete("r2", make_report("r2", 90.0, 0.3, 0.2))
+
+        data = (await c.get("/diff", params={"a": "r1", "b": "r2"})).json()
+        assert data["module_score_deltas"]["battery"] == {"a": None, "b": 100.0, "delta": None}
 
     @pytest.mark.asyncio
     async def test_diff_missing_report_404s(self, client):

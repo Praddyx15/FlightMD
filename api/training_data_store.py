@@ -1,29 +1,28 @@
 """
-Opt-in store for flight logs contributed to a growing dataset — the raw
-log file plus the FlightMD report generated from it.
+Opt-in dataset: logs people chose to contribute, plus a stripped copy of
+their report.
 
-This is entirely separate from JobStore's ephemeral per-flight storage:
-- Nothing lands here unless the uploader explicitly checks "contribute
-  this log anonymously" at upload time. Default is off.
-- What "anonymous" means here: no name, account, email, or IP address is
-  ever attached to a contribution — only the log file itself and its
-  analysis output. It does NOT mean the flight's own recorded GPS
-  coordinates are stripped; a flight log inherently contains wherever it
-  was flown, same as any log on PX4's own public review database.
-- Contributions are never auto-deleted (unlike the 1-hour ephemeral
-  default) — that's the entire point of a growing dataset.
+Nothing lands here unless the uploader ticks "contribute". No name, account,
+IP or original filename is stored, and the report copy loses its filename,
+place name and GPS track. The raw log itself still holds whatever positions
+the autopilot recorded; we keep the file as uploaded.
+Contributions aren't auto-deleted. Identical logs are only stored once.
 """
 
-import json
+import hashlib
 import logging
 import os
+import shutil
+import tempfile
 import time
-import uuid
 from dataclasses import dataclass
 
+from api.fs import write_json_atomic
 from flightmd_core.models.findings import FlightMDReport
 
 logger = logging.getLogger(__name__)
+
+_STRIP_META = ("location_name", "gps_path", "gps_path_wind_speed_ms", "gps_path_hdop")
 
 
 @dataclass
@@ -32,65 +31,75 @@ class ContributionStats:
     total_bytes: int
 
 
-class TrainingDataStore:
-    """Append-only store for contributed (log, report) pairs."""
+def _sha256(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
+
+def anonymise(report: FlightMDReport) -> dict:
+    data = report.model_dump(mode="json")
+    data["file_name"] = ""
+    data["report_id"] = ""
+    meta = data.get("metadata") or {}
+    for key in _STRIP_META:
+        meta[key] = None
+    return data
+
+
+class TrainingDataStore:
     DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "data", "training_contributions"))
 
     def __init__(self):
         os.makedirs(self.DATA_DIR, exist_ok=True)
 
-    def save(
-        self,
-        content: bytes,
-        file_suffix: str,
-        log_format: str,
-        report: FlightMDReport,
-    ) -> str:
-        """
-        Persist a contributed log + its report. Returns the generated
-        contribution_id. Deliberately does not take a report_id, uploader
-        identity, or original filename — those aren't part of what gets
-        stored for an anonymous contribution.
-        """
-        contribution_id = str(uuid.uuid4())
-        log_path = os.path.join(self.DATA_DIR, f"{contribution_id}{file_suffix}")
+    def save(self, log_path: str, file_suffix: str, log_format: str, report: FlightMDReport) -> str:
+        """Copy the log in and write the stripped report next to it. Returns the contribution id."""
+        # content hash as the id: the same log contributed twice is stored once
+        contribution_id = _sha256(log_path)[:32]
+        dest = os.path.join(self.DATA_DIR, f"{contribution_id}{file_suffix}")
         meta_path = os.path.join(self.DATA_DIR, f"{contribution_id}.json")
+        if os.path.exists(dest) and os.path.exists(meta_path):
+            return contribution_id
 
-        with open(log_path, "wb") as f:
-            f.write(content)
+        fd, tmp = tempfile.mkstemp(dir=self.DATA_DIR, prefix=".tmp-")
+        os.close(fd)
+        try:
+            shutil.copyfile(log_path, tmp)
+            os.replace(tmp, dest)
+        except BaseException:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+            raise
 
-        with open(meta_path, "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "contribution_id": contribution_id,
-                    "log_format": log_format,
-                    "contributed_at": time.time(),
-                    "report": report.model_dump(mode="json"),
-                },
-                f,
-            )
-
-        logger.info(f"Training contribution {contribution_id} saved ({log_format}, {len(content)} bytes)")
+        write_json_atomic(meta_path, {
+            "contribution_id": contribution_id,
+            "log_format": log_format,
+            "contributed_at": time.time(),
+            "report": anonymise(report),
+        })
+        logger.info(f"dataset contribution {contribution_id} saved ({log_format})")
         return contribution_id
 
     def stats(self) -> ContributionStats:
-        """Count and total size of contributed logs (not the JSON sidecars)."""
-        if not os.path.exists(self.DATA_DIR):
-            return ContributionStats(count=0, total_bytes=0)
-
+        """Count and size of the logs, not their JSON sidecars."""
         count = 0
         total_bytes = 0
-        for filename in os.listdir(self.DATA_DIR):
-            if filename.endswith(".json"):
+        try:
+            names = os.listdir(self.DATA_DIR)
+        except FileNotFoundError:
+            return ContributionStats(count=0, total_bytes=0)
+        for name in names:
+            if name.endswith(".json") or name.startswith(".tmp-"):
                 continue
             count += 1
             try:
-                total_bytes += os.path.getsize(os.path.join(self.DATA_DIR, filename))
+                total_bytes += os.path.getsize(os.path.join(self.DATA_DIR, name))
             except OSError:
-                pass
+                pass   # deleted between listdir and getsize
         return ContributionStats(count=count, total_bytes=total_bytes)
 
 
-# Global singleton — imported by routers
 training_data_store = TrainingDataStore()

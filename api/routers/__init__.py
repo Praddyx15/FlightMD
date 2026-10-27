@@ -1,3 +1,3 @@
-from api.routers import analyse, report, export, health
+from api.routers import airframe, analyse, export, health, report, trends
 
-__all__ = ["analyse", "report", "export", "health"]
+__all__ = ["airframe", "analyse", "export", "health", "report", "trends"]

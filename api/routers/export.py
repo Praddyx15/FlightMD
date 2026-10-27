@@ -1,110 +1,117 @@
-"""
-GET /export/pdf/{report_id}       — returns WeasyPrint-generated PDF
-GET /export/json/{report_id}      — returns FlightMDReport as downloadable JSON
-GET /export/gpx/{report_id}       — returns flight path as GPX track
-GET /export/kml/{report_id}       — returns flight path as KML LineString
-GET /export/airframe/{label}/pdf  — flight/maintenance record for one airframe
-"""
-
 import json
 import logging
+import threading
+from collections import OrderedDict
 from datetime import datetime, timezone
+from typing import Optional
+from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import Response
 
-from api.airframe_store import airframe_store, compute_maintenance_status
-from api.storage import job_store, normalise_airframe_label
+from api import airframe_store as afs
+from api.config import get_settings
+from api.routers.report import finished_report
+from api.security import check_airframe_token, limiter
 from api.services.pdf_generator import PDFGenerator
+from api.storage import job_store, normalise_airframe_label
 from flightmd_core.services.geo_export import generate_gpx, generate_kml
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(tags=["Export"])
+settings = get_settings()
 pdf_gen = PDFGenerator()
 
+PDF_LIMIT = f"{settings.pdf_rate_limit_per_hour}/hour"
 
-@router.get("/export/pdf/{report_id}")
-async def export_pdf(report_id: str) -> Response:
-    job = job_store.get(report_id)
-    if job is None or job.report is None:
-        raise HTTPException(status_code=404, detail="Report not found or expired.")
-    if job.status.value != "complete":
-        raise HTTPException(status_code=202, detail="Analysis still in progress.")
+# a finished report never changes, so its PDF can be reused
+_pdf_cache: "OrderedDict[str, bytes]" = OrderedDict()
+_pdf_cache_lock = threading.Lock()
+PDF_CACHE_SIZE = 8
 
+
+def _attachment(data: bytes, media_type: str, filename: str, ascii_name: Optional[str] = None) -> Response:
+    # header values must be latin-1, so an ascii fallback + the real name per RFC 5987
+    disposition = f'attachment; filename="{ascii_name or filename}"'
+    if ascii_name:
+        disposition += f"; filename*=UTF-8''{quote(filename)}"
+    return Response(content=data, media_type=media_type, headers={"Content-Disposition": disposition})
+
+
+def _report_pdf(report) -> bytes:
+    with _pdf_cache_lock:
+        cached = _pdf_cache.get(report.report_id)
+        if cached is not None:
+            _pdf_cache.move_to_end(report.report_id)
+            return cached
+    pdf = pdf_gen.generate(report)
+    with _pdf_cache_lock:
+        _pdf_cache[report.report_id] = pdf
+        while len(_pdf_cache) > PDF_CACHE_SIZE:
+            _pdf_cache.popitem(last=False)
+    return pdf
+
+
+# Plain `def` routes on purpose: FastAPI runs them in its threadpool, so
+# WeasyPrint and the disk reads don't stall everyone else's /status polling.
+
+@router.get("/export/pdf/{report_id}", summary="Report as PDF")
+@limiter.limit(PDF_LIMIT)
+def export_pdf(request: Request, report_id: str) -> Response:
+    report = finished_report(report_id)
     try:
-        pdf_bytes = pdf_gen.generate(job.report)
-    except Exception as e:
-        logger.error(f"PDF generation failed for {report_id}: {e}", exc_info=True)
+        pdf_bytes = _report_pdf(report)
+    except Exception:
+        logger.exception(f"PDF generation failed for {report_id}")
         raise HTTPException(status_code=500, detail="PDF generation failed.")
-
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={
-            "Content-Disposition": f'attachment; filename="flightmd_report_{report_id[:8]}.pdf"'
-        },
-    )
+    return _attachment(pdf_bytes, "application/pdf", f"flightmd_report_{report_id[:8]}.pdf")
 
 
-@router.get("/export/gpx/{report_id}")
-async def export_gpx(report_id: str) -> Response:
-    job = job_store.get(report_id)
-    if job is None or job.report is None:
-        raise HTTPException(status_code=404, detail="Report not found or expired.")
-    if job.status.value != "complete":
-        raise HTTPException(status_code=202, detail="Analysis still in progress.")
-    if not job.report.metadata.gps_path:
+@router.get("/export/gpx/{report_id}", summary="GPS track as GPX")
+def export_gpx(report_id: str) -> Response:
+    report = finished_report(report_id)
+    if not report.metadata.gps_path:
         raise HTTPException(status_code=422, detail="This flight log has no GPS track to export.")
-
     try:
-        gpx_bytes = generate_gpx(job.report)
-    except Exception as e:
-        logger.error(f"GPX generation failed for {report_id}: {e}", exc_info=True)
+        data = generate_gpx(report)
+    except Exception:
+        logger.exception(f"GPX generation failed for {report_id}")
         raise HTTPException(status_code=500, detail="GPX generation failed.")
-
-    return Response(
-        content=gpx_bytes,
-        media_type="application/gpx+xml",
-        headers={
-            "Content-Disposition": f'attachment; filename="flightmd_track_{report_id[:8]}.gpx"'
-        },
-    )
+    return _attachment(data, "application/gpx+xml", f"flightmd_track_{report_id[:8]}.gpx")
 
 
-@router.get("/export/kml/{report_id}")
-async def export_kml(report_id: str) -> Response:
-    job = job_store.get(report_id)
-    if job is None or job.report is None:
-        raise HTTPException(status_code=404, detail="Report not found or expired.")
-    if job.status.value != "complete":
-        raise HTTPException(status_code=202, detail="Analysis still in progress.")
-    if not job.report.metadata.gps_path:
+@router.get("/export/kml/{report_id}", summary="GPS track as KML")
+def export_kml(report_id: str) -> Response:
+    report = finished_report(report_id)
+    if not report.metadata.gps_path:
         raise HTTPException(status_code=422, detail="This flight log has no GPS track to export.")
-
     try:
-        kml_bytes = generate_kml(job.report)
-    except Exception as e:
-        logger.error(f"KML generation failed for {report_id}: {e}", exc_info=True)
+        data = generate_kml(report)
+    except Exception:
+        logger.exception(f"KML generation failed for {report_id}")
         raise HTTPException(status_code=500, detail="KML generation failed.")
-
-    return Response(
-        content=kml_bytes,
-        media_type="application/vnd.google-earth.kml+xml",
-        headers={
-            "Content-Disposition": f'attachment; filename="flightmd_track_{report_id[:8]}.kml"'
-        },
-    )
+    return _attachment(data, "application/vnd.google-earth.kml+xml", f"flightmd_track_{report_id[:8]}.kml")
 
 
-@router.get("/export/airframe/{label}/pdf")
-async def export_airframe_record(label: str) -> Response:
+@router.get(
+    "/export/airframe/{label}/pdf",
+    summary="Flight and maintenance record for one airframe",
+    responses={401: {"description": "Token missing or airframe unclaimed"}, 403: {"description": "Wrong token"}},
+)
+@limiter.limit(PDF_LIMIT)
+def export_airframe_record(
+    request: Request,
+    label: str,
+    x_airframe_token: Optional[str] = Header(None),
+) -> Response:
     normalised = normalise_airframe_label(label)
     if not normalised:
         raise HTTPException(status_code=400, detail="Invalid airframe label.")
+    check_airframe_token(normalised, x_airframe_token)
 
-    config = airframe_store.get(normalised)
+    config = afs.airframe_store.get(normalised)
     flights_with_ts = job_store.list_by_airframe_with_created_at(normalised)
-    status = compute_maintenance_status(config, flights_with_ts)
+    status = afs.compute_maintenance_status(config, flights_with_ts)
 
     flights = [
         {
@@ -126,34 +133,23 @@ async def export_airframe_record(label: str) -> Response:
             hours_since_maintenance=status["hours_since_maintenance"],
             maintenance_due=status["maintenance_due"],
         )
-    except Exception as e:
-        logger.error(f"Airframe record PDF generation failed for {normalised!r}: {e}", exc_info=True)
+    except Exception:
+        logger.exception("airframe record PDF failed")
         raise HTTPException(status_code=500, detail="PDF generation failed.")
 
-    safe_name = "".join(c if c.isalnum() else "_" for c in normalised)
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={
-            "Content-Disposition": f'attachment; filename="flightmd_airframe_{safe_name}.pdf"'
-        },
+    ascii_name = "".join(c if c.isascii() and c.isalnum() else "_" for c in normalised)
+    return _attachment(
+        pdf_bytes, "application/pdf",
+        f"flightmd_airframe_{normalised}.pdf",
+        ascii_name=f"flightmd_airframe_{ascii_name}.pdf",
     )
 
 
-@router.get("/export/json/{report_id}")
-async def export_json(report_id: str) -> Response:
-    job = job_store.get(report_id)
-    if job is None or job.report is None:
-        raise HTTPException(status_code=404, detail="Report not found or expired.")
-    if job.status.value != "complete":
-        raise HTTPException(status_code=202, detail="Analysis still in progress.")
-
-    json_bytes = json.dumps(job.report.model_dump(), indent=2, default=str).encode("utf-8")
-
-    return Response(
-        content=json_bytes,
-        media_type="application/json",
-        headers={
-            "Content-Disposition": f'attachment; filename="flightmd_report_{report_id[:8]}.json"'
-        },
-    )
+@router.get("/export/json/{report_id}", summary="Report as a JSON download")
+def export_json(report_id: str) -> Response:
+    report = finished_report(report_id)
+    # passed through as-is, schema_version included, so consumers can check the contract
+    body = json.dumps(report.model_dump(mode="json"), indent=2, default=str).encode("utf-8")
+    resp = _attachment(body, "application/json", f"flightmd_report_{report_id[:8]}.json")
+    resp.headers["X-FlightMD-Schema-Version"] = report.schema_version
+    return resp

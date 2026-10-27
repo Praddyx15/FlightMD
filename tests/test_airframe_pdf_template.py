@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from api.airframe_store import AirframeConfig, AlertRule, MaintenanceEntry
+from api.airframe_store import AirframeConfig, MaintenanceEntry
 from api.services.pdf_generator import PDFGenerator
 
 

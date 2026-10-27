@@ -1,37 +1,41 @@
 """
-PDFGenerator — renders FlightMDReport to a printable flight analysis report.
+Report and airframe-record PDFs: Jinja2 templates rendered by WeasyPrint.
 
-Uses WeasyPrint (HTML→PDF) with a Jinja2 template. The PDF is an engineering
-analysis document for internal review and maintenance tracking — it is not a
-regulatory or compliance instrument.
+These are engineering review documents for the operator's own records, not
+regulatory or compliance paperwork.
 """
 
 import logging
 import os
+import threading
 from datetime import datetime, timezone
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from flightmd_core.models.findings import FlightMDReport, Severity
+from flightmd_core.models.findings import FlightMDReport
 
 logger = logging.getLogger(__name__)
 
 TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "..", "templates")
 
 SEVERITY_COLOURS = {
-    Severity.CRITICAL: "#FF3D3D",
-    Severity.WARNING:  "#FF7A2F",
-    Severity.INFO:     "#3A9CF8",
-    Severity.GOOD:     "#0DD97C",
+    "critical": "#FF3D3D",
+    "warning":  "#FF7A2F",
+    "info":     "#3A9CF8",
+    "good":     "#0DD97C",
 }
 
 SCORE_COLOURS = [
-    (90, "#0DD97C"),   # Excellent — green
-    (75, "#3A9CF8"),   # Good — blue
-    (60, "#E8A020"),   # Caution — amber
-    (40, "#FF7A2F"),   # Warning — orange
-    (0,  "#FF3D3D"),   # Critical — red
+    (90, "#0DD97C"),   # excellent
+    (75, "#3A9CF8"),   # good
+    (60, "#E8A020"),   # caution
+    (40, "#FF7A2F"),   # warning
+    (0,  "#FF3D3D"),   # critical
 ]
+
+# WeasyPrint isnt documented as thread-safe and one render can take a few
+# hundred MB, so renders queue up one at a time
+_render_lock = threading.Lock()
 
 
 class PDFGenerator:
@@ -44,30 +48,20 @@ class PDFGenerator:
         self._env.filters["score_colour"]    = self._score_colour
         self._env.filters["format_ms"]       = self._format_ms
 
-    def generate(self, report: FlightMDReport) -> bytes:
-        """Render report to PDF bytes."""
-        try:
-            from weasyprint import HTML, CSS
-        except ImportError as e:
-            raise ImportError(
-                "WeasyPrint is required for PDF generation. "
-                "Install it with: pip install weasyprint"
-            ) from e
+    def _render(self, html: str) -> bytes:
+        from weasyprint import CSS, HTML   # heavy import with system deps, only load when a PDF is asked for
 
-        template = self._env.get_template("report.html")
-        html_content = template.render(
+        with _render_lock:
+            return HTML(string=html, base_url=TEMPLATE_DIR).write_pdf(stylesheets=[CSS(string=self._base_css())])
+
+    def generate(self, report: FlightMDReport) -> bytes:
+        html = self._env.get_template("report.html").render(
             report=report,
             generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-            severity_colours=SEVERITY_COLOURS,
         )
-
-        pdf_bytes = HTML(string=html_content, base_url=TEMPLATE_DIR).write_pdf(
-            stylesheets=[
-                CSS(string=self._base_css()),
-            ]
-        )
-        logger.info(f"PDF generated for report {report.report_id}: {len(pdf_bytes)} bytes")
-        return pdf_bytes
+        pdf = self._render(html)
+        logger.info(f"PDF for report {report.report_id}: {len(pdf)} bytes")
+        return pdf
 
     def generate_airframe_record(
         self,
@@ -78,22 +72,7 @@ class PDFGenerator:
         hours_since_maintenance: float,
         maintenance_due: bool,
     ) -> bytes:
-        """
-        Renders a maintenance/flight-history record for one airframe —
-        for the operator's own recordkeeping, not a regulatory
-        certification (FlightMD doesn't assert compliance with anything;
-        it just gives you your own data in one document).
-        """
-        try:
-            from weasyprint import HTML, CSS
-        except ImportError as e:
-            raise ImportError(
-                "WeasyPrint is required for PDF generation. "
-                "Install it with: pip install weasyprint"
-            ) from e
-
-        template = self._env.get_template("airframe_record.html")
-        html_content = template.render(
+        html = self._env.get_template("airframe_record.html").render(
             airframe_label=airframe_label,
             flights=flights,
             config=config,
@@ -102,28 +81,20 @@ class PDFGenerator:
             maintenance_due=maintenance_due,
             generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         )
-
-        pdf_bytes = HTML(string=html_content, base_url=TEMPLATE_DIR).write_pdf(
-            stylesheets=[CSS(string=self._base_css())]
-        )
-        logger.info(f"Airframe record PDF generated for {airframe_label!r}: {len(pdf_bytes)} bytes")
-        return pdf_bytes
-
-    # ── Jinja2 filters ───────────────────────────────────────────────────────
+        pdf = self._render(html)
+        logger.info(f"airframe record PDF: {len(pdf)} bytes, {len(flights)} flights")
+        return pdf
 
     @staticmethod
     def _severity_colour(severity) -> str:
         if hasattr(severity, "value"):
             severity = severity.value
-        return {
-            "critical": "#FF3D3D",
-            "warning":  "#FF7A2F",
-            "info":     "#3A9CF8",
-            "good":     "#0DD97C",
-        }.get(str(severity).lower(), "#888888")
+        return SEVERITY_COLOURS.get(str(severity).lower(), "#888888")
 
     @staticmethod
-    def _score_colour(score: float) -> str:
+    def _score_colour(score) -> str:
+        if score is None:
+            return "#888888"
         for threshold, colour in SCORE_COLOURS:
             if score >= threshold:
                 return colour
@@ -136,8 +107,6 @@ class PDFGenerator:
         s = ms / 1000
         m, sec = divmod(int(s), 60)
         return f"{m:02d}:{sec:02d}.{int((s % 1) * 10)}"
-
-    # ── Base CSS ─────────────────────────────────────────────────────────────
 
     @staticmethod
     def _base_css() -> str:

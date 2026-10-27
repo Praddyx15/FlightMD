@@ -4,13 +4,13 @@
 <meta charset="UTF-8">
 <title>FlightMD Flight Analysis Report — {{ report.report_id[:8] }}</title>
 <style>
-  /* Base styles injected by PDFGenerator._base_css() via WeasyPrint CSS arg */
-  string-set: report-id "{{ report.report_id[:8] }}";
+  /* page styles come from PDFGenerator._base_css(); this only feeds the running header */
+  html { string-set: report-id "{{ report.report_id[:8] }}"; }
 </style>
 </head>
 <body>
 
-<!-- ── HEADER ──────────────────────────────────────────────────────────────── -->
+<!-- header -->
 <div class="header">
   <div>
     <div class="logo">✈ FLIGHTMD</div>
@@ -32,7 +32,7 @@
   </div>
 </div>
 
-<!-- ── FLIGHT METADATA ─────────────────────────────────────────────────────── -->
+<!-- flight metadata -->
 <h2>Flight Information</h2>
 <div class="meta-grid">
   <div class="meta-item">
@@ -85,13 +85,13 @@
   </div>
 </div>
 
-<!-- ── EXECUTIVE SUMMARY ───────────────────────────────────────────────────── -->
+<!-- executive summary -->
 <h2>Executive Summary</h2>
 <div class="executive-summary">
   {{ report.executive_summary }}
 </div>
 
-<!-- ── FINDINGS ────────────────────────────────────────────────────────────── -->
+<!-- findings -->
 <h2>Findings ({{ report.findings|length }} total)</h2>
 
 {% if not report.findings %}
@@ -150,7 +150,7 @@
 </div>
 {% endfor %}
 
-<!-- ── PARAMETER CHANGE SHEET ──────────────────────────────────────────────── -->
+<!-- parameter change sheet -->
 {% if report.param_change_sheet %}
 <h2>Parameter Change Sheet</h2>
 <p style="font-size:9pt;color:#555;margin-bottom:8px;">
@@ -185,7 +185,7 @@
 </table>
 {% endif %}
 
-<!-- ── ANALYSER SUMMARY TABLE ──────────────────────────────────────────────── -->
+<!-- analyser summary table -->
 <h2>Module Summary</h2>
 <table class="param-table">
   <thead>
@@ -227,7 +227,7 @@
   </tbody>
 </table>
 
-<!-- ── REVIEW BLOCK ────────────────────────────────────────────────────────── -->
+<!-- review block -->
 <div class="signature-block">
   <div class="sig-title">Internal Review Record</div>
   <div class="sig-line">
@@ -256,7 +256,7 @@
     findings marked WARNING or CRITICAL before the next flight.
   </p>
   <div class="disclaimer">
-    This report was generated automatically by FlightMD v{{ report.schema_version }}.
+    This report was generated automatically by FlightMD (report schema {{ report.schema_version }}).
     It is an engineering analysis tool intended to assist with pre-flight and
     post-flight review — it is not a regulatory or compliance document, and does
     not replace the judgement of a qualified drone engineer.

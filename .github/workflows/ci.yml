@@ -6,8 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
-  # ── Backend: pytest ──────────────────────────────────────────────────────────
   test-backend:
     name: Python Tests
     runs-on: ubuntu-latest
@@ -21,41 +23,53 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      - name: Install WeasyPrint system dependencies
+      - name: Install WeasyPrint system libraries
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 \
-            libffi-dev libjpeg-dev libopenjp2-7
+            libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 libffi8 libjpeg-turbo8 libopenjp2-7
 
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
-          pip install -r api/requirements.txt
-          pip install -r api/requirements-dev.txt
-          pip install -e .
+          pip install -r api/requirements.txt -r api/requirements-dev.txt
+          pip install --no-deps -e .
 
       - name: Run pytest
         env:
-          ANTHROPIC_API_KEY: ""          # empty — Claude calls skipped in tests
+          ANTHROPIC_API_KEY: ""
+          GROQ_API_KEY: ""
           CORS_ORIGINS: "http://localhost:3000"
+          # no geocoding, weather or AI calls from CI
+          FLIGHTMD_OFFLINE: "1"
         run: |
-          cd api && pytest ../tests/ -v \
-            --ignore=../tests/test_ulog_parser.py \
-            -m "not integration" \
-            --tb=short \
-            --cov=flightmd_core \
-            --cov=api \
-            --cov-report=term-missing
+          pytest -m "not integration" --tb=short \
+            --cov=flightmd_core --cov=api \
+            --cov-report=term-missing --cov-report=xml
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: coverage-report
-          path: .coverage
+          path: coverage.xml
 
-  # ── Frontend: Next.js build ─────────────────────────────────────────────────
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install pip-audit==2.7.3
+
+      - name: Audit API requirements
+        run: pip-audit -r api/requirements.txt
+
   test-frontend:
     name: Next.js Build
     runs-on: ubuntu-latest
@@ -81,7 +95,6 @@ jobs:
           NEXT_PUBLIC_API_URL: "https://flightmd-api.onrender.com"
         run: cd frontend && npm run build
 
-  # ── Lint (ruff) ─────────────────────────────────────────────────────────────
   lint:
     name: Python Lint
     runs-on: ubuntu-latest
@@ -93,10 +106,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - run: pip install ruff
+      - run: pip install ruff==0.8.4
 
-      - name: Lint flightmd_core
-        run: ruff check flightmd_core/ --select=E,W,F --ignore=E501
-
-      - name: Lint api/
-        run: ruff check api/ --select=E,W,F --ignore=E501
+      - name: Lint flightmd_core and api
+        run: ruff check flightmd_core/ api/ --select=E,W,F --ignore=E501

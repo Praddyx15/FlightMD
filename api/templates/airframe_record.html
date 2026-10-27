@@ -3,10 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <title>FlightMD Airframe Record — {{ airframe_label }}</title>
+<style>
+  html { string-set: report-id "airframe record"; }
+</style>
 </head>
 <body>
 
-<!-- ── HEADER ──────────────────────────────────────────────────────────────── -->
+<!-- header -->
 <div class="header">
   <div>
     <div class="logo">✈ FLIGHTMD</div>
@@ -34,7 +37,7 @@
   and maintenance entries that were actually logged here.
 </div>
 
-<!-- ── SUMMARY ─────────────────────────────────────────────────────────────── -->
+<!-- summary -->
 <h2>Summary</h2>
 <div class="meta-grid">
   <div class="meta-item">
@@ -59,7 +62,7 @@
   </div>
 </div>
 
-<!-- ── FLIGHT HISTORY ──────────────────────────────────────────────────────── -->
+<!-- flight history -->
 <h2>Flight History</h2>
 {% if not flights %}
 <p style="color:#888;">No flights logged for this airframe yet.</p>
@@ -88,7 +91,7 @@
 </table>
 {% endif %}
 
-<!-- ── MAINTENANCE LOG ─────────────────────────────────────────────────────── -->
+<!-- maintenance log -->
 <h2>Maintenance Log</h2>
 {% if not config.maintenance_log %}
 <p style="color:#888;">No maintenance entries logged for this airframe yet.</p>
@@ -113,7 +116,7 @@
 </table>
 {% endif %}
 
-<!-- ── CHECKLIST ───────────────────────────────────────────────────────────── -->
+<!-- checklist -->
 {% if config.checklist_items %}
 <h2>Pre-Flight Checklist Template</h2>
 <ul style="font-size:9.5pt;line-height:1.7;">

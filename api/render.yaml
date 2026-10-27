@@ -1,14 +1,16 @@
 services:
   - type: web
     name: flightmd-api
-    env: python
+    runtime: python
     region: singapore
     plan: free
     buildCommand: |
       pip install -r api/requirements.txt
-      pip install -e .
-    startCommand: python -m uvicorn api.main:app --host 0.0.0.0 --port $PORT
+      pip install --no-deps .
+    startCommand: python -m uvicorn api.main:app --host 0.0.0.0 --port $PORT --no-access-log
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.11"
       - key: GROQ_API_KEY
         sync: false
       - key: ANTHROPIC_API_KEY
@@ -17,10 +19,9 @@ services:
         value: "50"
       - key: RATE_LIMIT_PER_HOUR
         value: "10"
-      - key: CLAUDE_FAST_MODEL
-        value: claude-haiku-4-5
-      - key: CLAUDE_SUMMARY_MODEL
-        value: claude-sonnet-4-6
+      # assumed range of Render's internal proxy; if limits still look shared, log request.client.host and adjust
+      - key: TRUSTED_PROXIES
+        value: "10.0.0.0/8"
       - key: CORS_ORIGINS
         value: "https://flightmd.vercel.app,http://localhost:3000"
     healthCheckPath: /health

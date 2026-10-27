@@ -1,17 +1,19 @@
 """
-Tests for JobStore — airframe tagging and retention enforcement.
+JobStore: airframe tagging, retention, eviction and safe writes.
 
-Untagged reports must actually expire (the README advertises "reports
-expire after 1 hour" — this used to not be true for completed jobs, since
-they were written to disk with no cleanup at all). Tagged reports must be
-kept indefinitely so cross-flight trend analysis has history to read.
+Untagged reports must really expire after the TTL; tagged ones are kept for
+trend history; a running job is never evicted; report files are replaced
+atomically.
 """
 
+import json
+import os
 import time
 
 import pytest
 
-from api.storage import JobStore, normalise_airframe_label
+from api import fs
+from api.storage import JobStatus, JobStore, StoreFull, normalise_airframe_label
 from flightmd_core.models.findings import FlightMDReport
 from flightmd_core.models.metadata import FlightMetadata
 
@@ -36,10 +38,17 @@ def make_report(report_id: str = "test-id", score: float = 85.0) -> FlightMDRepo
 
 @pytest.fixture
 def store(tmp_path, monkeypatch):
-    s = JobStore.__new__(JobStore)
     monkeypatch.setattr(JobStore, "DATA_DIR", str(tmp_path))
-    s.__init__()
-    return s
+    return JobStore()
+
+
+def age_report_file(store, report_id, seconds):
+    path = os.path.join(store.DATA_DIR, f"{report_id}.json")
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    data["created_at"] = time.time() - seconds
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f)
 
 
 class TestAirframeLabelNormalisation:
@@ -53,54 +62,95 @@ class TestAirframeLabelNormalisation:
         assert normalise_airframe_label("  Quad-1  ") == "Quad-1"
 
     def test_truncates_to_max_length(self):
-        long_label = "x" * 100
-        assert len(normalise_airframe_label(long_label)) == 40
+        assert len(normalise_airframe_label("x" * 100)) == 40
+
+    @pytest.mark.parametrize("label", ["Quad/1", "Quad\\1", "Quad\n1", "Quad\x001"])
+    def test_unroutable_labels_rejected(self, label):
+        assert normalise_airframe_label(label) is None
+
+    def test_non_ascii_label_kept(self):
+        assert normalise_airframe_label("Квадро-1") == "Квадро-1"
+
+
+class TestJobLifecycle:
+    def test_create_and_get(self, store):
+        job = store.create("test-id-123")
+        assert job.status == JobStatus.PROCESSING
+        assert store.get("test-id-123").report_id == "test-id-123"
+
+    def test_update_progress(self, store):
+        store.create("test-id-456")
+        store.update_progress("test-id-456", 50, "Halfway there")
+        job = store.get("test-id-456")
+        assert job.progress == 50
+        assert job.message == "Halfway there"
+
+    def test_fail(self, store):
+        store.create("test-id-789")
+        store.fail("test-id-789", "Parsing failed")
+        job = store.get("test-id-789")
+        assert job.status == JobStatus.FAILED
+        assert job.error == "Parsing failed"
+
+    def test_unknown_id_returns_none(self, store):
+        assert store.get("does-not-exist") is None
+        assert store.status_summary("ghost-id")["status"] == "not_found"
+
+    def test_ids_that_look_like_paths_never_reach_the_disk(self, store, tmp_path):
+        outside = tmp_path.parent / "outside.json"
+        outside.write_text(make_report("outside").model_dump_json(), encoding="utf-8")
+        try:
+            assert store.get("../outside") is None
+        finally:
+            outside.unlink()
+
+
+class TestEviction:
+    def test_running_jobs_are_never_evicted(self, store):
+        store.MAX_JOBS = 3
+        for i in range(3):
+            store.create(f"job-{i}")
+        with pytest.raises(StoreFull):
+            store.create("job-3")
+        assert {f"job-{i}" for i in range(3)} <= set(store._store)
+
+    def test_finished_job_makes_room(self, store):
+        store.MAX_JOBS = 3
+        store.create("old", airframe_label="Quad-1")
+        store.complete("old", make_report("old"))
+        store.create("running-1", airframe_label="Quad-1")
+        store.create("running-2")
+
+        store.create("new")
+        assert "old" not in store._store
+        assert store.get("running-1").status == JobStatus.PROCESSING
+        # the evicted finished job still loads from disk with its tag
+        assert store.get("old").airframe_label == "Quad-1"
 
 
 class TestRetention:
     def test_untagged_report_persists_immediately_after_completion(self, store):
-        job = store.create("r1")
+        store.create("r1")
         store.complete("r1", make_report("r1"))
         assert store.get("r1") is not None
 
     def test_untagged_report_deleted_after_ttl(self, store):
         store.create("r1")
         store.complete("r1", make_report("r1"))
-        # Simulate time passing by rewriting created_at in the persisted file.
-        import json, os
-        path = os.path.join(store.DATA_DIR, "r1.json")
-        with open(path, "r+", encoding="utf-8") as f:
-            data = json.load(f)
-            data["created_at"] = time.time() - 7200  # 2 hours ago
-            f.seek(0)
-            json.dump(data, f)
-            f.truncate()
+        age_report_file(store, "r1", 7200)
 
-        deleted = store.cleanup_expired_disk_reports(ttl_seconds=3600)
-        assert deleted == 1
+        assert store.cleanup_expired_disk_reports(ttl_seconds=3600) == 1
         assert store.get("r1") is None
 
     def test_tagged_report_survives_cleanup_regardless_of_age(self, store):
         store.create("r1", airframe_label="Quad-1")
         store.complete("r1", make_report("r1"))
-        import json, os
-        path = os.path.join(store.DATA_DIR, "r1.json")
-        with open(path, "r+", encoding="utf-8") as f:
-            data = json.load(f)
-            data["created_at"] = time.time() - 999999  # long expired if it were untagged
-            f.seek(0)
-            json.dump(data, f)
-            f.truncate()
+        age_report_file(store, "r1", 999999)
 
-        deleted = store.cleanup_expired_disk_reports(ttl_seconds=3600)
-        assert deleted == 0
+        assert store.cleanup_expired_disk_reports(ttl_seconds=3600) == 0
         assert store.get("r1") is not None
 
     def test_legacy_unwrapped_report_file_still_loads(self, store):
-        """Reports persisted before airframe tagging shipped have no
-        wrapper — just a raw FlightMDReport dump. These must still load,
-        treated as untagged."""
-        import json, os
         path = os.path.join(store.DATA_DIR, "legacy.json")
         with open(path, "w", encoding="utf-8") as f:
             f.write(make_report("legacy").model_dump_json())
@@ -111,6 +161,31 @@ class TestRetention:
         assert job.report.report_id == "legacy"
 
 
+class TestAtomicWrites:
+    def test_failed_replace_keeps_the_old_file_and_leaves_no_temp(self, tmp_path, monkeypatch):
+        path = str(tmp_path / "r.json")
+        fs.write_json_atomic(path, {"v": 1})
+
+        def broken_replace(src, dst):
+            raise OSError("disk full")
+        monkeypatch.setattr(fs.os, "replace", broken_replace)
+
+        with pytest.raises(OSError):
+            fs.write_json_atomic(path, {"v": 2})
+
+        with open(path, encoding="utf-8") as f:
+            assert json.load(f) == {"v": 1}
+        assert os.listdir(tmp_path) == ["r.json"]
+
+    def test_complete_writes_through_the_atomic_helper(self, store, monkeypatch):
+        import api.storage as storage_module
+        written = []
+        monkeypatch.setattr(storage_module, "write_json_atomic", lambda path, obj: written.append(path))
+        store.create("r1")
+        store.complete("r1", make_report("r1"))
+        assert written == [os.path.join(store.DATA_DIR, "r1.json")]
+
+
 class TestAirframeTrends:
     def test_list_by_airframe_returns_only_matching_tagged_reports(self, store):
         store.create("r1", airframe_label="Quad-1")
@@ -119,11 +194,10 @@ class TestAirframeTrends:
         store.complete("r2", make_report("r2", score=85.0))
         store.create("r3", airframe_label="Quad-2")
         store.complete("r3", make_report("r3", score=50.0))
-        store.create("r4")  # untagged
+        store.create("r4")
         store.complete("r4", make_report("r4", score=90.0))
 
-        reports = store.list_by_airframe("Quad-1")
-        assert {r.report_id for r in reports} == {"r1", "r2"}
+        assert {r.report_id for r in store.list_by_airframe("Quad-1")} == {"r1", "r2"}
 
     def test_list_by_airframe_sorted_oldest_first(self, store):
         store.create("r1", airframe_label="Quad-1")
@@ -132,20 +206,10 @@ class TestAirframeTrends:
         store.create("r2", airframe_label="Quad-1")
         store.complete("r2", make_report("r2"))
 
-        reports = store.list_by_airframe("Quad-1")
-        assert [r.report_id for r in reports] == ["r1", "r2"]
+        assert [r.report_id for r in store.list_by_airframe("Quad-1")] == ["r1", "r2"]
 
     def test_unknown_airframe_returns_empty(self, store):
         assert store.list_by_airframe("Nonexistent") == []
 
-
-class TestReportSummaries:
-    def test_get_all_reports_includes_airframe_label(self, store):
-        store.create("r1", airframe_label="Quad-1")
-        store.complete("r1", make_report("r1"))
-        store.create("r2")
-        store.complete("r2", make_report("r2"))
-
-        summaries = {s["report_id"]: s for s in store.get_all_reports()}
-        assert summaries["r1"]["airframe_label"] == "Quad-1"
-        assert summaries["r2"]["airframe_label"] is None
+    def test_global_listing_no_longer_exists(self, store):
+        assert not hasattr(store, "get_all_reports")
