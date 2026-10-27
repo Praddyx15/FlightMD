@@ -240,7 +240,6 @@ CATEGORY_FALLBACK = {
     Category.EKF: "Verify sensor calibration and check for vibration or magnetic interference.",
     Category.BATTERY: "Inspect battery connections, age, and cell balance.",
     Category.PARAMETERS: "Verify the parameter values against safe default ranges.",
-    Category.SYSTEM: "Check the flight controller's power and wiring.",
 }
 DEFAULT_RECOMMENDATION = "Consult the log details or the autopilot's documentation for troubleshooting."
 
