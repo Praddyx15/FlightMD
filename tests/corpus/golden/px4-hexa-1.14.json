@@ -1,0 +1,57 @@
+{
+  "id": "px4-hexa-1.14",
+  "generated_with": "1.0.0",
+  "schema_version": "1.7",
+  "score_band": [
+    66.6,
+    76.6
+  ],
+  "score": 71.6,
+  "findings": [
+    "ekf.innovation_ratio|warning",
+    "oscillation.rate_p|warning",
+    "vibration.critical|critical",
+    "vibration.imu_mismatch|warning"
+  ],
+  "assessed_modules": [
+    "battery",
+    "ekf",
+    "gps",
+    "oscillation",
+    "parameters",
+    "power",
+    "vibration"
+  ],
+  "metrics": {
+    "battery.consumed_mah": 5912.5,
+    "battery.internal_resistance_mohm_per_cell": 3.5,
+    "battery.sag_per_cell_v": 0.4201,
+    "gps.max_hdop": 0.5,
+    "gps.min_satellites": 31.0,
+    "oscillation.pitch_norm_amp": 88.441,
+    "oscillation.pitch_osc_amp_dps": 22.81,
+    "oscillation.pitch_peak_hz": 1.303,
+    "oscillation.roll_norm_amp": 218.533,
+    "oscillation.roll_osc_amp_dps": 17.47,
+    "oscillation.roll_peak_hz": 2.048,
+    "oscillation.yaw_norm_amp": 45.826,
+    "oscillation.yaw_osc_amp_dps": 1.16,
+    "oscillation.yaw_peak_hz": 1.117,
+    "parameters.anomaly_count": 0.0,
+    "parameters.param_count": 1090.0,
+    "power.min_vcc_v": 4.878,
+    "power.vcc_range_v": 0.284,
+    "vibration.max_accel_vibration_metric": 16.254,
+    "vibration.max_gyro_vibration_metric": 2.1717,
+    "vibration.total_clip_count": 0.0,
+    "vibration.vibration_vs_limit": 3.314
+  },
+  "metadata": {
+    "source_format": "px4_ulog",
+    "vehicle_type": "Copter",
+    "airframe_name": "Generic Hexarotor x geometry",
+    "firmware_version": "1dacb4cdef2d7145754fc788fa8dc482eed74b40",
+    "px4_version": "v1.14.3",
+    "duration_seconds": 330.87
+  }
+}

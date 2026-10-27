@@ -1,0 +1,57 @@
+{
+  "id": "px4-plane-1.15",
+  "generated_with": "1.0.0",
+  "schema_version": "1.7",
+  "score_band": [
+    55.0,
+    65.0
+  ],
+  "score": 60.0,
+  "findings": [
+    "ekf.accel_error|critical",
+    "ekf.innovation_ratio|warning",
+    "ekf.innovation_rejected|info",
+    "ekf.solution_invalid|warning",
+    "oscillation.rate_p|critical",
+    "oscillation.rate_p|warning",
+    "vibration.clipping|info"
+  ],
+  "assessed_modules": [
+    "ekf",
+    "gps",
+    "oscillation",
+    "parameters",
+    "power",
+    "vibration"
+  ],
+  "metrics": {
+    "ekf.max_innovation_ratio": 63.3105,
+    "gps.max_hdop": 0.58,
+    "gps.min_satellites": 27.0,
+    "oscillation.pitch_norm_amp": 140841.351,
+    "oscillation.pitch_osc_amp_dps": 50.77,
+    "oscillation.pitch_peak_hz": 1.364,
+    "oscillation.roll_norm_amp": 2806.702,
+    "oscillation.roll_osc_amp_dps": 29.77,
+    "oscillation.roll_peak_hz": 7.211,
+    "oscillation.yaw_norm_amp": 51950.0,
+    "oscillation.yaw_osc_amp_dps": 23.22,
+    "oscillation.yaw_peak_hz": 1.169,
+    "parameters.anomaly_count": 0.0,
+    "parameters.param_count": 1209.0,
+    "power.min_vcc_v": 4.829,
+    "power.vcc_range_v": 0.28,
+    "vibration.max_accel_vibration_metric": 3.006,
+    "vibration.max_gyro_vibration_metric": 0.0968,
+    "vibration.total_clip_count": 107.0,
+    "vibration.vibration_vs_limit": 0.613
+  },
+  "metadata": {
+    "source_format": "px4_ulog",
+    "vehicle_type": "Plane",
+    "airframe_name": "Generic Standard Plane",
+    "firmware_version": "99c40407ffd7ac184e2d7b4b293f36f10fe561ef",
+    "px4_version": "v1.15.4",
+    "duration_seconds": 149.62
+  }
+}

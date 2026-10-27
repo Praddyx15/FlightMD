@@ -1,0 +1,41 @@
+{
+  "id": "ardupilot-plane-3.8-short",
+  "generated_with": "1.0.0",
+  "schema_version": "1.7",
+  "score_band": [
+    86.7,
+    96.7
+  ],
+  "score": 91.7,
+  "findings": [
+    "params.above_range|warning",
+    "params.below_range|critical",
+    "params.below_range|warning"
+  ],
+  "assessed_modules": [
+    "ekf",
+    "gps",
+    "parameters",
+    "power",
+    "vibration"
+  ],
+  "metrics": {
+    "ekf.max_innovation_ratio": 0.0064,
+    "gps.min_satellites": 11.0,
+    "parameters.anomaly_count": 10.0,
+    "parameters.param_count": 809.0,
+    "power.min_vcc_v": 4.934,
+    "power.vcc_range_v": 0.031,
+    "vibration.max_imu_rms": 0.215,
+    "vibration.total_clip_count": 0.0,
+    "vibration.vibration_vs_limit": 0.007
+  },
+  "metadata": {
+    "source_format": "ardupilot_bin",
+    "vehicle_type": "Plane",
+    "airframe_name": "Plane",
+    "firmware_version": "ArduPlane V3.8.2-dev (8178ab40)",
+    "px4_version": null,
+    "duration_seconds": 0.98
+  }
+}

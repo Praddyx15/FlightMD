@@ -1,0 +1,44 @@
+{
+  "id": "ardupilot-quadplane-3.10-tlog",
+  "generated_with": "1.0.0",
+  "schema_version": "1.7",
+  "score_band": [
+    76.7,
+    86.7
+  ],
+  "score": 81.7,
+  "findings": [
+    "ekf.solution_invalid|warning",
+    "params.above_range|warning",
+    "params.arming_checks_off|warning",
+    "params.below_range|critical",
+    "params.below_range|warning"
+  ],
+  "assessed_modules": [
+    "ekf",
+    "gps",
+    "parameters",
+    "power",
+    "vibration"
+  ],
+  "metrics": {
+    "ekf.max_innovation_ratio": 0.0,
+    "gps.max_hdop": 1.21,
+    "gps.min_satellites": 10.0,
+    "parameters.anomaly_count": 22.0,
+    "parameters.param_count": 1053.0,
+    "power.min_vcc_v": 5.0,
+    "power.vcc_range_v": 0.0,
+    "vibration.max_imu_rms": 1.026,
+    "vibration.total_clip_count": 0.0,
+    "vibration.vibration_vs_limit": 0.034
+  },
+  "metadata": {
+    "source_format": "mavlink_tlog",
+    "vehicle_type": "Plane",
+    "airframe_name": "QuadPlane Tri X",
+    "firmware_version": "ArduPlane V3.10.0-dev (f2b4e06a)",
+    "px4_version": null,
+    "duration_seconds": 208.59
+  }
+}

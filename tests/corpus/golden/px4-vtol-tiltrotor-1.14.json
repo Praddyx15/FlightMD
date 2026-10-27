@@ -1,0 +1,50 @@
+{
+  "id": "px4-vtol-tiltrotor-1.14",
+  "generated_with": "1.0.0",
+  "schema_version": "1.7",
+  "score_band": [
+    86.1,
+    96.1
+  ],
+  "score": 91.1,
+  "findings": [
+    "ekf.innovation_ratio|warning",
+    "oscillation.rate_p|info",
+    "params.below_range|critical"
+  ],
+  "assessed_modules": [
+    "battery",
+    "ekf",
+    "gps",
+    "oscillation",
+    "parameters",
+    "vibration"
+  ],
+  "metrics": {
+    "battery.consumed_mah": 677.7,
+    "gps.min_satellites": 10.0,
+    "oscillation.pitch_norm_amp": 1220.201,
+    "oscillation.pitch_osc_amp_dps": 7.75,
+    "oscillation.pitch_peak_hz": 1.17,
+    "oscillation.roll_norm_amp": 104.673,
+    "oscillation.roll_osc_amp_dps": 3.38,
+    "oscillation.roll_peak_hz": 1.17,
+    "oscillation.yaw_norm_amp": 7.01,
+    "oscillation.yaw_osc_amp_dps": 0.0,
+    "oscillation.yaw_peak_hz": 3.316,
+    "parameters.anomaly_count": 1.0,
+    "parameters.param_count": 1211.0,
+    "vibration.max_accel_vibration_metric": 0.051,
+    "vibration.max_gyro_vibration_metric": 0.0441,
+    "vibration.total_clip_count": 0.0,
+    "vibration.vibration_vs_limit": 0.01
+  },
+  "metadata": {
+    "source_format": "px4_ulog",
+    "vehicle_type": "VTOL",
+    "airframe_name": "Generic Quadplane VTOL Tiltrotor",
+    "firmware_version": "1555f2bd2229544c43966ab5f94879c41d8e1e01",
+    "px4_version": "v1.14.4",
+    "duration_seconds": 244.17
+  }
+}
