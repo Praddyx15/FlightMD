@@ -1,0 +1,462 @@
+{
+ "1000": {
+  "name": "HILStar (XPlane)",
+  "type": "Simulation (Plane)"
+ },
+ "1001": {
+  "name": "HIL Quadcopter X",
+  "type": "Simulation"
+ },
+ "1002": {
+  "name": "HIL Standard VTOL QuadPlane",
+  "type": "Standard VTOL"
+ },
+ "1100": {
+  "name": "SIH Quadcopter X",
+  "type": "Simulation"
+ },
+ "1101": {
+  "name": "SIH plane AERT",
+  "type": "Simulation"
+ },
+ "1102": {
+  "name": "SIH Tailsitter Duo",
+  "type": "Simulation"
+ },
+ "1103": {
+  "name": "SIH Standard VTOL QuadPlane",
+  "type": "Simulation"
+ },
+ "1104": {
+  "name": "SIH Rover Ackermann",
+  "type": "Rover"
+ },
+ "1105": {
+  "name": "SIH Hexacopter X",
+  "type": "Simulation"
+ },
+ "2100": {
+  "name": "Generic Standard Plane",
+  "type": "Standard Plane"
+ },
+ "2105": {
+  "name": "Bormatec Maja",
+  "type": "Standard Plane"
+ },
+ "2106": {
+  "name": "Applied Aeronautics Albatross",
+  "type": "Plane A-Tail"
+ },
+ "2200": {
+  "name": "X-UAV Mini Talon",
+  "type": "Plane V-Tail"
+ },
+ "2500": {
+  "name": "Generic Airship",
+  "type": "Airship"
+ },
+ "2507": {
+  "name": "Cloudship",
+  "type": "Airship"
+ },
+ "3000": {
+  "name": "Generic Flying Wing",
+  "type": "Flying Wing"
+ },
+ "3030": {
+  "name": "IO Camflyer",
+  "type": "Flying Wing"
+ },
+ "3031": {
+  "name": "Phantom FPV Flying Wing",
+  "type": "Flying Wing"
+ },
+ "3032": {
+  "name": "Skywalker X5 Flying Wing",
+  "type": "Flying Wing"
+ },
+ "3033": {
+  "name": "Wing Wing (aka Z-84) Flying Wing",
+  "type": "Flying Wing"
+ },
+ "3034": {
+  "name": "FX-79 Buffalo Flying Wing",
+  "type": "Flying Wing"
+ },
+ "3035": {
+  "name": "Viper",
+  "type": "Flying Wing"
+ },
+ "3036": {
+  "name": "Sparkle Tech Pigeon",
+  "type": "Flying Wing"
+ },
+ "3037": {
+  "name": "Modified Parrot Disco",
+  "type": "Flying Wing"
+ },
+ "3100": {
+  "name": "TBS Caipirinha",
+  "type": "Flying Wing"
+ },
+ "4001": {
+  "name": "Generic Quadcopter",
+  "type": "Quadrotor x"
+ },
+ "4003": {
+  "name": "Lumenier QAV-R (raceblade) 5\" arms",
+  "type": "Quadrotor x"
+ },
+ "4009": {
+  "name": "Lumenier QAV250",
+  "type": "Quadrotor x"
+ },
+ "4010": {
+  "name": "DJI F330 w/ DJI ESCs",
+  "type": "Quadrotor x"
+ },
+ "4011": {
+  "name": "DJI F450 w/ DJI ESCs",
+  "type": "Quadrotor x"
+ },
+ "4014": {
+  "name": "S500 Generic",
+  "type": "Quadrotor x"
+ },
+ "4015": {
+  "name": "Holybro S500",
+  "type": "Quadrotor x"
+ },
+ "4016": {
+  "name": "PX4 Vision Dev Kit v1",
+  "type": "Quadrotor x"
+ },
+ "4017": {
+  "name": "NXP HoverGames",
+  "type": "Quadrotor x"
+ },
+ "4018": {
+  "name": "S500 with control allocation",
+  "type": "Quadrotor x"
+ },
+ "4019": {
+  "name": "Holybro X500 V2",
+  "type": "Quadrotor x"
+ },
+ "4020": {
+  "name": "PX4 Vision Dev Kit v1.5",
+  "type": "Quadrotor x"
+ },
+ "4030": {
+  "name": "3DR Solo",
+  "type": "Quadrotor x"
+ },
+ "4031": {
+  "name": "3DR DIY Quad",
+  "type": "Quadrotor x"
+ },
+ "4040": {
+  "name": "Reaper 500 Quad",
+  "type": "Quadrotor H"
+ },
+ "4041": {
+  "name": "BetaFPV Beta75X 2S Brushless Whoop",
+  "type": "Quadrotor H"
+ },
+ "4050": {
+  "name": "Generic 250 Racer",
+  "type": "Quadrotor x"
+ },
+ "4051": {
+  "name": "Spedix S250AQ",
+  "type": "Quadrotor asymmetric"
+ },
+ "4052": {
+  "name": "HolyBro QAV250",
+  "type": "Quadrotor x"
+ },
+ "4053": {
+  "name": "Holybro Kopis 2",
+  "type": "Quadrotor x"
+ },
+ "4060": {
+  "name": "DJI Matrice 100",
+  "type": "Quadrotor x"
+ },
+ "4061": {
+  "name": "Advanced Technology Labs (ATL) Mantis EDU",
+  "type": "Quadrotor x"
+ },
+ "4071": {
+  "name": "UVify IFO",
+  "type": "Quadrotor x"
+ },
+ "4072": {
+  "name": "UVify Draco",
+  "type": "Quadrotor x"
+ },
+ "4073": {
+  "name": "UVify IFO",
+  "type": "Quadrotor x"
+ },
+ "4080": {
+  "name": "ZMR250 Racer",
+  "type": "Quadrotor x"
+ },
+ "4090": {
+  "name": "NanoMind 110 Quad",
+  "type": "Quadrotor x"
+ },
+ "4100": {
+  "name": "Tilt-Quadrotor",
+  "type": "Tilt-Quad"
+ },
+ "4250": {
+  "name": "Teal One",
+  "type": "Quadrotor x"
+ },
+ "4500": {
+  "name": "COEX Clover 4",
+  "type": "Quadrotor x"
+ },
+ "4601": {
+  "name": "Droneblocks DEXI 5",
+  "type": "Quadrotor x"
+ },
+ "4900": {
+  "name": "Crazyflie 2",
+  "type": "Quadrotor x"
+ },
+ "4901": {
+  "name": "Crazyflie 2.1",
+  "type": "Quadrotor x"
+ },
+ "5001": {
+  "name": "Generic Quad + geometry",
+  "type": "Quadrotor +"
+ },
+ "6001": {
+  "name": "Generic Hexarotor x geometry",
+  "type": "Hexarotor x"
+ },
+ "6002": {
+  "name": "UVify Draco-R",
+  "type": "Hexarotor x"
+ },
+ "6003": {
+  "name": "Hex X with control allocation",
+  "type": "Hexarotor x"
+ },
+ "7001": {
+  "name": "Generic Hexarotor + geometry",
+  "type": "Hexarotor +"
+ },
+ "8001": {
+  "name": "Generic Octocopter X geometry",
+  "type": "Octorotor x"
+ },
+ "9001": {
+  "name": "Generic Octocopter + geometry",
+  "type": "Octorotor +"
+ },
+ "10015": {
+  "name": "Team Blacksheep Discovery",
+  "type": "Quadrotor Wide"
+ },
+ "10016": {
+  "name": "3DR Iris Quadrotor",
+  "type": "Quadrotor Wide"
+ },
+ "10017": {
+  "name": "Steadidrone QU4D",
+  "type": "Quadrotor Wide"
+ },
+ "10018": {
+  "name": "Team Blacksheep Discovery Endurance",
+  "type": "Quadrotor Wide"
+ },
+ "11001": {
+  "name": "Generic Hexarotor coaxial geometry",
+  "type": "Hexarotor Coaxial"
+ },
+ "12001": {
+  "name": "Generic 10\" Octo coaxial geometry",
+  "type": "Octorotor Coaxial"
+ },
+ "12002": {
+  "name": "Steadidrone MAVRIK",
+  "type": "Octo Coax Wide"
+ },
+ "13000": {
+  "name": "Generic Standard VTOL",
+  "type": "Standard VTOL"
+ },
+ "13001": {
+  "name": "Caipiroshka Duo Tailsitter",
+  "type": "VTOL Duo Tailsitter"
+ },
+ "13002": {
+  "name": "BirdsEyeView Aerobotics FireFly6",
+  "type": "VTOL Tiltrotor"
+ },
+ "13003": {
+  "name": "Quadrotor X Tailsitter",
+  "type": "VTOL Quad Tailsitter"
+ },
+ "13004": {
+  "name": "Quadrotor + Tailsitter",
+  "type": "VTOL Quad Tailsitter"
+ },
+ "13005": {
+  "name": "Fun Cub Quad VTOL",
+  "type": "Standard VTOL"
+ },
+ "13006": {
+  "name": "Generic quad delta VTOL",
+  "type": "Standard VTOL"
+ },
+ "13007": {
+  "name": "Generic AAVVT v-tail plane airframe with Quad VTOL.",
+  "type": "Standard VTOL"
+ },
+ "13008": {
+  "name": "QuadRanger",
+  "type": "Standard VTOL"
+ },
+ "13009": {
+  "name": "Sparkle Tech Ranger VTOL",
+  "type": "Standard VTOL"
+ },
+ "13010": {
+  "name": "CruiseAder Claire",
+  "type": "VTOL Tiltrotor"
+ },
+ "13012": {
+  "name": "E-flite Convergence",
+  "type": "VTOL Tiltrotor"
+ },
+ "13013": {
+  "name": "Vertical Technologies DeltaQuad",
+  "type": "Standard VTOL"
+ },
+ "13014": {
+  "name": "BabyShark VTOL",
+  "type": "Standard VTOL"
+ },
+ "13030": {
+  "name": "Generic Quadplane VTOL Tiltrotor",
+  "type": "VTOL Tiltrotor"
+ },
+ "13050": {
+  "name": "Generic Octoplane VTOL",
+  "type": "VTOL Octoplane"
+ },
+ "13100": {
+  "name": "Generic Tiltrotor VTOL",
+  "type": "VTOL Tiltrotor"
+ },
+ "13200": {
+  "name": "Generic VTOL Tailsitter",
+  "type": "VTOL Tailsitter"
+ },
+ "14001": {
+  "name": "Generic Multirotor with tilt",
+  "type": "Tricopter Y+"
+ },
+ "14002": {
+  "name": "Generic Tricopter Y- Geometry",
+  "type": "Tricopter Y-"
+ },
+ "15001": {
+  "name": "Esky (Big) Lama v4",
+  "type": "Coaxial Helicopter"
+ },
+ "16001": {
+  "name": "Generic Helicopter (Tail ESC)",
+  "type": "Helicopter"
+ },
+ "17002": {
+  "name": "ThunderFly Auto-G2",
+  "type": "Autogyro"
+ },
+ "17003": {
+  "name": "ThunderFly TF-G2",
+  "type": "Autogyro"
+ },
+ "18001": {
+  "name": "ThunderFly balloon TF-B1",
+  "type": "Balloon"
+ },
+ "24001": {
+  "name": "Generic Dodecarotor cox geometry",
+  "type": "Dodecarotor cox"
+ },
+ "50000": {
+  "name": "Generic Rover Differential",
+  "type": "Rover"
+ },
+ "50001": {
+  "name": "Aion Robotics R1 UGV",
+  "type": "Rover"
+ },
+ "50002": {
+  "name": "Hiwonder Tracked",
+  "type": "Rover"
+ },
+ "50003": {
+  "name": "Aion Robotics R1 UGV",
+  "type": "Rover"
+ },
+ "50004": {
+  "name": "NXP Cup car: DF Robot GPX",
+  "type": "Rover"
+ },
+ "50010": {
+  "name": "Generic ackermann rover",
+  "type": "Rover"
+ },
+ "51000": {
+  "name": "Generic Rover Ackermann",
+  "type": "Rover"
+ },
+ "51001": {
+  "name": "Axial SCX10 2 Trail Honcho",
+  "type": "Rover"
+ },
+ "51002": {
+  "name": "NXP B3RB Rover Ackermann",
+  "type": "Rover"
+ },
+ "51003": {
+  "name": "Hiwonder Ackermann",
+  "type": "Rover"
+ },
+ "52000": {
+  "name": "Generic Rover Mecanum",
+  "type": "Rover"
+ },
+ "52001": {
+  "name": "Hiwonder Mecanum",
+  "type": "Rover"
+ },
+ "60000": {
+  "name": "Generic Underwater Robot",
+  "type": "Underwater Robot"
+ },
+ "60001": {
+  "name": "HippoCampus UUV (Unmanned Underwater Vehicle)",
+  "type": "Underwater Robot"
+ },
+ "60002": {
+  "name": "BlueROV2 (Heavy Configuration)",
+  "type": "Vectored 6 DOF UUV"
+ },
+ "70000": {
+  "name": "KTH-ATMOS",
+  "type": "Free-Flyer"
+ },
+ "70001": {
+  "name": "KTH-ATMOS-DUAL",
+  "type": "Free-Flyer"
+ }
+}

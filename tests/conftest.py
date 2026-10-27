@@ -8,10 +8,32 @@ from httpx import AsyncClient
 from flightmd_core.models.metadata import FlightMetadata
 
 
+def pytest_addoption(parser):
+    parser.addoption("--update-golden", action="store_true", default=False,
+                     help="corpus tests: write tests/corpus/golden/<id>.json instead of comparing")
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "corpus: real public logs, downloaded on first use (pytest -m corpus)")
+
+
+def pytest_collection_modifyitems(config, items):
+    # the corpus downloads a few hundred MB, so it only runs when asked for
+    if "corpus" in (config.getoption("-m") or "") or config.getoption("--update-golden"):
+        return
+    skip = pytest.mark.skip(reason="corpus test: run with -m corpus")
+    for item in items:
+        if "corpus" in item.keywords:
+            item.add_marker(skip)
+
+
 @pytest.fixture(autouse=True)
 def _offline_env(monkeypatch):
     # no Nominatim / Open-Meteo / AI calls from the test suite
     monkeypatch.setenv("FLIGHTMD_OFFLINE", "1")
+    # and no topic cache unless a test turns it on; a cached parse would skip the
+    # parser (and its timeout) in the next test
+    monkeypatch.setenv("FLIGHTMD_CACHE", "0")
 
 
 @pytest.fixture

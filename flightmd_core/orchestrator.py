@@ -1,65 +1,54 @@
 """
-The analysis pipeline: detect format, parse, run the analysers, explain, score, build
-the report. run_analysis() is the entry point for the API, the CLI and the tests.
+The analysis pipeline: open (and decompress) the log, detect the format, parse in a
+child process, run the analysers, explain, score, build the report. run_analysis() is
+the entry point for the API, the CLI and the tests.
 
 Environment:
   FLIGHTMD_OFFLINE=1          no weather, geocoding or AI calls
-  FLIGHTMD_MAX_LOG_MB         refuse bigger logs (default 512)
+  FLIGHTMD_MAX_LOG_MB         refuse bigger logs, compressed or not (default 512)
   FLIGHTMD_PARSE_TIMEOUT_S    stop the parser after this long (default 600; 0 = parse
                               in this process with no limit)
+  FLIGHTMD_CACHE / FLIGHTMD_DATA_DIR   parsed-topic cache, see cache.py
 """
 
 import asyncio
+import hashlib
+import inspect
 import logging
 import multiprocessing
 import os
+import pickle
+import queue
 import time
-from typing import Optional
+from typing import Callable, Optional
 
 import numpy as np
 import pandas as pd
 
-from flightmd_core.models.findings import AnalyserResult, FlightMDReport
+from flightmd_core import cache
+from flightmd_core.analysers.registry import load_analysers
+from flightmd_core.models.findings import FlightMDReport
 from flightmd_core.services.ai_enhancer import AIEnhancer
-from flightmd_core.services.ulog_parser     import ULogParser
-from flightmd_core.services.ardupilot_parser import ArduPilotBinParser
-from flightmd_core.services.mavlink_telemetry_parser import MavlinkTelemetryParser
-from flightmd_core.services.format_detector import detect_format, UnsupportedFormatError
+from flightmd_core.services.compressed import open_log
+from flightmd_core.services.format_detector import PARSERS, UnsupportedFormatError, detect_format
 from flightmd_core.services.explanation_engine import ExplanationEngine
 from flightmd_core.services.score_calculator import ScoreCalculator
 from flightmd_core.services.report_builder  import ReportBuilder
 from flightmd_core.services.weather_lookup import fetch_weather
 from flightmd_core.services.geocoding import reverse_geocode
-from flightmd_core.analysers import (
-    OscillationAnalyser,
-    VibrationAnalyser,
-    EKFAnalyser,
-    BatteryAnalyser,
-    GPSAnalyser,
-    ParameterAnalyser,
-    MotorAnalyser,
-    AscentProfileAnalyser,
-)
 
 logger = logging.getLogger(__name__)
 
-PROGRESS_STEPS = [
-    (5,  "Parsing flight log…"),
-    (20, "Running oscillation analysis…"),
-    (35, "Analysing vibration & IMU health…"),
-    (50, "Checking EKF and sensor fusion…"),
-    (62, "Evaluating battery health…"),
-    (72, "Reviewing GPS quality…"),
-    (80, "Inspecting parameters & motors…"),
-    (88, "Generating AI explanations…"),
-    (96, "Assembling report…"),
-]
+# The parse is most of the wall time, so it gets most of the bar.
+PARSE_START, PARSE_END = 5, 60
 
-PARSERS = {
-    "px4_ulog": ULogParser,
-    "ardupilot_bin": ArduPilotBinParser,
-    "mavlink_tlog": MavlinkTelemetryParser,
-}
+# Rough parse speed per format (MB/s on an ordinary laptop), only for the first ETA
+# before the parser has reported anything. Formats not listed use the default.
+PARSE_MB_PER_S = {"px4_ulog": 12.0, "ardupilot_bin": 5.0, "ardupilot_log": 2.0, "mavlink_tlog": 3.0}
+DEFAULT_MB_PER_S = 4.0
+# everything after the parse: analysers, explanations, report
+ANALYSIS_BASE_S = 2.0
+ANALYSIS_S_PER_MB = 0.04
 
 # Real GPS fixes don't come faster than ~20 Hz; closer rows are duplicates (seen at the
 # end of real dataflash logs) and dividing by the tiny gap gives absurd speeds.
@@ -80,22 +69,123 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
-def _parse(log_format: str, path: str):
-    return PARSERS[log_format]().parse(path)
+def file_sha256(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
-def _parse_with_limit(log_format: str, path: str, timeout_s: float):
-    """Parse in a child process so a runaway parse can actually be killed
-    (a thread can't be). Leaving the Pool block terminates the child."""
-    if timeout_s <= 0:
-        return _parse(log_format, path)
-    with multiprocessing.get_context("spawn").Pool(1) as pool:
+def _parse(log_format: str, path: str, report: Optional[Callable[[float], None]] = None):
+    parser = PARSERS[log_format]()
+    # the newer parsers take a progress callback; the others just parse
+    if report is not None and "progress" in inspect.signature(parser.parse).parameters:
+        return parser.parse(path, progress=report)
+    return parser.parse(path)
+
+
+def _child(log_format: str, path: str, q) -> None:
+    last = [0.0]
+
+    def report(frac: float) -> None:
+        if frac - last[0] >= 0.01:
+            last[0] = frac
+            q.put(("progress", frac))
+
+    try:
+        q.put(("done", _parse(log_format, path, report)))
+    except BaseException as e:
         try:
-            return pool.apply_async(_parse, (log_format, path)).get(timeout_s)
-        except multiprocessing.TimeoutError:
-            raise ValueError(
-                f"Parsing the log took longer than {timeout_s:.0f} s and was stopped."
-            ) from None
+            pickle.dumps(e)
+        except Exception:
+            e = RuntimeError(f"{type(e).__name__}: {e}")
+        q.put(("error", e))
+
+
+def _parse_with_limit(log_format: str, path: str, timeout_s: float,
+                      report: Optional[Callable[[float], None]] = None):
+    """Parse in a child process so a runaway parse can actually be killed (a thread
+    can't be). Progress comes back over the same queue as the result."""
+    if timeout_s <= 0:
+        return _parse(log_format, path, report)
+
+    ctx = multiprocessing.get_context("spawn")
+    q = ctx.Queue()
+    proc = ctx.Process(target=_child, args=(log_format, path, q), daemon=True)
+    proc.start()
+    deadline = time.monotonic() + timeout_s
+    try:
+        while True:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                raise ValueError(f"Parsing the log took longer than {timeout_s:.0f} s and was stopped.")
+            try:
+                kind, value = q.get(timeout=min(left, 1.0))
+            except queue.Empty:
+                if proc.is_alive():
+                    continue
+                try:
+                    kind, value = q.get(timeout=1.0)
+                except queue.Empty:
+                    # killed from outside, usually out of memory
+                    raise ValueError(
+                        f"The parser process stopped unexpectedly (exit code {proc.exitcode})."
+                    ) from None
+            if kind == "progress":
+                if report is not None:
+                    report(value)
+            elif kind == "error":
+                raise value
+            else:
+                return value
+    finally:
+        if proc.is_alive():
+            proc.terminate()
+        proc.join(5)
+        q.close()
+
+
+async def _open_and_parse(log_path, max_bytes, analysis_est_s, progress, loop):
+    """Decompress if needed, detect the format and parse, reporting progress + ETA."""
+    path, cleanup = await loop.run_in_executor(None, open_log, log_path, max_bytes)
+    try:
+        try:
+            log_format = await loop.run_in_executor(None, detect_format, path)
+        except UnsupportedFormatError as e:
+            raise ValueError(str(e)) from e
+        logger.info(f"Detected format: {log_format}")
+
+        parse_mb = os.path.getsize(path) / 1e6
+        first_eta = parse_mb / PARSE_MB_PER_S.get(log_format, DEFAULT_MB_PER_S) + analysis_est_s
+        await progress(PARSE_START, "Parsing flight log…", first_eta)
+        t0 = time.monotonic()
+
+        def on_parse(frac: float) -> None:
+            # runs on the parse thread, not the event loop
+            spent = time.monotonic() - t0
+            if frac > 0.02:
+                eta = spent * (1 - frac) / frac + analysis_est_s
+            else:
+                eta = first_eta - spent
+            pct = PARSE_START + int((PARSE_END - PARSE_START) * min(frac, 1.0))
+            asyncio.run_coroutine_threadsafe(
+                progress(pct, f"Parsing flight log… {frac:.0%}", max(eta, 0.0)), loop)
+
+        timeout_s = _env_float("FLIGHTMD_PARSE_TIMEOUT_S", 600)
+        try:
+            topics, params, metadata = await loop.run_in_executor(
+                None, _parse_with_limit, log_format, path, timeout_s, on_parse
+            )
+        except ValueError:
+            raise
+        except Exception as e:
+            raise ValueError(f"Failed to parse {log_format} file: {e}") from e
+    finally:
+        cleanup()
+
+    metadata.source_format = log_format
+    return topics, params, metadata
 
 
 def _no_weather(reason: str) -> dict:
@@ -112,12 +202,13 @@ async def run_analysis(
     ulog_path: str,
     file_name: str,
     file_size: int,
-    progress_callback: Optional[callable] = None,
+    progress_callback: Optional[Callable] = None,
     ai_enhancer: Optional[AIEnhancer] = None,
 ) -> FlightMDReport:
     """
-    ulog_path is any supported log (.ulg, .bin or .tlog; the format is detected from
-    the content). progress_callback is an optional async callable(progress, message).
+    ulog_path is any supported log (.ulg, .bin, .tlog, ..., optionally .gz / .zip; the
+    format is detected from the content). progress_callback is an optional
+    callable(pct, message, eta_s), sync or async; eta_s is seconds left or None.
     ai_enhancer, when given and configured, only rewrites the executive summary;
     findings stay rule-based.
 
@@ -126,37 +217,51 @@ async def run_analysis(
     """
     start_ms = int(time.time() * 1000)
     loop = asyncio.get_running_loop()
+    sent = [0]
 
-    async def progress(pct: int, msg: str):
+    async def progress(pct: int, msg: str, eta_s: Optional[float] = None):
+        # parse progress comes from another thread and can land late
+        if pct < sent[0]:
+            return
+        sent[0] = pct
         if progress_callback:
             try:
-                await progress_callback(pct, msg)
+                res = progress_callback(pct, msg, None if eta_s is None else round(eta_s, 1))
+                if inspect.isawaitable(res):
+                    await res
             except Exception:
                 logger.warning("progress callback failed", exc_info=True)
         logger.info(f"[{pct}%] {msg}")
-
-    await progress(5, "Parsing flight log…")
 
     max_mb = _env_float("FLIGHTMD_MAX_LOG_MB", 512)
     size_mb = os.path.getsize(ulog_path) / 1e6
     if size_mb > max_mb:
         raise ValueError(f"Log is {size_mb:.0f} MB; the limit is {max_mb:.0f} MB.")
+    analysis_est_s = ANALYSIS_BASE_S + ANALYSIS_S_PER_MB * size_mb
+    await progress(PARSE_START, "Reading flight log…", size_mb / DEFAULT_MB_PER_S + analysis_est_s)
 
-    try:
-        log_format = await loop.run_in_executor(None, detect_format, ulog_path)
-    except UnsupportedFormatError as e:
-        raise ValueError(str(e)) from e
-    logger.info(f"Detected format: {log_format}")
+    log_sha256 = await loop.run_in_executor(None, file_sha256, ulog_path)
+    parsed = None
+    if cache.enabled():
+        try:
+            parsed = await loop.run_in_executor(None, cache.get, log_sha256)
+        except OSError:
+            logger.warning("topic cache read failed", exc_info=True)
 
-    timeout_s = _env_float("FLIGHTMD_PARSE_TIMEOUT_S", 600)
-    try:
-        topics, params, metadata = await loop.run_in_executor(
-            None, _parse_with_limit, log_format, ulog_path, timeout_s
-        )
-    except ValueError:
-        raise
-    except Exception as e:
-        raise ValueError(f"Failed to parse {log_format} file: {e}") from e
+    if parsed is not None:
+        topics, params, metadata = parsed
+        logger.info(f"Parsed topics for {log_sha256[:12]} came from the cache")
+        await progress(PARSE_END, "Using the earlier parse of this log…", analysis_est_s)
+    else:
+        topics, params, metadata = await _open_and_parse(
+            ulog_path, int(max_mb * 1e6), analysis_est_s, progress, loop)
+        metadata.log_sha256 = log_sha256
+        if cache.enabled():
+            try:
+                # before anything below adds to metadata: the cache holds the parse only
+                await loop.run_in_executor(None, cache.put, log_sha256, topics, params, metadata)
+            except OSError:
+                logger.warning("topic cache write failed", exc_info=True)
 
     # arming/landed state alone (a params-only tlog still has HEARTBEATs) isn't telemetry
     if not any(not k.startswith(("vehicle_status", "vehicle_land_detected")) for k in topics):
@@ -169,6 +274,10 @@ async def run_analysis(
         f"Log parsed: {metadata.duration_seconds:.1f}s, "
         f"{len(topics)} topics, {len(params)} params"
     )
+    analysis_t0 = time.monotonic()
+
+    def eta_left() -> float:
+        return max(analysis_est_s - (time.monotonic() - analysis_t0), 0.5)
 
     metadata.armed_windows = _armed_windows(topics, metadata.duration_seconds)
     if metadata.armed_windows is None:
@@ -191,7 +300,7 @@ async def run_analysis(
     elif offline():
         metadata.weather = _no_weather("Weather lookup is off (offline mode)")
     else:
-        await progress(15, "Fetching weather context…")
+        await progress(62, "Fetching weather context…", eta_left())
         if metadata.log_start_utc:
             metadata.weather = await loop.run_in_executor(
                 None, fetch_weather, lat, lon, metadata.log_start_utc
@@ -201,48 +310,31 @@ async def run_analysis(
             metadata.weather = _no_weather("Flight date unknown, so no weather lookup")
         metadata.location_name = await loop.run_in_executor(None, reverse_geocode, lat, lon)
 
-    all_analysers = [
-        OscillationAnalyser(),
-        VibrationAnalyser(),
-        EKFAnalyser(),
-        BatteryAnalyser(),
-        GPSAnalyser(),
-        ParameterAnalyser(),
-        MotorAnalyser(),
-        AscentProfileAnalyser(),
-    ]
-
-    available_topics = set(topics.keys())
-    applicable = [a for a in all_analysers if a.is_applicable(available_topics)]
-    skipped    = [a for a in all_analysers if not a.is_applicable(available_topics)]
+    # only now: the parameter check picks its table from the firmware in metadata
+    all_analysers = load_analysers(metadata=metadata)
+    applicable = [a for a in all_analysers if a.missing_inputs(topics) is None]
+    skipped    = [a for a in all_analysers if a.missing_inputs(topics) is not None]
 
     logger.info(
         f"Analysers: {len(applicable)} applicable, "
         f"{len(skipped)} skipped ({[a.name for a in skipped]})"
     )
 
-    await progress(20, f"Running {len(applicable)} analysis modules concurrently…")
+    await progress(65, f"Running {len(applicable)} analysis modules concurrently…", eta_left())
     results = list(await asyncio.gather(*[
         loop.run_in_executor(None, a.safe_analyse, topics, params)
         for a in applicable
     ]))
-    for a in skipped:
-        results.append(AnalyserResult(
-            analyser=a.name,
-            display_name=a.display_name,
-            findings=[],
-            skipped=True,
-            skip_reason=f"Required topics not available: {a.required_topics}",
-        ))
+    results += [a.skip_result(topics) for a in skipped]
 
     all_findings = [f for r in results for f in r.findings]
     logger.info(f"Total findings: {len(all_findings)}")
 
     # score first: the executive summary quotes it
-    await progress(80, "Calculating health score…")
+    await progress(80, "Calculating health score…", eta_left())
     overall_score, score_label, letter_grade = ScoreCalculator().calculate(results)
 
-    await progress(88, f"Generating deterministic explanations for {len(all_findings)} findings…")
+    await progress(88, f"Generating deterministic explanations for {len(all_findings)} findings…", eta_left())
     engine = ExplanationEngine()
     try:
         all_findings = await engine.explain_findings(all_findings)
@@ -263,14 +355,14 @@ async def run_analysis(
 
     # AI only ever touches the summary, never a finding
     if ai_enhancer is not None and ai_enhancer.is_configured and not offline():
-        await progress(92, "Polishing summary…")
+        await progress(92, "Polishing summary…", eta_left())
         executive_summary = await ai_enhancer.polish_summary(
             base_summary=executive_summary,
             findings=all_findings,
             metadata=metadata,
         )
 
-    await progress(96, "Assembling report…")
+    await progress(96, "Assembling report…", eta_left())
     report = ReportBuilder().build(
         results=results,
         findings=all_findings,
@@ -290,7 +382,7 @@ async def run_analysis(
         f"{elapsed_ms}ms"
     )
 
-    await progress(100, "Done.")
+    await progress(100, "Done.", 0.0)
     return report
 
 
@@ -356,6 +448,7 @@ def _fill_path(metadata, track: pd.DataFrame, topics) -> None:
     sub = track.iloc[::step]
 
     metadata.gps_path = sub[["lat", "lon", "alt"]].astype(float).fillna(0.0).to_numpy().tolist()
+    metadata.gps_path_t_s = [round(t / 1e6, 3) for t in sub["timestamp"].to_numpy(dtype=float)]
     if "hdop" in track.columns:
         metadata.gps_path_hdop = _none_if_nan(sub["hdop"].to_numpy(dtype=float))
 

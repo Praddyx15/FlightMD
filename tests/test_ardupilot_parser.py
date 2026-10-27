@@ -312,3 +312,143 @@ def test_vehicle_type_none_when_no_startup_message(monkeypatch, tmp_bin_path):
     ]
     _, _, metadata = parse(monkeypatch, tmp_bin_path, messages)
     assert metadata.vehicle_type is None
+
+
+def test_vibe_per_imu_with_clip_counters(monkeypatch, tmp_bin_path):
+    messages = []
+    for k in range(3):
+        t = 100.0 + k * 0.1
+        messages += [
+            FakeDFMessage("VIBE", t, IMU=0, VibeX=5.0, VibeY=6.0, VibeZ=12.0, Clip=k),
+            FakeDFMessage("VIBE", t + 0.001, IMU=1, VibeX=7.0, VibeY=8.0, VibeZ=20.0, Clip=10 + k),
+        ]
+    topics, _, _ = parse(monkeypatch, tmp_bin_path, messages)
+
+    vib = topics["vibration"]
+    assert vib["vibration_z"].tolist() == [12.0, 12.0, 12.0]
+    assert vib["clipping_0"].tolist() == [0, 1, 2]
+    # IMU 1's counter rides along on the bare topic, last value before each row
+    assert vib["clipping_1"].tolist()[1:] == [10, 11]
+    assert topics["vibration_1"]["vibration_z"].tolist() == [20.0, 20.0, 20.0]
+
+
+def test_old_vibe_clip0_to_clip2(monkeypatch, tmp_bin_path):
+    messages = [FakeDFMessage("VIBE", 100.0, VibeX=1.0, VibeY=2.0, VibeZ=3.0, Clip0=4, Clip1=5, Clip2=6)]
+    topics, _, _ = parse(monkeypatch, tmp_bin_path, messages)
+    vib = topics["vibration"]
+    assert (vib["clipping_0"].iloc[0], vib["clipping_1"].iloc[0], vib["clipping_2"].iloc[0]) == (4, 5, 6)
+    assert "vibration_1" not in topics
+
+
+def test_xkf4_test_ratios_squared_and_primary_core_on_bare_name(monkeypatch, tmp_bin_path):
+    messages = []
+    for k in range(4):
+        t = 100.0 + k * 0.1
+        messages += [
+            FakeDFMessage("XKF4", t, C=0, SV=0.5, SP=0.2, SH=0.1, SM=0.3, SVT=0.0, FS=0, TS=0, SS=1023, GPS=0, PI=1),
+            FakeDFMessage("XKF4", t, C=1, SV=0.9, SP=0.2, SH=0.1, SM=0.3, SVT=0.0, FS=0, TS=0, SS=1023, GPS=0, PI=1),
+        ]
+    topics, _, _ = parse(monkeypatch, tmp_bin_path, messages)
+
+    ekf = topics["ekf_test_ratios"]
+    assert ekf["vel_test_ratio"].iloc[0] == pytest.approx(0.81)  # core 1, 0.9 squared
+    assert ekf["pos_test_ratio"].iloc[0] == pytest.approx(0.04)
+    assert ekf["solution_status"].iloc[0] == 1023
+    assert topics["ekf_test_ratios_1"]["vel_test_ratio"].iloc[0] == pytest.approx(0.25)
+    assert "estimator_status" not in topics
+
+
+def test_nkf4_used_when_ekf2_is_active(monkeypatch, tmp_bin_path):
+    messages = [
+        FakeDFMessage("NKF4", 100.0, SV=0.4, SP=0.1, SH=0.1, SM=0.1, SVT=0.0, FS=0, TS=0, SS=0, GPS=0, PI=0),
+        FakeDFMessage("XKF4", 100.0, C=0, SV=0.9, SP=0.1, SH=0.1, SM=0.1, SVT=0.0, FS=0, TS=0, SS=0, GPS=0, PI=0),
+    ]
+    topics, _, _ = parse(monkeypatch, tmp_bin_path, messages, params={"AHRS_EKF_TYPE": 2})
+    assert topics["ekf_test_ratios"]["vel_test_ratio"].iloc[0] == pytest.approx(0.16)
+
+
+def test_gpa_accuracy_merged_into_gps(monkeypatch, tmp_bin_path):
+    messages = [
+        FakeDFMessage("GPS", 100.0, I=0, Lat=1.0, Lng=1.0, Alt=1.0, NSats=12, HDop=0.8, Status=3),
+        FakeDFMessage("GPA", 100.0, I=0, VDop=1.1, HAcc=0.7, VAcc=1.2, SAcc=0.3),
+    ]
+    topics, _, _ = parse(monkeypatch, tmp_bin_path, messages)
+    gps = topics["vehicle_gps_position"]
+    assert gps["eph"].iloc[0] == pytest.approx(0.7)
+    assert gps["epv"].iloc[0] == pytest.approx(1.2)
+    assert gps["s_variance_m_s"].iloc[0] == pytest.approx(0.3)
+
+
+def test_bcl_cells_and_battery_resistance(monkeypatch, tmp_bin_path):
+    cells = {f"V{k}": (4100 if k <= 4 else 65535) for k in range(1, 13)}
+    messages = [
+        FakeDFMessage("BAT", 100.0, Inst=0, Volt=16.4, Curr=10.0, Res=0.012),
+        FakeDFMessage("BCL", 100.0, Instance=0, Volt=16.4, **cells),
+    ]
+    topics, _, _ = parse(monkeypatch, tmp_bin_path, messages)
+    bat = topics["battery_status"]
+    assert bat["cell_count"].iloc[0] == 4
+    assert bat["voltage_cell_v[0]"].iloc[0] == pytest.approx(4.1)
+    assert "voltage_cell_v[4]" not in bat.columns
+    assert bat["internal_resistance_estimate"].iloc[0] == pytest.approx(0.012)
+
+
+def test_rate_desired_to_rates_setpoint_in_rad_s(monkeypatch, tmp_bin_path):
+    messages = [FakeDFMessage("RATE", 100.0, RDes=90.0, R=80.0, PDes=-45.0, P=0.0, YDes=0.0, Y=0.0)]
+    topics, _, _ = parse(monkeypatch, tmp_bin_path, messages)
+    sp = topics["vehicle_rates_setpoint"]
+    assert sp["roll"].iloc[0] == pytest.approx(np.pi / 2)
+    assert sp["pitch"].iloc[0] == pytest.approx(-np.pi / 4)
+
+
+def test_powr_to_system_power(monkeypatch, tmp_bin_path):
+    messages = [FakeDFMessage("POWR", 100.0, Vcc=5.1, VServo=5.3, Flags=3)]
+    topics, _, _ = parse(monkeypatch, tmp_bin_path, messages)
+    power = topics["system_power"]
+    assert power["voltage5v_v"].iloc[0] == pytest.approx(5.1)
+    assert power["servo_rail_v"].iloc[0] == pytest.approx(5.3)
+    assert power["power_flags"].iloc[0] == 3
+
+
+def test_board_and_airframe_from_startup_messages(monkeypatch, tmp_bin_path):
+    messages = [
+        FakeDFMessage("MSG", 1.0, Message="ArduCopter V4.5.7 (2a3dc4b7)"),
+        FakeDFMessage("MSG", 1.0, Message="ChibiOS: 6a85082c"),
+        FakeDFMessage("MSG", 1.0, Message="CubeOrange 0035002A 30395112 34313234"),
+        FakeDFMessage("MSG", 1.0, Message="Frame: HEXA/X"),
+    ]
+    _, _, metadata = parse(monkeypatch, tmp_bin_path, messages, params={"FRAME_CLASS": 1, "FRAME_TYPE": 1})
+    assert metadata.hardware_id == "CubeOrange"
+    # the parameters win over the banner
+    assert metadata.airframe_name == "Quad X"
+
+
+def test_frame_banner_used_without_frame_params(monkeypatch, tmp_bin_path):
+    messages = [
+        FakeDFMessage("MSG", 1.0, Message="ArduCopter V4.5.7 (2a3dc4b7)"),
+        FakeDFMessage("MSG", 1.0, Message="Frame: HEXA/X"),
+    ]
+    _, _, metadata = parse(monkeypatch, tmp_bin_path, messages)
+    assert metadata.airframe_name == "HEXA/X"
+
+
+def test_progress_reported_through_the_index_and_the_read(monkeypatch, tmp_bin_path):
+    from pymavlink import DFReader
+    from flightmd_core.services import ardupilot_parser
+
+    monkeypatch.setattr(ardupilot_parser, "PROGRESS_EVERY", 2)
+    messages = [FakeDFMessage("IMU", 10.0 + k * 0.01, I=0, GyrX=0, GyrY=0, GyrZ=0, AccX=0, AccY=0, AccZ=-9.8)
+                for k in range(10)]
+    reader = FakeDFReader(messages, {})
+    reader.percent = 50.0
+
+    def open_reader(path, progress_callback=None):
+        progress_callback(100)  # index pass done
+        return reader
+    monkeypatch.setattr(DFReader, "DFReader_binary", open_reader)
+
+    seen = []
+    ArduPilotBinParser().parse(tmp_bin_path, progress=seen.append)
+    assert seen[0] == pytest.approx(0.2)
+    assert seen[-1] == pytest.approx(0.6)
+    assert all(0 <= f <= 1 for f in seen)

@@ -9,7 +9,7 @@ the bare name and the rest under <name>_1, <name>_2.
 import logging
 import os
 import re
-from typing import Optional
+from typing import Callable, Optional
 
 import numpy as np
 import pandas as pd
@@ -22,6 +22,7 @@ except ImportError as e:
     ) from e
 
 from flightmd_core.models.metadata import MIN_EPOCH_US, FlightMetadata, utc_iso
+from flightmd_core.services.airframes import px4_airframe
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,14 @@ REQUIRED_ULOG_TOPICS: list[str] = [
     "vehicle_status",
     "vehicle_land_detected",
     "vehicle_local_position",
+    "vehicle_imu_status",
+    "system_power",
 ]
+
+# vehicle_status.vehicle_type (VEHICLE_TYPE_* in vehicle_status.msg)
+VEHICLE_TYPES = {1: "Copter", 2: "Plane", 3: "Rover", 4: "Airship"}
+
+PROGRESS_EVERY = 1 << 16  # reads; pyulog does two per message
 
 # vehicle_status.nav_state, from PX4's msg/vehicle_status.msg.
 # 6-9 and 16 changed meaning over the years: 7/8/9/16 are gone since ~1.13,
@@ -82,19 +90,49 @@ FLIGHT_MODE_NAMES: dict[int, str] = {
 _ESC_COL = re.compile(r"esc\[(\d+)\]\.")
 
 
+class _Progress:
+    """File wrapper for pyulog that reports how far through the file it's read.
+    pyulog has no progress hook, but it takes any object with read/seek/tell."""
+
+    def __init__(self, f, size: int, report: Callable[[float], None]):
+        self._f = f
+        self._size = max(size, 1)
+        self._report = report
+        self._reads = 0
+
+    def read(self, n=-1):
+        self._reads += 1
+        if self._reads % PROGRESS_EVERY == 0:
+            self._report(min(self._f.tell() / self._size, 1.0))
+        return self._f.read(n)
+
+    def __getattr__(self, name):
+        return getattr(self._f, name)
+
+
 class ULogParser:
 
     def parse(
         self,
         ulog_path: str,
         load_topic_names: Optional[list[str]] = REQUIRED_ULOG_TOPICS,
+        progress: Optional[Callable[[float], None]] = None,
     ) -> tuple[dict[str, pd.DataFrame], dict[str, float], FlightMetadata]:
-        """load_topic_names=None loads every topic in the file (handy for debugging)."""
+        """load_topic_names=None loads every topic in the file (handy for debugging).
+        progress, if given, is called now and then with the fraction read (0-1)."""
         if not os.path.exists(ulog_path):
             raise FileNotFoundError(f"ULog file not found: {ulog_path}")
 
         logger.info(f"Parsing ULog: {ulog_path}")
-        ulog = ULog(ulog_path, load_topic_names)
+        if progress is None:
+            ulog = ULog(ulog_path, load_topic_names)
+        else:
+            # pyulog closes it when it finishes; this is for when it raises
+            f = open(ulog_path, "rb")
+            try:
+                ulog = ULog(_Progress(f, os.path.getsize(ulog_path), progress), load_topic_names)
+            finally:
+                f.close()
 
         topics = self._extract_topics(ulog)
         params = self._extract_params(ulog)
@@ -162,14 +200,20 @@ class ULogParser:
 
         info = ulog.msg_info_dict
         airframe_id = ulog.initial_parameters.get("SYS_AUTOSTART")
+        airframe_name, _ = px4_airframe(airframe_id)
+
+        board = as_str(info.get("ver_hw"))
+        if board and info.get("ver_hw_subtype"):
+            board = f"{board} ({info['ver_hw_subtype']})"
 
         return FlightMetadata(
             duration_seconds=round(duration_s, 2),
             firmware_version=as_str(info.get("ver_sw")),
-            hardware_id=as_str(info.get("ver_hw")),
+            hardware_id=board,
             airframe_id=int(airframe_id) if airframe_id is not None else None,
-            # todo: vehicle_status.vehicle_type / is_vtol would say more than sys_name ("PX4")
-            vehicle_type=as_str(info.get("sys_name")),
+            airframe_name=airframe_name,
+            # sys_name is just "PX4"; vehicle_status says what actually flew
+            vehicle_type=_vehicle_type(topics) or as_str(info.get("sys_name")),
             # time_ref_utc in the info section is the local UTC offset, not a time
             log_start_utc=_log_start_utc(topics),
             arm_count=self._count_arms(topics),
@@ -239,6 +283,23 @@ class ULogParser:
         if len(xy) < 2:
             return None
         return round(float(np.hypot(*np.diff(xy, axis=0).T).sum()), 1)
+
+
+def _vehicle_type(topics: dict[str, pd.DataFrame]) -> Optional[str]:
+    df = topics.get("vehicle_status")
+    if df is None or df.empty:
+        return None
+    if "is_vtol" in df.columns and df["is_vtol"].astype(bool).any():
+        return "VTOL"
+    if "vehicle_type" in df.columns:
+        kinds = df["vehicle_type"].dropna()
+        kinds = kinds[kinds > 0]
+        if not kinds.empty:
+            return VEHICLE_TYPES.get(int(kinds.mode().iloc[0]))
+    # before ~1.14 there was only is_rotary_wing
+    if "is_rotary_wing" in df.columns:
+        return "Copter" if df["is_rotary_wing"].astype(bool).mode().iloc[0] else "Plane"
+    return None
 
 
 def _use_primary_ekf(topics: dict[str, pd.DataFrame]) -> None:

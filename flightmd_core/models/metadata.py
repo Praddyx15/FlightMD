@@ -34,7 +34,15 @@ class FlightMetadata(BaseModel):
     # the frontend colours the 3D path w/ these
     gps_path_wind_speed_ms: Optional[list[Optional[float]]] = None
     gps_path_hdop: Optional[list[Optional[float]]] = None
+    # log-relative seconds of each gps_path point (same clock as armed_windows)
+    gps_path_t_s: Optional[list[float]] = None
     # [start_s, end_s] pairs, log-relative seconds, from the arming state
     armed_windows: Optional[list[list[float]]] = None
     # things the parser had to skip or guess, in plain words for the report
     parse_warnings: list[str] = []
+    # sha256 of the file as uploaded (before any decompression)
+    log_sha256: Optional[str] = None
+    # detector id: "px4_ulog", "ardupilot_bin", "mavlink_tlog", ...
+    source_format: Optional[str] = None
+    # AeroAtlas planning brief this flight was flown against, set by the API
+    planning_brief_sha256: Optional[str] = None

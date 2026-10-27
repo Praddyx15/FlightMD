@@ -224,3 +224,66 @@ class TestULogParserIntegration:
     def test_available_topics_populated(self, sample_log_path):
         _, _, metadata = ULogParser().parse(sample_log_path)
         assert len(metadata.available_topics) > 0
+
+
+class TestMetadataDecoding:
+
+    class StubULog:
+        start_timestamp = 0
+        last_timestamp = 5_000_000
+        msg_info_dict = {"ver_hw": "CUBEPILOT_CUBEORANGE", "ver_hw_subtype": "V2", "sys_name": "PX4"}
+        initial_parameters = {"SYS_AUTOSTART": 13000}
+
+    def test_airframe_name_and_board(self):
+        metadata = ULogParser()._extract_metadata(self.StubULog(), {})
+        assert metadata.airframe_id == 13000
+        assert metadata.airframe_name == "Generic Standard VTOL"
+        assert metadata.hardware_id == "CUBEPILOT_CUBEORANGE (V2)"
+
+    def test_unknown_airframe_id_has_no_name(self):
+        stub = self.StubULog()
+        stub.initial_parameters = {"SYS_AUTOSTART": 987654}
+        assert ULogParser()._extract_metadata(stub, {}).airframe_name is None
+
+    @pytest.mark.parametrize("status, expected", [
+        ({"vehicle_type": [0, 1, 1], "is_vtol": [False, False, False]}, "Copter"),
+        ({"vehicle_type": [2, 2], "is_vtol": [False, False]}, "Plane"),
+        ({"vehicle_type": [1, 2], "is_vtol": [True, True]}, "VTOL"),
+        ({"vehicle_type": [3]}, "Rover"),
+        ({"is_rotary_wing": [True, True]}, "Copter"),
+    ])
+    def test_vehicle_type_from_vehicle_status(self, status, expected):
+        n = len(next(iter(status.values())))
+        df = pd.DataFrame({"timestamp": list(range(n)), **status})
+        metadata = ULogParser()._extract_metadata(self.StubULog(), {"vehicle_status": df})
+        assert metadata.vehicle_type == expected
+
+    def test_vehicle_type_falls_back_to_sys_name(self):
+        metadata = ULogParser()._extract_metadata(self.StubULog(), {})
+        assert metadata.vehicle_type == "PX4"
+
+
+def test_required_topics_include_imu_status_and_power():
+    from flightmd_core.services.ulog_parser import REQUIRED_ULOG_TOPICS
+
+    assert "vehicle_imu_status" in REQUIRED_ULOG_TOPICS
+    assert "system_power" in REQUIRED_ULOG_TOPICS
+
+
+def test_progress_wrapper_reports_file_position(tmp_path, monkeypatch):
+    from flightmd_core.services import ulog_parser
+
+    monkeypatch.setattr(ulog_parser, "PROGRESS_EVERY", 2)
+    p = tmp_path / "x.bin"
+    p.write_bytes(b"x" * 100)
+    seen = []
+    with open(p, "rb") as f:
+        w = ulog_parser._Progress(f, 100, seen.append)
+        assert w.read(10) == b"x" * 10
+        w.read(30)
+        w.read(10)
+        w.read(10)
+        assert w.tell() == 60
+        w.seek(0)
+        assert w.read(5) == b"xxxxx"
+    assert seen == [pytest.approx(0.1), pytest.approx(0.5)]

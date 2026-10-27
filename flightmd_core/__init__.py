@@ -6,7 +6,12 @@ API key; an optional AI enhancer can polish the executive summary.
     from flightmd_core import run_analysis
     report = await run_analysis(ulog_path="flight.ulg", file_name="flight.ulg", file_size=1234567)
 
-or from a shell: python -m flightmd_core flight.ulg --json report.json
+or from a shell:
+
+    flightmd analyse flight.ulg --json report.json --gpx path.gpx
+    flightmd compare before.json after.json
+
+(python -m flightmd_core works the same without the console script)
 """
 
 from flightmd_core.orchestrator import run_analysis

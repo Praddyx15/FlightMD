@@ -104,3 +104,66 @@ def test_nan_altitude_is_left_out():
     kml = ET.fromstring(generate_kml(make_report(path)))
     coords = kml.find(".//{http://www.opengis.net/kml/2.2}coordinates").text
     assert "nan" not in coords
+
+
+GPX = "{http://www.topografix.com/GPX/1/1}"
+KML = "{http://www.opengis.net/kml/2.2}"
+
+
+def timed_report(start="2026-10-01T09:12:33Z"):
+    report = make_report(PATH)
+    report.metadata.log_start_utc = start
+    report.metadata.gps_path_t_s = [10.0, 10.5, 11.25]
+    report.metadata.gps_path_hdop = [0.8, None, 1.2]
+    report.metadata.gps_path_wind_speed_ms = [3.5, 4.0, None]
+    return report
+
+
+def test_gpx_time_per_point():
+    root = ET.fromstring(generate_gpx(timed_report()))
+    times = [e.text for e in root.iter(f"{GPX}time")]
+    assert times == ["2026-10-01T09:12:43.000Z", "2026-10-01T09:12:43.500Z", "2026-10-01T09:12:44.250Z"]
+
+
+def test_gpx_time_comes_after_ele():
+    root = ET.fromstring(generate_gpx(timed_report()))
+    trkpt = root.find(f".//{GPX}trkpt")
+    assert [c.tag for c in trkpt] == [f"{GPX}ele", f"{GPX}time"]
+
+
+def test_gpx_no_time_without_utc_start():
+    report = timed_report()
+    report.metadata.log_start_utc = None
+    root = ET.fromstring(generate_gpx(report))
+    assert list(root.iter(f"{GPX}time")) == []
+
+
+def test_gpx_no_time_when_lengths_disagree():
+    report = timed_report()
+    report.metadata.gps_path_t_s = [10.0]
+    root = ET.fromstring(generate_gpx(report))
+    assert list(root.iter(f"{GPX}time")) == []
+
+
+def test_kml_points_carry_hdop_wind_and_time():
+    root = ET.fromstring(generate_kml(timed_report()))
+    folder = root.find(f".//{KML}Folder")
+    points = folder.findall(f"{KML}Placemark")
+    assert len(points) == len(PATH)
+
+    def data(pm):
+        return {d.get("name"): float(d.find(f"{KML}value").text) for d in pm.iter(f"{KML}Data")}
+
+    assert data(points[0]) == {"t_s": 10.0, "hdop": 0.8, "wind_speed_ms": 3.5}
+    # missing readings are left out, not written as 0
+    assert data(points[1]) == {"t_s": 10.5, "wind_speed_ms": 4.0}
+    assert data(points[2]) == {"t_s": 11.25, "hdop": 1.2}
+    assert points[0].find(f"{KML}TimeStamp/{KML}when").text == "2026-10-01T09:12:43.000Z"
+    # the line is still the first coordinates element
+    first = root.find(f".//{KML}coordinates").text.split(" ")[0]
+    assert float(first.split(",")[0]) == pytest.approx(PATH[0][1])
+
+
+def test_kml_without_point_data_has_no_folder():
+    root = ET.fromstring(generate_kml(make_report(PATH)))
+    assert root.find(f".//{KML}Folder") is None
