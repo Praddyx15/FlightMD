@@ -1,10 +1,8 @@
-"""
-BaseAnalyser — all analysers must inherit from this.
-"""
-
 from abc import ABC, abstractmethod
 import time
+
 import pandas as pd
+
 from flightmd_core.models.findings import AnalyserResult
 
 
@@ -20,39 +18,33 @@ class BaseAnalyser(ABC):
         topics: dict[str, pd.DataFrame],
         params: dict[str, float],
     ) -> AnalyserResult:
-        """
-        Run analysis on the provided topics and parameters.
-        Must return a fully populated AnalyserResult — never raise.
-        """
-        pass
+        """Return a fully populated AnalyserResult. When there's nothing the
+        module can actually check, return self._skip(reason) rather than a
+        clean result, so the report says "not assessed" instead of 100."""
 
     def is_applicable(self, available_topics: set[str]) -> bool:
-        """
-        Returns True only if all required_topics are present in the log.
-        ParameterAnalyser overrides this (it uses params, not topics).
-        """
         return all(t in available_topics for t in self.required_topics)
+
+    def _skip(self, reason: str) -> AnalyserResult:
+        return AnalyserResult(
+            analyser=self.name,
+            display_name=self.display_name,
+            findings=[],
+            skipped=True,
+            skip_reason=reason,
+        )
 
     def safe_analyse(
         self,
         topics: dict[str, pd.DataFrame],
         params: dict[str, float],
     ) -> AnalyserResult:
-        """
-        Wraps analyse() with timing and error handling.
-        Any exception → skipped result, never propagates.
-        """
+        """analyse() with timing; any exception becomes a skipped result so
+        one broken module never takes the report down."""
         start = time.time()
         try:
             result = self.analyse(topics, params)
-            result.processing_ms = int((time.time() - start) * 1000)
-            return result
         except Exception as e:
-            return AnalyserResult(
-                analyser=self.name,
-                display_name=self.display_name,
-                findings=[],
-                skipped=True,
-                skip_reason=f"Analysis error: {type(e).__name__}: {str(e)}",
-                processing_ms=int((time.time() - start) * 1000),
-            )
+            result = self._skip(f"Analysis error: {type(e).__name__}: {e}")
+        result.processing_ms = int((time.time() - start) * 1000)
+        return result

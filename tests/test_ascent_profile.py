@@ -238,3 +238,30 @@ class TestNeverRaises:
         gps = pd.DataFrame({"timestamp": [1, 2], "alt": [None, None]})
         result = AscentProfileAnalyser().safe_analyse({"vehicle_gps_position": gps}, {})
         assert result.skipped or result.findings == []
+
+
+class TestPreFixRows:
+    def test_rows_before_first_fix_do_not_set_launch_altitude(self):
+        """Before the first fix lat=lon=alt=0; taking that as the launch
+        altitude put a 100 m hop at a 450 m site at '550 m AGL'."""
+        t = np.linspace(0, np.pi, 200)
+        alt = 450 + 100 * np.sin(t)
+        gps = make_gps_df(alt)
+        gps["fix_type"] = 3
+        gps.loc[:9, ["lat", "lon", "alt"]] = 0
+        gps.loc[:9, "fix_type"] = 0
+        result = AscentProfileAnalyser().safe_analyse({"vehicle_gps_position": gps}, {})
+        assert result.skipped
+        assert "ordinary drone flight" in result.skip_reason
+
+    def test_touchdown_is_not_a_parachute_deployment(self):
+        """Fast descent that slows to a crawl in the last 20 m and stops. The
+        slow-down to ~0.5 m/s is touchdown, not a canopy opening."""
+        dt = 0.1
+        ascent = np.linspace(0, 1200.0, 400)
+        fast = 1200.0 - 30.0 * dt * np.arange(1, int(1180 / (30.0 * dt)) + 1)
+        crawl = fast[-1] - 0.5 * dt * np.arange(1, int(fast[-1] / (0.5 * dt)) + 1)
+        alt = np.concatenate([ascent, fast, np.clip(crawl, 0, None), np.zeros(50)])
+        gps = make_gps_df(alt, dt_s=dt)
+        result = AscentProfileAnalyser().safe_analyse({"vehicle_gps_position": gps}, {})
+        assert not any("Parachute Deployment Detected" in f.title for f in result.findings)

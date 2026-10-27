@@ -28,6 +28,7 @@ import pandas as pd
 from scipy.signal import find_peaks
 
 from flightmd_core.analysers.base import BaseAnalyser
+from flightmd_core.analysers.helpers import find_col, find_runs, when
 from flightmd_core.models.findings import AnalyserResult, Finding, Severity, Category
 
 G = 9.80665  # m/s², standard gravity
@@ -51,6 +52,9 @@ ASYMMETRIC_LOADING_CV_WARNING = 0.6
 # freefall/tumble, so this doesn't need to be a subtle threshold.
 DEPLOYMENT_SPEED_RATIO = 2.5
 DEPLOYMENT_WINDOW_S = 3.0
+# still coming down under canopy afterwards; touchdown (speed going to ~0)
+# must not read as a deployment
+MIN_CANOPY_DESCENT_MS = 1.0
 
 # Only claim "no deployment detected" if the log's descent actually
 # reaches close to the ground — otherwise the log may simply have ended
@@ -81,33 +85,28 @@ class AscentProfileAnalyser(BaseAnalyser):
     ) -> AnalyserResult:
         gps_df = topics["vehicle_gps_position"]
         if "alt" not in gps_df.columns or "timestamp" not in gps_df.columns:
-            return AnalyserResult(
-                analyser=self.name, display_name=self.display_name,
-                findings=[], skipped=True,
-                skip_reason="GPS topic missing altitude or timestamp data.",
-            )
+            return self._skip("GPS topic missing altitude or timestamp data.")
 
-        df = gps_df[["timestamp", "alt"]].dropna().sort_values("timestamp").reset_index(drop=True)
+        # rows from before the first fix carry lat=lon=alt=0, which would put
+        # the launch site at sea level
+        valid = gps_df["alt"].notna()
+        if "fix_type" in gps_df.columns:
+            valid &= gps_df["fix_type"] >= 3
+        if "lat" in gps_df.columns and "lon" in gps_df.columns:
+            valid &= ~((gps_df["lat"] == 0) & (gps_df["lon"] == 0))
+        df = gps_df.loc[valid, ["timestamp", "alt"]].sort_values("timestamp").reset_index(drop=True)
         if len(df) < 10:
-            return AnalyserResult(
-                analyser=self.name, display_name=self.display_name,
-                findings=[], skipped=True,
-                skip_reason="Not enough GPS samples to characterise a flight profile.",
-            )
+            return self._skip("Not enough GPS samples with a 3D fix to characterise a flight profile.")
 
         ts_s = df["timestamp"].values / 1e6
         alt_m = df["alt"].values / 1000.0  # stored in mm across all 3 formats
 
         apogee_idx = self._find_apogee(alt_m)
         if apogee_idx is None:
-            return AnalyserResult(
-                analyser=self.name, display_name=self.display_name,
-                findings=[], skipped=True,
-                skip_reason=(
-                    "Altitude profile doesn't show a single dominant peak — this analyser is "
-                    "scoped to single-apogee ballistic flights (sounding rockets, high-altitude "
-                    "balloons), not multi-leg missions."
-                ),
+            return self._skip(
+                "Altitude profile doesn't show a single dominant peak — this analyser is "
+                "scoped to single-apogee ballistic flights (sounding rockets, high-altitude "
+                "balloons), not multi-leg missions."
             )
 
         launch_alt_m = alt_m[0]
@@ -116,9 +115,6 @@ class AscentProfileAnalyser(BaseAnalyser):
         descent_duration_s = float(ts_s[-1] - ts_s[apogee_idx])
         final_agl_m = float(alt_m[-1] - launch_alt_m)
 
-        # A single altitude peak alone doesn't distinguish a rocket/HAB from
-        # an ordinary drone flight that just climbed and came back down —
-        # require altitude scale or a genuine high-G boost too.
         launch_findings: list[Finding] = []
         launch_metrics: dict[str, float] = {}
         if "sensor_accel" in topics:
@@ -129,14 +125,10 @@ class AscentProfileAnalyser(BaseAnalyser):
         boost_detected = "peak_boost_g" in launch_metrics
 
         if apogee_agl_m < MIN_QUALIFYING_APOGEE_M and not boost_detected:
-            return AnalyserResult(
-                analyser=self.name, display_name=self.display_name,
-                findings=[], skipped=True,
-                skip_reason=(
-                    f"Single altitude peak at {apogee_agl_m:.0f}m AGL with no high-G boost "
-                    f"phase — within range of an ordinary drone flight, not scoped as a "
-                    f"rocket/HAB ascent profile."
-                ),
+            return self._skip(
+                f"Single altitude peak at {apogee_agl_m:.0f}m AGL with no high-G boost "
+                f"phase — within range of an ordinary drone flight, not scoped as a "
+                f"rocket/HAB ascent profile."
             )
 
         findings: list[Finding] = list(launch_findings)
@@ -153,15 +145,14 @@ class AscentProfileAnalyser(BaseAnalyser):
         findings.append(Finding(
             category=Category.ASCENT_PROFILE,
             severity=Severity.GOOD,
+            kind="ascent.apogee",
             title=f"Apogee Detected at {apogee_agl_m:.0f}m AGL",
             technical_summary=tech,
             plain_english=tech,
             recommendation="No action needed — this is a factual measurement of the flight profile.",
             confidence=1.0,
-            timestamp_start_ms=int(ts_s[apogee_idx] * 1000),
+            **when(ts_s[apogee_idx] * 1e6),
         ))
-
-        # ── Parachute deployment ─────────────────────────────────────────────
         deploy_findings, deploy_metrics = self._analyse_deployment(
             ts_s[apogee_idx:], alt_m[apogee_idx:] - launch_alt_m, apogee_agl_m, final_agl_m,
         )
@@ -175,8 +166,6 @@ class AscentProfileAnalyser(BaseAnalyser):
             key_metrics=key_metrics,
         )
 
-    # ── shape detection ──────────────────────────────────────────────────────
-
     def _find_apogee(self, alt_m: np.ndarray) -> Optional[int]:
         alt_range = float(alt_m.max() - alt_m.min())
         if alt_range < MIN_PROMINENCE_M:
@@ -187,8 +176,6 @@ class AscentProfileAnalyser(BaseAnalyser):
             return None
         return int(peaks[0])
 
-    # ── launch phase ─────────────────────────────────────────────────────────
-
     def _analyse_launch(
         self,
         accel_df: pd.DataFrame,
@@ -196,9 +183,9 @@ class AscentProfileAnalyser(BaseAnalyser):
         start_s: float,
         apogee_s: float,
     ) -> tuple[list[Finding], dict[str, float]]:
-        x_col = self._find_col(accel_df, ["x", "xyz[0]"])
-        y_col = self._find_col(accel_df, ["y", "xyz[1]"])
-        z_col = self._find_col(accel_df, ["z", "xyz[2]"])
+        x_col = find_col(accel_df, ["x", "xyz[0]"])
+        y_col = find_col(accel_df, ["y", "xyz[1]"])
+        z_col = find_col(accel_df, ["z", "xyz[2]"])
         if not (x_col and y_col and z_col) or "timestamp" not in accel_df.columns:
             return [], {}
 
@@ -210,11 +197,10 @@ class AscentProfileAnalyser(BaseAnalyser):
             return [], {}
 
         boost_mask = ascent_mask & (mag > LAUNCH_G_THRESHOLD)
-        runs = self._find_runs(boost_mask)
+        runs = find_runs(boost_mask)
         if not runs:
             return [], {}
 
-        # Longest boost run
         run_start, run_end = max(runs, key=lambda r: r[1] - r[0])
         boost_duration_s = float(ts_s[run_end - 1] - ts_s[run_start])
         if boost_duration_s < MIN_BOOST_DURATION_S:
@@ -230,13 +216,13 @@ class AscentProfileAnalyser(BaseAnalyser):
         findings = [Finding(
             category=Category.ASCENT_PROFILE,
             severity=Severity.GOOD,
+            kind="ascent.boost",
             title=f"High-G Launch Detected ({peak_g:.1f}g)",
             technical_summary=tech,
             plain_english=tech,
             recommendation="No action needed — this is a factual measurement of the boost phase.",
             confidence=1.0,
-            timestamp_start_ms=int(ts_s[run_start] * 1000),
-            timestamp_end_ms=int(ts_s[run_end - 1] * 1000),
+            **when(ts_s[run_start] * 1e6, ts_s[run_end - 1] * 1e6),
         )]
 
         if gyro_df is not None and "timestamp" in gyro_df.columns:
@@ -253,9 +239,9 @@ class AscentProfileAnalyser(BaseAnalyser):
         boost_end_s: float,
         key_metrics: dict[str, float],
     ) -> list[Finding]:
-        roll_col  = self._find_col(gyro_df, ["rollspeed", "xyz[0]", "x"])
-        pitch_col = self._find_col(gyro_df, ["pitchspeed", "xyz[1]", "y"])
-        yaw_col   = self._find_col(gyro_df, ["yawspeed", "xyz[2]", "z"])
+        roll_col  = find_col(gyro_df, ["rollspeed", "xyz[0]", "x"])
+        pitch_col = find_col(gyro_df, ["pitchspeed", "xyz[1]", "y"])
+        yaw_col   = find_col(gyro_df, ["yawspeed", "xyz[2]", "z"])
         if not (roll_col and pitch_col and yaw_col) or "timestamp" not in gyro_df.columns:
             return []
 
@@ -284,6 +270,7 @@ class AscentProfileAnalyser(BaseAnalyser):
             return [Finding(
                 category=Category.ASCENT_PROFILE,
                 severity=Severity.WARNING,
+                kind="ascent.boost_asymmetric",
                 title="Asymmetric Loading During Boost",
                 technical_summary=tech,
                 plain_english=tech,
@@ -293,10 +280,9 @@ class AscentProfileAnalyser(BaseAnalyser):
                     "whether the airframe tumbled during powered flight."
                 ),
                 confidence=min(1.0, cv / (ASYMMETRIC_LOADING_CV_WARNING * 2)),
+                **when(boost_start_s * 1e6, boost_end_s * 1e6),
             )]
         return []
-
-    # ── parachute deployment ─────────────────────────────────────────────────
 
     def _analyse_deployment(
         self,
@@ -338,11 +324,13 @@ class AscentProfileAnalyser(BaseAnalyser):
             findings = [Finding(
                 category=Category.ASCENT_PROFILE,
                 severity=Severity.GOOD,
+                kind="ascent.deployment",
                 title=f"Parachute Deployment Detected at {deploy_agl_m:.0f}m AGL",
                 technical_summary=tech,
                 plain_english=tech,
                 recommendation="No action needed — recovery event detected as expected.",
                 confidence=0.9,
+                **when(speed_ts[deployment_idx] * 1e6),
             )]
 
             if deploy_agl_m < apogee_agl_m * LOW_DEPLOYMENT_ALTITUDE_FRACTION:
@@ -354,6 +342,7 @@ class AscentProfileAnalyser(BaseAnalyser):
                 findings.append(Finding(
                     category=Category.ASCENT_PROFILE,
                     severity=Severity.WARNING,
+                    kind="ascent.low_deployment",
                     title="Low-Altitude Deployment",
                     technical_summary=tech2,
                     plain_english=tech2,
@@ -362,6 +351,7 @@ class AscentProfileAnalyser(BaseAnalyser):
                         "backup timer, or barometric threshold) — deployment margin was thin."
                     ),
                     confidence=0.7,
+                    **when(speed_ts[deployment_idx] * 1e6),
                 ))
             return findings, key_metrics
 
@@ -377,6 +367,7 @@ class AscentProfileAnalyser(BaseAnalyser):
             return [Finding(
                 category=Category.ASCENT_PROFILE,
                 severity=Severity.CRITICAL,
+                kind="ascent.no_deployment",
                 title="No Parachute Deployment Detected",
                 technical_summary=tech,
                 plain_english=tech,
@@ -398,28 +389,6 @@ class AscentProfileAnalyser(BaseAnalyser):
             pre = speed[i]
             post_window = speed[window_mask]
             post = float(np.median(post_window[len(post_window) // 2:]))
-            if pre > 1.0 and post > 0 and pre / post >= DEPLOYMENT_SPEED_RATIO:
+            if pre > 1.0 and post >= MIN_CANOPY_DESCENT_MS and pre / post >= DEPLOYMENT_SPEED_RATIO:
                 return i
         return None
-
-    # ── helpers ──────────────────────────────────────────────────────────────
-
-    def _find_col(self, df: pd.DataFrame, candidates: list[str]) -> Optional[str]:
-        for c in candidates:
-            if c in df.columns:
-                return c
-        return None
-
-    def _find_runs(self, mask: np.ndarray) -> list[tuple[int, int]]:
-        runs = []
-        in_run = False
-        start = 0
-        for i, v in enumerate(mask):
-            if v and not in_run:
-                in_run, start = True, i
-            elif not v and in_run:
-                in_run = False
-                runs.append((start, i))
-        if in_run:
-            runs.append((start, len(mask)))
-        return runs

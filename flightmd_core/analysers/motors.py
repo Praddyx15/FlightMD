@@ -1,30 +1,42 @@
 """
-MotorAnalyser — ESC telemetry, motor balance, RPM dropouts, thermal stress.
+MotorAnalyser: per-motor balance at hover, ESC temperature, current
+imbalance and RPM dropouts, from ESC telemetry (BLHeli32/AM32/KISS/DShot).
+Most logs have none and the module is skipped.
 
-ESC telemetry is only available from BLHeli32, KISS, or AM32 ESCs with
-telemetry enabled in PX4. Most logs won't have this — skipped gracefully.
+Only real ESCs count: PX4 always logs 8 esc[] slots, so columns beyond
+esc_count, or that never report anything, are dropped. Missing samples stay
+NaN; NaN is "no data", never "motor stopped".
 """
 
+import re
+
 import numpy as np
-import pandas as pd
 
 from flightmd_core.analysers.base import BaseAnalyser
+from flightmd_core.analysers.helpers import confidence, downsample, find_runs, run_seconds, when
+from flightmd_core.analysers.phases import flight_phases
 from flightmd_core.models.findings import (
     AnalyserResult, Finding, Severity, Category
 )
 
-# Motor balance thresholds (std/mean of RPM across motors)
+# spread of per-motor hover RPM: std / mean
 BALANCE_WARNING  = 0.08
 BALANCE_CRITICAL = 0.15
 
-# ESC temperature warning
 TEMP_WARNING_C = 80.0
 
-# Current imbalance: one motor drawing >20% more than average
+# one motor's hover current this far above the mean
 CURRENT_IMBALANCE_PCT = 0.20
 
-# RPM dropout: motor drops to 0 for >100ms mid-flight
+SPINNING_RPM = 500.0
+STOPPED_RPM = 100.0
+OTHERS_FLYING_RPM = 1000.0
 RPM_DROPOUT_MS = 100.0
+
+HOVER_BAND = 0.15      # within ±15% of the in-flight median mean-RPM
+MIN_HOVER_SAMPLES = 50
+
+_ESC_COL = re.compile(r"^esc\[(\d+)\]\.esc_(\w+)$")
 
 
 class MotorAnalyser(BaseAnalyser):
@@ -32,222 +44,224 @@ class MotorAnalyser(BaseAnalyser):
     display_name    = "Motor / ESC Analysis"
     required_topics = ["esc_status"]
 
-    def analyse(
-        self,
-        topics: dict[str, pd.DataFrame],
-        params: dict[str, float],
-    ) -> AnalyserResult:
-        df = topics["esc_status"].copy()
+    def analyse(self, topics, params):
+        df = topics["esc_status"]
+        if "timestamp" not in df.columns:
+            return self._skip("esc_status has no timestamps.")
+        df = df.sort_values("timestamp").reset_index(drop=True)
+
+        esc_count = None
+        if "esc_count" in df.columns and df["esc_count"].notna().any():
+            esc_count = int(df["esc_count"].max())
+
+        rpm_cols = self._motor_cols(df, "rpm", esc_count)
+        if not rpm_cols:
+            return self._skip("No ESC RPM telemetry in this log.")
+        temp_cols = self._motor_cols(df, "temperature", esc_count)
+        curr_cols = self._motor_cols(df, "current", esc_count)
+
+        ts = df["timestamp"].to_numpy(float)
+        rpm = df[[c for _, c in rpm_cols]].to_numpy(float)
+        phases = flight_phases(topics)
+        in_air = phases.mask(ts, "in_air")
+        if not phases.known:
+            # no arming data: "flying" = most motors clearly spinning
+            in_air &= (np.nan_to_num(rpm) > SPINNING_RPM).mean(axis=1) > 0.5
+
         findings: list[Finding] = []
         health_score = 100.0
-
-        ts_us = df["timestamp"].values if "timestamp" in df.columns else np.arange(len(df))
-        ts_s  = ts_us / 1e6
-
-        # Detect available motors — columns like esc[0].esc_rpm, esc_rpm[0], etc.
-        rpm_cols  = self._find_motor_cols(df, "rpm")
-        temp_cols = self._find_motor_cols(df, "temperature")
-        curr_cols = self._find_motor_cols(df, "current")
-
-        if not rpm_cols:
-            return AnalyserResult(
-                analyser=self.name,
-                display_name=self.display_name,
-                findings=[],
-                skipped=True,
-                skip_reason="No ESC RPM columns found. ESC telemetry not available in this log.",
-            )
-
-        rpm_matrix = np.column_stack([df[c].fillna(0).values for c in rpm_cols])
         key_metrics: dict[str, float] = {}
 
-        # ── 1. Motor balance at hover ────────────────────────────────────────
-        hover_mask = self._detect_hover(rpm_matrix, ts_s)
-        if hover_mask.sum() > 50:
-            hover_rpm = rpm_matrix[hover_mask]
-            mean_rpm  = hover_rpm.mean(axis=1)
-            std_rpm   = hover_rpm.std(axis=1)
-            mean_mean = float(mean_rpm.mean())
-            mean_std  = float(std_rpm.mean())
-            balance_idx = mean_std / mean_mean if mean_mean > 0 else 0.0
-            key_metrics["motor_balance_index"] = round(balance_idx, 4)
+        hover = self._hover_mask(rpm, in_air)
+        if hover.sum() > MIN_HOVER_SAMPLES and len(rpm_cols) >= 2:
+            f, p = self._balance(df, rpm, hover, ts, rpm_cols, curr_cols, key_metrics)
+            findings += f
+            health_score -= p
 
-            if balance_idx > BALANCE_CRITICAL:
-                health_score = max(0.0, health_score - 30)
-                tech = (
-                    f"Motor balance index: {balance_idx:.3f} (CRITICAL, threshold={BALANCE_CRITICAL}). "
-                    f"Mean hover RPM: {mean_mean:.0f}, RPM std: {mean_std:.0f}. "
-                    f"One or more motors significantly weaker than others."
-                )
-                findings.append(Finding(
-                    category=Category.MOTORS,
-                    severity=Severity.CRITICAL,
-                    title=f"Significant Motor Imbalance (balance index={balance_idx:.2f})",
-                    technical_summary=tech,
-                    plain_english=tech,
-                    recommendation="Inspect all motors for damage. Check propeller seating. Test each motor individually on the bench. Replace any weak or damaged motor.",
-                    confidence=min(1.0, balance_idx / 0.25),
-                    chart_data=self._build_chart(df, rpm_cols, ts_us),
-                ))
-            elif balance_idx > BALANCE_WARNING:
-                health_score = max(0.0, health_score - 15)
-                tech = (
-                    f"Motor balance index: {balance_idx:.3f} (WARNING, threshold={BALANCE_WARNING}). "
-                    f"Mean hover RPM: {mean_mean:.0f}, RPM std: {mean_std:.0f}."
-                )
-                findings.append(Finding(
-                    category=Category.MOTORS,
-                    severity=Severity.WARNING,
-                    title=f"Motor Balance Warning (balance index={balance_idx:.2f})",
-                    technical_summary=tech,
-                    plain_english=tech,
-                    recommendation="One motor may be weaker or have a worn bearing. Run a motor test sequence and compare RPM vs throttle curves.",
-                    confidence=min(1.0, balance_idx / 0.20),
-                    chart_data=self._build_chart(df, rpm_cols, ts_us),
-                ))
-
-        # ── 2. ESC temperature ───────────────────────────────────────────────
-        if temp_cols:
-            for i, tcol in enumerate(temp_cols):
-                temp = df[tcol].dropna().values
-                if len(temp) == 0:
-                    continue
-                max_temp = float(temp.max())
-                if max_temp > TEMP_WARNING_C:
-                    health_score = max(0.0, health_score - 15)
-                    tech = (
-                        f"ESC {i+1} temperature reached {max_temp:.0f}°C "
-                        f"(threshold: {TEMP_WARNING_C}°C)."
-                    )
-                    findings.append(Finding(
-                        category=Category.MOTORS,
-                        severity=Severity.WARNING,
-                        title=f"ESC Thermal Stress — Motor {i+1} ({max_temp:.0f}°C)",
-                        technical_summary=tech,
-                        plain_english=tech,
-                        recommendation=f"Reduce sustained full-throttle time. Ensure ESC {i+1} has adequate airflow. Check for prop size mismatch.",
-                        confidence=min(1.0, (max_temp - TEMP_WARNING_C) / 20.0),
-                    ))
-
-        # ── 3. Current imbalance ─────────────────────────────────────────────
-        if curr_cols and len(curr_cols) >= 2:
-            curr_matrix = np.column_stack([df[c].fillna(0).values for c in curr_cols])
-            mean_curr = curr_matrix.mean(axis=1, keepdims=True)
-            max_curr  = curr_matrix.max(axis=1)
-            with np.errstate(divide="ignore", invalid="ignore"):
-                imbalance = np.where(mean_curr > 0, (max_curr - mean_curr.flatten()) / mean_curr.flatten(), 0)
-            max_imbalance = float(imbalance.max())
-            if max_imbalance > CURRENT_IMBALANCE_PCT:
-                health_score = max(0.0, health_score - 15)
-                worst_motor = int(np.argmax(curr_matrix.max(axis=0)))
-                tech = (
-                    f"Motor {worst_motor+1} drew {max_imbalance*100:.0f}% more current than average "
-                    f"at peak. Threshold: {CURRENT_IMBALANCE_PCT*100:.0f}%."
-                )
-                findings.append(Finding(
-                    category=Category.MOTORS,
-                    severity=Severity.WARNING,
-                    title=f"Motor Current Imbalance — Motor {worst_motor+1}",
-                    technical_summary=tech,
-                    plain_english=tech,
-                    recommendation=f"Inspect motor {worst_motor+1} for mechanical drag, binding, or stator damage. Check propeller for cracks.",
-                    confidence=min(1.0, max_imbalance / 0.40),
-                ))
-
-        # ── 4. RPM dropout detection ─────────────────────────────────────────
-        for i, rcol in enumerate(rpm_cols):
-            rpm = df[rcol].fillna(0).values
-            # Find periods where RPM = 0 mid-flight (after first armed period)
-            # Proxy for "in flight": mean RPM > 1000
-            if rpm.mean() < 500:
+        for i, col in temp_cols:
+            temp = df[col].to_numpy(float)
+            if not np.isfinite(temp).any():
                 continue
-            armed_start = next((j for j, v in enumerate(rpm) if v > 500), None)
-            if armed_start is None:
+            peak = float(np.nanmax(temp))
+            if peak <= TEMP_WARNING_C:
                 continue
-            armed_rpm = rpm[armed_start:]
-            armed_ts  = ts_us[armed_start:]
-            dropout_mask = armed_rpm < 100
-            if not dropout_mask.any():
-                continue
+            health_score -= 15
+            hot = np.flatnonzero(temp > TEMP_WARNING_C)
+            tech = f"ESC {i + 1} temperature reached {peak:.0f}°C (threshold {TEMP_WARNING_C:.0f}°C)."
+            findings.append(Finding(
+                category=Category.MOTORS,
+                severity=Severity.WARNING,
+                kind="motors.esc_thermal",
+                title=f"ESC Thermal Stress — Motor {i + 1} ({peak:.0f}°C)",
+                technical_summary=tech,
+                plain_english=tech,
+                recommendation=f"Reduce sustained full-throttle time. Ensure ESC {i + 1} has adequate airflow. Check for prop size mismatch.",
+                confidence=confidence((peak - TEMP_WARNING_C) / 20.0),
+                **when(ts[hot[0]], ts[hot[-1]]),
+            ))
 
-            # Find runs
-            runs = []
-            in_run = False
-            run_start = 0
-            for j, v in enumerate(dropout_mask):
-                if v and not in_run:
-                    in_run, run_start = True, j
-                elif not v and in_run:
-                    in_run = False
-                    runs.append((run_start, j))
-            if in_run:
-                runs.append((run_start, len(dropout_mask)))
+        f, p = self._dropouts(rpm, in_air, ts, rpm_cols)
+        findings += f
+        health_score -= p
 
-            for rs, re in runs:
-                dur_ms = (armed_ts[min(re, len(armed_ts)-1)] - armed_ts[rs]) / 1e3
-                if dur_ms > RPM_DROPOUT_MS:
-                    health_score = max(0.0, health_score - 30)
-                    ts_start_ms = int(armed_ts[rs] / 1e3)
-                    tech = (
-                        f"Motor {i+1} RPM dropped to near-zero for {dur_ms:.0f}ms "
-                        f"at t={ts_s[armed_start + rs]:.1f}s during flight. "
-                        f"This indicates a possible motor failure event."
-                    )
-                    findings.append(Finding(
-                        category=Category.MOTORS,
-                        severity=Severity.CRITICAL,
-                        title=f"Motor {i+1} Dropout Detected ({dur_ms:.0f}ms)",
-                        technical_summary=tech,
-                        plain_english=tech,
-                        recommendation=f"Do NOT fly this aircraft until motor {i+1} is inspected and tested. Check ESC connection, motor windings, and prop nut.",
-                        confidence=0.95,
-                        timestamp_start_ms=ts_start_ms,
-                    ))
-                    break   # one dropout finding per motor
+        ts_ms, *series = downsample(ts, *(rpm[:, k] for k in range(rpm.shape[1])))
+        chart = {"timestamps": ts_ms, "rpm_per_motor": {c: s for (_, c), s in zip(rpm_cols, series)}}
+        for f in findings:
+            f.chart_data = {**chart, **(f.chart_data or {})}
 
         return AnalyserResult(
             analyser=self.name,
             display_name=self.display_name,
             findings=findings,
-            health_score=health_score,
+            health_score=max(0.0, health_score),
             key_metrics=key_metrics,
         )
 
-    # ── helpers ──────────────────────────────────────────────────────────────
-
-    def _find_motor_cols(self, df: pd.DataFrame, field: str) -> list[str]:
-        """Find ESC columns matching various PX4 naming conventions."""
-        candidates = []
-        # Pattern: esc[N].esc_rpm, esc_rpm[N], esc[N]_rpm, motor_N_rpm
+    def _motor_cols(self, df, field, esc_count) -> list[tuple[int, str]]:
+        """[(motor index, column)] for real ESCs, ordered by index."""
+        found = []
         for col in df.columns:
-            if field in col.lower() and any(
-                pat in col.lower() for pat in ["esc", "motor"]
-            ):
-                candidates.append(col)
-        # Sort for consistent ordering
-        return sorted(candidates)
+            m = _ESC_COL.match(col)
+            if m and field in m.group(2):
+                found.append((int(m.group(1)), col))
+        if not found:
+            # older parsers: esc_rpm[0], motor_1_rpm ...
+            loose = sorted(c for c in df.columns
+                           if field in c.lower() and ("esc" in c.lower() or "motor" in c.lower()))
+            found = list(enumerate(loose))
+        found.sort()
+        if esc_count:
+            found = [(i, c) for i, c in found if i < esc_count]
+        # slots that never reported, or only ever report 0, aren't motors
+        return [(i, c) for i, c in found
+                if df[c].notna().any() and (df[c].fillna(0) != 0).any()]
 
-    def _detect_hover(self, rpm_matrix: np.ndarray, ts_s: np.ndarray) -> np.ndarray:
-        """
-        Identify hover periods: all motors spinning >500 RPM,
-        RPM variance across motors relatively low, sustained >2s.
-        """
-        all_spinning = (rpm_matrix > 500).all(axis=1)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            cv = np.where(
-                rpm_matrix.mean(axis=1) > 0,
-                rpm_matrix.std(axis=1) / rpm_matrix.mean(axis=1),
-                1.0,
+    def _hover_mask(self, rpm, in_air):
+        valid = np.isfinite(rpm).all(axis=1) & (np.nan_to_num(rpm) > SPINNING_RPM).all(axis=1) & in_air
+        if not valid.any():
+            return valid
+        mean = rpm.mean(axis=1)
+        typical = np.median(mean[valid])
+        return valid & (np.abs(mean - typical) <= HOVER_BAND * typical)
+
+    def _balance(self, df, rpm, hover, ts, rpm_cols, curr_cols, key_metrics):
+        findings, penalty = [], 0.0
+        per_motor = np.median(rpm[hover], axis=0)
+        mean = float(per_motor.mean())
+        dev = (per_motor - mean) / mean
+        idx = float(per_motor.std() / mean)
+        key_metrics["motor_balance_index"] = round(idx, 4)
+        for (i, _), d in zip(rpm_cols, dev):
+            key_metrics[f"motor_{i + 1}_rpm_dev_pct"] = round(float(d * 100), 2)
+
+        motors = [{"motor": i + 1, "hover_rpm": round(float(r), 1), "deviation_pct": round(float(d * 100), 2)}
+                  for (i, _), r, d in zip(rpm_cols, per_motor, dev)]
+
+        currents = None
+        if len(curr_cols) >= 2:
+            cur = df[[c for _, c in curr_cols]].to_numpy(float)[hover]
+            if np.isfinite(cur).any(axis=0).all():
+                currents = np.nanmedian(cur, axis=0)
+                by_motor = dict(zip((i for i, _ in curr_cols), currents))
+                for m in motors:
+                    c = by_motor.get(m["motor"] - 1)
+                    m["hover_current_a"] = None if c is None else round(float(c), 2)
+
+        hover_runs = find_runs(hover)
+        a, b = max(hover_runs, key=lambda r: r[1] - r[0])
+        span = when(ts[a], ts[min(b, len(ts) - 1)])
+
+        worst = int(np.argmax(np.abs(dev)))
+        worst_motor = rpm_cols[worst][0] + 1
+        worst_dev = float(dev[worst] * 100)
+        sev = None
+        if idx > BALANCE_CRITICAL:
+            sev, p, thr = Severity.CRITICAL, 30.0, BALANCE_CRITICAL
+        elif idx > BALANCE_WARNING:
+            sev, p, thr = Severity.WARNING, 15.0, BALANCE_WARNING
+        if sev is not None:
+            penalty += p
+            lines = ", ".join(f"M{m['motor']} {m['deviation_pct']:+.1f}%" for m in motors)
+            tech = (
+                f"Hover RPM spread (std/mean) {idx:.3f}, threshold {thr}. Mean hover RPM {mean:.0f}. "
+                f"Per motor vs mean: {lines}."
             )
-        stable = cv < 0.15
-        return all_spinning & stable
+            findings.append(Finding(
+                category=Category.MOTORS,
+                severity=sev,
+                kind="motors.rpm_imbalance",
+                title=f"Motor Imbalance — Motor {worst_motor} at {worst_dev:+.0f}%",
+                technical_summary=tech,
+                plain_english=tech,
+                recommendation=(
+                    f"Motor {worst_motor} is furthest from the others. Check its prop (damage, seating, "
+                    f"right type), its bearings by hand, and the frame arm for twist; then check the "
+                    f"centre of gravity, which also shifts load between motors."
+                ),
+                confidence=confidence(idx / thr - 1, hover.sum() / 50.0),
+                chart_data={"per_motor": motors},
+                **span,
+            ))
 
-    def _build_chart(self, df: pd.DataFrame, rpm_cols: list[str], ts_us: np.ndarray) -> dict:
-        step = max(1, len(df) // 500)
-        return {
-            "timestamps": (ts_us[::step] / 1e3).tolist(),
-            "rpm_per_motor": {
-                col: df[col].fillna(0).values[::step].tolist()
-                for col in rpm_cols
-            },
-        }
+        if currents is not None:
+            cmean = float(np.mean(currents))
+            if cmean > 0:
+                cdev = (currents - cmean) / cmean
+                j = int(np.argmax(cdev))
+                if cdev[j] > CURRENT_IMBALANCE_PCT:
+                    penalty += 15.0
+                    motor = curr_cols[j][0] + 1
+                    tech = (
+                        f"At hover, motor {motor} drew {currents[j]:.1f} A against a mean of "
+                        f"{cmean:.1f} A ({cdev[j] * 100:.0f}% more; threshold {CURRENT_IMBALANCE_PCT * 100:.0f}%)."
+                    )
+                    findings.append(Finding(
+                        category=Category.MOTORS,
+                        severity=Severity.WARNING,
+                        kind="motors.current_imbalance",
+                        title=f"Motor Current Imbalance — Motor {motor}",
+                        technical_summary=tech,
+                        plain_english=tech,
+                        recommendation=f"Inspect motor {motor} for mechanical drag, binding, or stator damage. Check propeller for cracks.",
+                        confidence=confidence(cdev[j] / CURRENT_IMBALANCE_PCT - 1, hover.sum() / 50.0),
+                        chart_data={"per_motor": motors},
+                        **span,
+                    ))
+        return findings, penalty
+
+    def _dropouts(self, rpm, in_air, ts, rpm_cols):
+        findings, penalty = [], 0.0
+        n = rpm.shape[1]
+        for k, (i, col) in enumerate(rpm_cols):
+            mine = rpm[:, k]
+            if n > 1:
+                # missing samples count as 0 here, i.e. "not clearly flying"
+                others = np.median(np.nan_to_num(np.delete(rpm, k, axis=1)), axis=1)
+            else:
+                others = np.full(len(mine), np.inf)
+            # this motor stopped while the rest kept flying; a spin-down
+            # after landing takes every motor down together
+            stopped = in_air & (mine < STOPPED_RPM) & (others > OTHERS_FLYING_RPM)
+            for a, b in find_runs(stopped):
+                dur_ms = run_seconds(ts, a, b) * 1e3
+                if dur_ms <= RPM_DROPOUT_MS:
+                    continue
+                penalty += 30.0
+                tech = (
+                    f"Motor {i + 1} RPM fell below {STOPPED_RPM:.0f} for {dur_ms:.0f}ms at "
+                    f"t={ts[a] / 1e6:.1f}s in flight while the other motors stayed above "
+                    f"{OTHERS_FLYING_RPM:.0f} RPM."
+                )
+                findings.append(Finding(
+                    category=Category.MOTORS,
+                    severity=Severity.CRITICAL,
+                    kind="motors.dropout",
+                    title=f"Motor {i + 1} Dropout Detected ({dur_ms:.0f}ms)",
+                    technical_summary=tech,
+                    plain_english=tech,
+                    recommendation=f"Do NOT fly this aircraft until motor {i + 1} is inspected and tested. Check ESC connection, motor windings, and prop nut.",
+                    confidence=confidence(dur_ms / RPM_DROPOUT_MS - 1, dur_ms / 1e3),
+                    **when(ts[a], ts[min(b, len(ts) - 1)]),
+                ))
+                break   # one per motor
+        return findings, penalty

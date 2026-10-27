@@ -1,21 +1,27 @@
 """
-GPSAnalyser — GPS fix quality, satellite count, HDOP, jamming, spoofing.
+GPSAnalyser: fix quality, satellite count, HDOP, jamming, spoofing.
 
-GPS is mission-critical for multirotor operations. Loss of GPS mid-flight
-typically triggers position hold failure or return-to-home activation.
-Jamming and spoofing are increasingly common near urban and military areas.
+Everything is judged in flight only (see phases.py). Without arming data
+the leading no-fix stretch is dropped instead, so acquisition on the pad
+isn't reported as a fix lost in flight.
+
+PX4 sensor_gps enums (msg/SensorGps.msg, v1.14+):
+  jamming_state  0 unknown, 1 ok, 2 warning, 3 critical
+  spoofing_state 0 unknown, 1 none, 2 indicated, 3 multiple indications
 """
 
 import numpy as np
 import pandas as pd
-from typing import Optional
 
 from flightmd_core.analysers.base import BaseAnalyser
+from flightmd_core.analysers.helpers import (
+    confidence, downsample, find_col, find_runs, run_seconds, sample_rate_hz, when,
+)
+from flightmd_core.analysers.phases import flight_phases
 from flightmd_core.models.findings import (
     AnalyserResult, Finding, Severity, Category
 )
 
-# Fix type meanings
 FIX_LABELS = {
     0: "No Fix",
     1: "No Fix",
@@ -26,346 +32,326 @@ FIX_LABELS = {
     6: "RTK Fixed",
 }
 
-# Thresholds
+FIX_LOSS_MIN_S = 1.0        # shorter dips below 3D are "degradation"
+
 HDOP_WARNING  = 2.0
 HDOP_CRITICAL = 4.0
+HDOP_UNKNOWN  = 50.0        # 99.99 / 655.35 are "no estimate" sentinels
 
-SAT_DROP_THRESH = 4     # satellites lost in < 5s
+SAT_DROP_THRESH = 4         # satellites lost within the window
 SAT_DROP_WINDOW_S = 5.0
+SAT_MAX_VALID = 60          # 255 = unknown on MAVLink
 
-JAMMING_WARNING  = 100
+JAMMING_WARNING  = 100      # jamming_indicator, 0-255
 JAMMING_CRITICAL = 180
+SUSTAIN_S = 2.0             # jamming / HDOP must hold this long, not spike once
 
-SPOOFING_INDETERMINATE = 3
-SPOOFING_DETECTED      = 4
+JAM_STATE_WARNING = 2
+JAM_STATE_CRITICAL = 3
+SPOOF_INDICATED = 2
+SPOOF_MULTIPLE = 3
 
 
 class GPSAnalyser(BaseAnalyser):
     name            = "gps"
     display_name    = "GPS Analysis"
     required_topics = ["vehicle_gps_position"]
-    optional_topics = ["sensor_gnss_relative"]
+    optional_topics = ["vehicle_status", "vehicle_land_detected"]
 
-    def analyse(
-        self,
-        topics: dict[str, pd.DataFrame],
-        params: dict[str, float],
-    ) -> AnalyserResult:
-        df = topics["vehicle_gps_position"].copy()
+    def analyse(self, topics, params):
+        df = topics["vehicle_gps_position"]
+        if "timestamp" not in df.columns:
+            return self._skip("GPS topic has no timestamps.")
+        df = df.sort_values("timestamp").reset_index(drop=True)
+        ts_all = df["timestamp"].to_numpy(float)
+
+        phases = flight_phases(topics)
+        fix_col = find_col(df, ["fix_type"])
+        keep = phases.mask(ts_all, "in_air")
+        if not phases.known and fix_col:
+            fixed = np.flatnonzero(df[fix_col].to_numpy(float) >= 3)
+            if len(fixed):
+                keep[: fixed[0]] = False
+
+        w = df[keep].reset_index(drop=True)
+        if len(w) < 5:
+            return self._skip(f"Fewer than 5 GPS samples {phases.describe()}.")
+
+        ts = w["timestamp"].to_numpy(float)
+        rate = sample_rate_hz(ts, 5.0)
+        sustain_n = max(1, int(round(SUSTAIN_S * rate)))
+        has_fix = (w[fix_col].to_numpy(float) >= 3) if fix_col else np.ones(len(w), bool)
+        where = phases.describe()
+
         findings: list[Finding] = []
-        health_score = 100.0
+        penalty = 0.0
 
-        ts = df["timestamp"].values if "timestamp" in df.columns else np.arange(len(df))
-        ts_s = ts / 1e6   # µs → s
-
-        # ── 1. Fix type analysis ─────────────────────────────────────────────
-        fix_col = self._find_col(df, ["fix_type", "fix_type_s"])
         if fix_col:
-            fix_findings, fix_penalty = self._analyse_fix_type(
-                df[fix_col].values, ts, ts_s
-            )
-            findings.extend(fix_findings)
-            health_score = max(0.0, health_score - fix_penalty)
+            f, p = self._fix(w[fix_col].to_numpy(float), ts, where)
+            findings += f
+            penalty += p
 
-        # ── 2. Satellite count drops ─────────────────────────────────────────
-        sat_col = self._find_col(df, ["satellites_used", "s_variance_m_s"])
-        if sat_col and "satellites_used" in df.columns:
-            sat_findings, sat_penalty = self._analyse_satellites(
-                df["satellites_used"].values, ts_s, ts
-            )
-            findings.extend(sat_findings)
-            health_score = max(0.0, health_score - sat_penalty)
+        sats = None
+        if "satellites_used" in w.columns:
+            sats = w["satellites_used"].to_numpy(float, copy=True)
+            sats[(sats < 0) | (sats > SAT_MAX_VALID)] = np.nan
+            f, p = self._satellites(sats, has_fix, ts, rate)
+            findings += f
+            penalty += p
 
-        # ── 3. HDOP ──────────────────────────────────────────────────────────
-        hdop_col = self._find_col(df, ["hdop", "eph"])
+        hdop_col = find_col(w, ["hdop", "eph"])
+        hdop_sustained = None
         if hdop_col:
-            hdop_findings, hdop_penalty = self._analyse_hdop(
-                df[hdop_col].values, ts, ts_s
-            )
-            findings.extend(hdop_findings)
-            health_score = max(0.0, health_score - hdop_penalty)
+            hdop = w[hdop_col].to_numpy(float, copy=True)
+            hdop[(hdop <= 0) | (hdop >= HDOP_UNKNOWN) | ~has_fix] = np.nan
+            hdop_sustained = _rolling(hdop, sustain_n, "median")
+            f, p = self._hdop(hdop, hdop_sustained, hdop_col, ts)
+            findings += f
+            penalty += p
 
-        # ── 4. Jamming indicator ─────────────────────────────────────────────
-        jam_col = self._find_col(df, ["jamming_indicator", "jamming_state"])
-        if jam_col and "jamming_indicator" in df.columns:
-            jam_findings, jam_penalty = self._analyse_jamming(
-                df["jamming_indicator"].values, ts, ts_s
-            )
-            findings.extend(jam_findings)
-            health_score = max(0.0, health_score - jam_penalty)
+        f, p = self._jamming(w, ts, sustain_n)
+        findings += f
+        penalty += p
 
-        # ── 5. Spoofing state ────────────────────────────────────────────────
-        spoof_col = self._find_col(df, ["spoofing_state"])
-        if spoof_col:
-            spoof_findings, spoof_penalty = self._analyse_spoofing(
-                df[spoof_col].values, ts, ts_s
-            )
-            findings.extend(spoof_findings)
-            health_score = max(0.0, health_score - spoof_penalty)
+        if "spoofing_state" in w.columns:
+            f, p = self._spoofing(w["spoofing_state"].to_numpy(float), ts)
+            findings += f
+            penalty += p
 
-        # Build chart data
-        step = max(1, len(df) // 500)
-        chart_data = {
-            "timestamps": (ts[::step] / 1e3).tolist(),
-            "satellites": df["satellites_used"].values[::step].tolist()
-                if "satellites_used" in df.columns else [],
-            "hdop": df[hdop_col].values[::step].tolist()
-                if hdop_col and hdop_col in df.columns else [],
-            "fix_type": df[fix_col].values[::step].tolist()
-                if fix_col else [],
-            "jamming": df["jamming_indicator"].values[::step].tolist()
-                if "jamming_indicator" in df.columns else [],
-        }
-
+        cols = {"satellites": "satellites_used", "hdop": hdop_col, "fix_type": fix_col,
+                "jamming": "jamming_indicator"}
+        present = {k: c for k, c in cols.items() if c and c in df.columns}
+        ts_ms, *vals = downsample(ts_all, *(df[c].to_numpy(float) for c in present.values()))
+        chart_data = {"timestamps": ts_ms, **{k: [] for k in cols}, **dict(zip(present, vals))}
         for f in findings:
             if f.chart_data is None:
                 f.chart_data = chart_data
 
         key_metrics = {}
-        if "satellites_used" in df.columns:
-            sats = df["satellites_used"].dropna()
-            if len(sats) > 0:
-                key_metrics["min_satellites"] = float(sats.min())
-        if hdop_col and hdop_col in df.columns:
-            hdop_clean = df[hdop_col].values
-            hdop_clean = hdop_clean[hdop_clean > 0]
-            if len(hdop_clean) > 0:
-                key_metrics["max_hdop"] = round(float(hdop_clean.max()), 3)
+        if sats is not None and np.isfinite(sats[has_fix]).any():
+            key_metrics["min_satellites"] = float(np.nanmin(sats[has_fix]))
+        if hdop_sustained is not None and np.isfinite(hdop_sustained).any():
+            key_metrics["max_hdop"] = round(float(np.nanmax(hdop_sustained)), 3)
 
         return AnalyserResult(
             analyser=self.name,
             display_name=self.display_name,
             findings=findings,
-            health_score=health_score,
+            health_score=max(0.0, 100.0 - penalty),
             key_metrics=key_metrics,
         )
 
-    # ── private helpers ──────────────────────────────────────────────────────
+    def _fix(self, fix, ts, where):
+        bad = fix < 3
+        if not bad.any():
+            return [], 0.0
+        worst = int(np.nanmin(fix[bad]))
+        worst_label = FIX_LABELS.get(worst, str(worst))
 
-    def _find_col(self, df: pd.DataFrame, candidates: list[str]) -> Optional[str]:
-        for c in candidates:
-            if c in df.columns:
-                return c
-        return None
-
-    def _analyse_fix_type(
-        self,
-        fix: np.ndarray,
-        ts_us: np.ndarray,
-        ts_s: np.ndarray,
-    ) -> tuple[list[Finding], float]:
-        findings = []
-        penalty = 0.0
-
-        # Any fix < 3 (not 3D) during any period
-        bad_fix_mask = fix < 3
-        if bad_fix_mask.any():
-            bad_count = int(bad_fix_mask.sum())
-            max_bad_s = self._max_run_duration(bad_fix_mask, ts_s)
-            worst_fix = int(fix[bad_fix_mask].min())
-            penalty = 30.0
+        if bad.all():
             tech = (
-                f"GPS fix dropped below 3D fix for {bad_count} samples "
-                f"(longest run: {max_bad_s:.1f}s). "
-                f"Minimum fix type observed: {FIX_LABELS.get(worst_fix, str(worst_fix))}."
+                f"No 3D GPS fix at any point {where} ({len(fix)} samples, best fix type "
+                f"{FIX_LABELS.get(int(np.nanmax(fix)), '?')})."
             )
-            findings.append(Finding(
+            return [Finding(
                 category=Category.GPS,
                 severity=Severity.CRITICAL,
-                title=f"GPS Fix Lost During Flight ({FIX_LABELS.get(worst_fix, 'Unknown')})",
+                kind="gps.no_fix",
+                title="No 3D GPS Fix During Flight",
+                technical_summary=tech,
+                plain_english=tech,
+                recommendation="Wait for a 3D fix before arming, and check the GPS antenna, cable and mounting.",
+                confidence=0.9,
+                **when(ts[0], ts[-1]),
+            )], 30.0
+
+        runs = find_runs(bad)
+        durations = [run_seconds(ts, a, b) for a, b in runs]
+        i = int(np.argmax(durations))
+        a, b = runs[i]
+        longest = durations[i]
+        end_us = ts[b] if b < len(ts) else ts[-1]
+
+        if longest >= FIX_LOSS_MIN_S:
+            tech = (
+                f"GPS fix dropped below 3D {len(runs)} time(s) {where}; longest outage "
+                f"{longest:.1f}s starting t={ts[a] / 1e6:.1f}s. Worst fix type: {worst_label}."
+            )
+            return [Finding(
+                category=Category.GPS,
+                severity=Severity.CRITICAL,
+                kind="gps.fix_lost",
+                title=f"GPS Fix Lost During Flight ({worst_label})",
                 technical_summary=tech,
                 plain_english=tech,
                 recommendation="Check GPS antenna orientation and cable routing. Avoid flying near buildings or metal structures. Ensure GPS is mounted away from interference sources.",
-                confidence=min(1.0, max_bad_s / 10.0),
-            ))
-            return findings, penalty
-
-        # Degradation: drop from 3D+ to exactly 2D
-        degraded = (fix[:-1] >= 3) & (fix[1:] < 3)
-        if degraded.any():
-            deg_count = int(degraded.sum())
-            penalty = max(penalty, 15.0)
-            tech = (
-                f"GPS fix degraded from 3D+ to <3D on {deg_count} occasions. "
-                f"Fix types seen: {sorted(set(fix.tolist()))}."
-            )
-            findings.append(Finding(
-                category=Category.GPS,
-                severity=Severity.WARNING,
-                title="GPS Fix Degradation",
-                technical_summary=tech,
-                plain_english=tech,
-                recommendation="Inspect GPS cable for intermittent connection. Move GPS mast to higher, unobstructed position.",
-                confidence=min(1.0, deg_count / 5.0),
-            ))
-
-        return findings, penalty
-
-    def _analyse_satellites(
-        self,
-        sats: np.ndarray,
-        ts_s: np.ndarray,
-        ts_us: np.ndarray,
-    ) -> tuple[list[Finding], float]:
-        findings = []
-        penalty = 0.0
-
-        # Window-based drop detection
-        window_samples = max(1, int(SAT_DROP_WINDOW_S * len(ts_s) / (ts_s[-1] - ts_s[0] + 1e-9)))
-        for i in range(len(sats) - window_samples):
-            chunk = sats[i:i + window_samples]
-            drop = int(chunk[0]) - int(chunk.min())
-            if drop >= SAT_DROP_THRESH:
-                penalty = 15.0
-                ts_start_ms = int(ts_us[i] / 1e3)
-                tech = (
-                    f"Satellite count dropped by {drop} (from {int(chunk[0])} to {int(chunk.min())}) "
-                    f"within {SAT_DROP_WINDOW_S}s starting at t={ts_s[i]:.1f}s."
-                )
-                findings.append(Finding(
-                    category=Category.GPS,
-                    severity=Severity.WARNING,
-                    title=f"GPS Satellite Count Drop ({drop} sats in {SAT_DROP_WINDOW_S}s)",
-                    technical_summary=tech,
-                    plain_english=tech,
-                    recommendation="Possible signal blockage from airframe banking or obstacle. Review flight path for obstructions. Ensure GPS has clear sky view.",
-                    confidence=min(1.0, drop / 8.0),
-                    timestamp_start_ms=ts_start_ms,
-                ))
-                break   # one finding for this type is sufficient
-
-        return findings, penalty
-
-    def _analyse_hdop(
-        self,
-        hdop: np.ndarray,
-        ts_us: np.ndarray,
-        ts_s: np.ndarray,
-    ) -> tuple[list[Finding], float]:
-        findings = []
-        penalty = 0.0
-
-        hdop_clean = hdop[hdop > 0]   # filter zero/invalid
-        if len(hdop_clean) == 0:
-            return findings, penalty
-
-        max_hdop = float(hdop_clean.max())
-        mean_hdop = float(hdop_clean.mean())
-
-        if max_hdop > HDOP_CRITICAL:
-            penalty = 30.0
-            sev = Severity.CRITICAL
-            label = "CRITICAL"
-        elif max_hdop > HDOP_WARNING:
-            penalty = 15.0
-            sev = Severity.WARNING
-            label = "WARNING"
-        else:
-            return findings, penalty
+                confidence=confidence(longest / FIX_LOSS_MIN_S - 1, longest),
+                **when(ts[a], end_us),
+            )], 30.0
 
         tech = (
-            f"HDOP reached {max_hdop:.2f} (mean: {mean_hdop:.2f}). "
-            f"Threshold: WARNING>{HDOP_WARNING}, CRITICAL>{HDOP_CRITICAL}. "
-            f"High HDOP indicates poor satellite geometry and reduced position accuracy."
+            f"GPS fix briefly dropped below 3D {len(runs)} time(s) {where} "
+            f"(longest {longest:.1f}s). Fix types seen: {sorted(set(int(v) for v in fix if np.isfinite(v)))}."
         )
-        findings.append(Finding(
+        return [Finding(
+            category=Category.GPS,
+            severity=Severity.WARNING,
+            kind="gps.fix_degraded",
+            title="GPS Fix Degradation",
+            technical_summary=tech,
+            plain_english=tech,
+            recommendation="Inspect the GPS cable for an intermittent connection and move the GPS mast higher, clear of obstructions.",
+            confidence=confidence(len(runs) / 5.0, longest),
+            **when(ts[a], end_us),
+        )], 15.0
+
+    def _satellites(self, sats, has_fix, ts, rate):
+        s = np.where(has_fix, sats, np.nan)
+        n = max(2, int(round(SAT_DROP_WINDOW_S * rate)))
+        # minimum over the next n samples
+        ahead_min = pd.Series(s[::-1]).rolling(n, min_periods=1).min().to_numpy()[::-1]
+        drop = s - ahead_min
+        hits = np.flatnonzero(drop >= SAT_DROP_THRESH)
+        if not len(hits):
+            return [], 0.0
+        i = int(hits[0])
+        d = int(drop[i])
+        j = i + int(np.nanargmin(s[i:i + n]))
+        tech = (
+            f"Satellite count dropped by {d} (from {int(s[i])} to {int(s[j])}) "
+            f"within {SAT_DROP_WINDOW_S:.0f}s starting at t={ts[i] / 1e6:.1f}s."
+        )
+        return [Finding(
+            category=Category.GPS,
+            severity=Severity.WARNING,
+            kind="gps.sat_drop",
+            title=f"GPS Satellite Count Drop ({d} sats in {SAT_DROP_WINDOW_S:.0f}s)",
+            technical_summary=tech,
+            plain_english=tech,
+            recommendation="Possible signal blockage from airframe banking or obstacle. Review flight path for obstructions. Ensure GPS has clear sky view.",
+            confidence=confidence(d / SAT_DROP_THRESH - 1),
+            **when(ts[i], ts[j]),
+        )], 15.0
+
+    def _hdop(self, hdop, sustained, col, ts):
+        if not np.isfinite(sustained).any():
+            return [], 0.0
+        j = int(np.nanargmax(sustained))
+        worst = float(sustained[j])
+        if worst > HDOP_CRITICAL:
+            sev, penalty, label, thr = Severity.CRITICAL, 30.0, "CRITICAL", HDOP_CRITICAL
+        elif worst > HDOP_WARNING:
+            sev, penalty, label, thr = Severity.WARNING, 15.0, "WARNING", HDOP_WARNING
+        else:
+            return [], 0.0
+        over = sustained > HDOP_WARNING
+        runs = [r for r in find_runs(over) if r[0] <= j < r[1]]
+        a, b = runs[0] if runs else (j, j + 1)
+        tech = (
+            f"{col.upper()} held at {worst:.2f} for at least {SUSTAIN_S:.0f}s in flight "
+            f"(mean {float(np.nanmean(hdop)):.2f}). Threshold: WARNING>{HDOP_WARNING}, "
+            f"CRITICAL>{HDOP_CRITICAL}. High HDOP means poor satellite geometry and reduced "
+            f"position accuracy."
+        )
+        return [Finding(
             category=Category.GPS,
             severity=sev,
-            title=f"GPS Position Uncertainty ({label}, HDOP={max_hdop:.1f})",
+            kind="gps.hdop",
+            title=f"GPS Position Uncertainty ({label}, HDOP={worst:.1f})",
             technical_summary=tech,
             plain_english=tech,
             recommendation="Fly in areas with better sky visibility. Wait for more satellites before arming (aim for HDOP < 1.5).",
-            confidence=min(1.0, max_hdop / 5.0),
-        ))
-        return findings, penalty
+            confidence=confidence(worst / thr - 1, run_seconds(ts, a, b)),
+            **when(ts[a], ts[min(b, len(ts) - 1)]),
+        )], penalty
 
-    def _analyse_jamming(
-        self,
-        jamming: np.ndarray,
-        ts_us: np.ndarray,
-        ts_s: np.ndarray,
-    ) -> tuple[list[Finding], float]:
-        findings = []
-        penalty = 0.0
+    def _jamming(self, w, ts, sustain_n):
+        level = 0          # 0 none, 1 warning, 2 critical
+        parts = []
+        span = None
 
-        max_jam = int(jamming.max())
-        mean_jam = float(jamming.mean())
+        if "jamming_indicator" in w.columns:
+            ind = w["jamming_indicator"].to_numpy(float)
+            sus = _rolling(ind, sustain_n, "median")
+            if np.isfinite(sus).any():
+                peak = float(np.nanmax(sus))
+                if peak > JAMMING_CRITICAL:
+                    level = 2
+                elif peak > JAMMING_WARNING:
+                    level = 1
+                if peak > JAMMING_WARNING:
+                    parts.append(f"jamming indicator held at {peak:.0f}/255 for {SUSTAIN_S:.0f}s "
+                                 f"(WARNING>{JAMMING_WARNING}, CRITICAL>{JAMMING_CRITICAL})")
+                    span = _span(sus > JAMMING_WARNING, ts)
 
-        if max_jam > JAMMING_CRITICAL:
-            penalty = 30.0
-            sev = Severity.CRITICAL
-            label = "CRITICAL — likely GPS jamming"
-        elif max_jam > JAMMING_WARNING:
-            penalty = 15.0
-            sev = Severity.WARNING
-            label = "WARNING — elevated RF interference"
-        else:
-            return findings, penalty
+        # the reciever's own verdict, worth as much as the raw indicator
+        if "jamming_state" in w.columns:
+            st = w["jamming_state"].to_numpy(float)
+            sus = _rolling(st, sustain_n, "min")   # state must hold, not blip
+            worst = int(np.nanmax(sus)) if np.isfinite(sus).any() else 0
+            if worst >= JAM_STATE_WARNING:
+                level = max(level, 2 if worst >= JAM_STATE_CRITICAL else 1)
+                parts.append(f"receiver jamming state {'critical' if worst >= JAM_STATE_CRITICAL else 'warning'} "
+                             f"for {SUSTAIN_S:.0f}s or more")
+                span = span or _span(sus >= JAM_STATE_WARNING, ts)
 
-        tech = (
-            f"Jamming indicator: max={max_jam}/255, mean={mean_jam:.0f}/255. "
-            f"{label}. Threshold: WARNING>{JAMMING_WARNING}, CRITICAL>{JAMMING_CRITICAL}."
+        if level == 0:
+            return [], 0.0
+        sev = Severity.CRITICAL if level == 2 else Severity.WARNING
+        tech = "GPS RF interference in flight: " + "; ".join(parts) + "."
+        rec = (
+            "Treat GPS as unreliable here: don't fly GPS-dependent missions at this site, and "
+            "look for interference sources near the take-off point."
+            if level == 2 else
+            "Look for onboard RF sources near the GPS (video TX, companion computer, USB 3 "
+            "cables) and move or shield them."
         )
-        findings.append(Finding(
+        return [Finding(
             category=Category.GPS,
             severity=sev,
-            title=f"GPS RF Interference Detected (indicator={max_jam})",
+            kind="gps.jamming",
+            title="GPS RF Interference Detected",
             technical_summary=tech,
             plain_english=tech,
-            recommendation="Do not fly in this area. Report to local aviation authority if jamming is suspected. Check for local RF interference sources near takeoff point.",
-            confidence=min(1.0, max_jam / 255.0),
-        ))
-        return findings, penalty
+            recommendation=rec,
+            confidence=0.85 if level == 2 else 0.6,
+            **when(*(span or (None, None))),
+        )], 30.0 if level == 2 else 15.0
 
-    def _analyse_spoofing(
-        self,
-        spoof: np.ndarray,
-        ts_us: np.ndarray,
-        ts_s: np.ndarray,
-    ) -> tuple[list[Finding], float]:
-        findings = []
-        penalty = 0.0
-
-        max_spoof = int(spoof.max())
-
-        if max_spoof >= SPOOFING_DETECTED:
-            penalty = 30.0
-            sev = Severity.CRITICAL
-            label = "CRITICAL — GPS spoofing detected"
-        elif max_spoof >= SPOOFING_INDETERMINATE:
-            penalty = 15.0
-            sev = Severity.WARNING
-            label = "WARNING — GPS spoofing indeterminate"
+    def _spoofing(self, spoof, ts):
+        worst = int(np.nanmax(spoof)) if np.isfinite(spoof).any() else 0
+        if worst >= SPOOF_MULTIPLE:
+            sev, penalty, label = Severity.CRITICAL, 30.0, "Multiple Indications"
+        elif worst >= SPOOF_INDICATED:
+            sev, penalty, label = Severity.WARNING, 15.0, "Indicated"
         else:
-            return findings, penalty
-
-        spoof_label_map = {3: "Indeterminate", 4: "Spoofing Confirmed"}
+            return [], 0.0
+        flagged = spoof >= SPOOF_INDICATED
+        span = _span(flagged, ts)
         tech = (
-            f"Spoofing state reached {spoof_label_map.get(max_spoof, str(max_spoof))} "
-            f"({max_spoof}). {label}."
+            f"Receiver spoofing state reached {worst} ({label.lower()}) in flight, "
+            f"{int(flagged.sum())} samples flagged."
         )
-        findings.append(Finding(
+        return [Finding(
             category=Category.GPS,
             severity=sev,
-            title=f"GPS Spoofing {spoof_label_map.get(max_spoof, 'Alert')}",
+            kind="gps.spoofing",
+            title=f"GPS Spoofing {label}",
             technical_summary=tech,
             plain_english=tech,
-            recommendation="Land immediately if spoofing is detected. Do not trust GPS-based navigation. Report incident to drone operator community and aviation authority.",
-            confidence=1.0 if max_spoof >= SPOOFING_DETECTED else 0.5,
-        ))
-        return findings, penalty
+            recommendation="Don't trust GPS-based navigation in this area; fly in a non-GPS mode and land if it recurs. Report repeated spoofing to the relevant aviation authority.",
+            confidence=0.9 if worst >= SPOOF_MULTIPLE else 0.6,
+            **when(*span),
+        )], penalty
 
-    def _max_run_duration(self, mask: np.ndarray, ts_s: np.ndarray) -> float:
-        max_dur = 0.0
-        in_run = False
-        start_s = 0.0
-        for i, v in enumerate(mask):
-            if v and not in_run:
-                in_run = True
-                start_s = ts_s[i]
-            elif not v and in_run:
-                in_run = False
-                max_dur = max(max_dur, ts_s[i] - start_s)
-        if in_run:
-            max_dur = max(max_dur, ts_s[-1] - start_s)
-        return max_dur
+
+def _rolling(x, n, how):
+    r = pd.Series(x).rolling(n, min_periods=n)
+    return (r.median() if how == "median" else r.min()).to_numpy()
+
+
+def _span(mask, ts):
+    idx = np.flatnonzero(mask)
+    if not len(idx):
+        return None, None
+    return ts[idx[0]], ts[idx[-1]]

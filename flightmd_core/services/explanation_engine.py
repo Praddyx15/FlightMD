@@ -1,305 +1,229 @@
-import logging
-from flightmd_core.models.findings import Finding, Category, Severity
-from flightmd_core.models.metadata import FlightMetadata
+"""
+Deterministic plain-English text for findings, and the executive summary.
 
-logger = logging.getLogger(__name__)
+Templates are keyed by Finding.kind, which the analyser sets; titles are
+display text and are never parsed. The analyser's own recommendation
+carries the real numbers (which parameter, from what to what), so it is
+kept; a template recommendation only fills in when the analyser left it
+empty.
+"""
+
+from typing import Optional
+
+from flightmd_core.models.findings import AnalyserResult, Finding, Category, Severity
+from flightmd_core.models.metadata import FlightMetadata
+from flightmd_core.services.score_calculator import NOT_ASSESSED_LABEL
+
+# kind -> (plain English, fallback recommendation)
+TEMPLATES: dict[str, tuple[str, str]] = {
+    "oscillation.rate_p": (
+        "The aircraft kept wobbling at a steady low frequency on this axis. That pattern usually "
+        "means the rate controller's P gain is too high for this airframe, so it overcorrects "
+        "back and forth.",
+        "Lower the rate P gain for this axis by 10-15% and re-test.",
+    ),
+    "oscillation.rate_d": (
+        "There is a sustained oscillation in the 12-35 Hz range on this axis. That band is usually "
+        "the D term amplifying motor and frame noise, so raising D would make it worse.",
+        "Lower the rate D gain for this axis by about 15%, or lower the D-term filter cutoff.",
+    ),
+    "oscillation.mechanical": (
+        "There is a high-frequency oscillation on this axis, above where the rate controller "
+        "normally oscillates. That is typically mechanical: props, motors or a resonant frame part.",
+        "Check props, motor mounts and the flight controller mounting before changing gains.",
+    ),
+    "vibration.critical": (
+        "Vibration levels on the flight controller are extremely high, exceeding critical safety limits. "
+        "Severe vibration can saturate internal sensors and cause EKF estimation failures or flyaways.",
+        "Do not fly. Inspect propellers for balance or damage. Check all motor bell screws and ensure "
+        "the frame arms and flight controller mounts are tight.",
+    ),
+    "vibration.elevated": (
+        "Vibration levels are higher than normal. Elevated vibration adds noise to the attitude "
+        "estimate and can degrade position hold.",
+        "Balance propellers using a prop balancer. Inspect motor mounts and check whether the flight "
+        "controller's damping mount is worn.",
+    ),
+    "vibration.clipping": (
+        "The accelerometer saturated: it hit the end of its measuring range, so the autopilot lost "
+        "real acceleration data for those moments.",
+        "Check for a loose propeller, bent motor shaft, or motor bell. Ensure the flight controller "
+        "is securely mounted on vibration-damping foam.",
+    ),
+    "vibration.imu_mismatch": (
+        "The redundant IMUs measured clearly different vibration levels, which points at mounting, "
+        "isolation, or a problem inside one sensor.",
+        "Inspect the flight controller mounting. Verify that one side is not touching the frame "
+        "directly or pinched by wires, bypassing the damping.",
+    ),
+    "motors.rpm_imbalance": (
+        "At hover, one motor had to spin noticeably faster or slower than the others to keep the "
+        "aircraft level. That points at that motor, its prop, its arm, or an off-centre load.",
+        "Inspect the motor furthest from the average: prop, bearings, arm alignment; then check the "
+        "centre of gravity.",
+    ),
+    "motors.current_imbalance": (
+        "At hover, one motor drew clearly more current than the others. Extra drag in that motor "
+        "or a damaged prop makes it work harder for the same thrust.",
+        "Inspect that motor for mechanical drag, binding, or stator damage, and its propeller for cracks.",
+    ),
+    "motors.esc_thermal": (
+        "The electronic speed controller (ESC) temperature exceeded safe operating limits, "
+        "risking thermal shutdown or permanent hardware failure.",
+        "Check motor loading, reduce payload weight, or improve airflow/cooling around the ESCs.",
+    ),
+    "motors.dropout": (
+        "One motor stopped (or nearly stopped) in flight while the others kept spinning. That can "
+        "cause a sudden loss of control.",
+        "Check ESC signal wiring, power connectors, and the logs for desync events or propeller slips.",
+    ),
+    "gps.no_fix": (
+        "The GPS never reached a 3D fix during the flight, so every GPS-assisted mode was unavailable.",
+        "Wait for a 3D fix before arming, and check the antenna, cable and sky view.",
+    ),
+    "gps.fix_lost": (
+        "The GPS receiver completely lost its 3D position fix during flight, forcing the autopilot "
+        "to fall back to non-GPS modes or a failsafe.",
+        "Ensure clear sky view. Check GPS antenna connection and inspect for RF interference from "
+        "onboard electronics (cameras, transmitters).",
+    ),
+    "gps.fix_degraded": (
+        "The GPS fix degraded briefly during flight, which can cause position drift or toilet-bowling.",
+        "Check for GPS antenna shading or local RF interference sources such as cameras or "
+        "telemetry transmitters.",
+    ),
+    "gps.sat_drop": (
+        "The number of tracked GPS satellites dropped rapidly, indicating antenna obstruction "
+        "or RF interference.",
+        "Inspect the GPS receiver mounting and check for shielding/separation from RF-noisy components.",
+    ),
+    "gps.hdop": (
+        "The GPS dilution of precision (HDOP) stayed high, meaning satellite geometry or signal "
+        "quality was poor and position accuracy was reduced.",
+        "Avoid flying near tall structures or in poor weather. Check GPS signal health.",
+    ),
+    "gps.jamming": (
+        "The receiver reported radio interference in the GPS band for a sustained period, "
+        "consistent with jamming or strong onboard RF noise.",
+        "Relocate the GPS antenna away from onboard transmitters, cameras and processors. Use shielding.",
+    ),
+    "gps.spoofing": (
+        "The GPS receiver flagged possible spoofing: signals that look like GPS but don't behave like it.",
+        "Don't rely on GPS-guided flight modes in the affected area.",
+    ),
+    "ekf.innovation_rejected": (
+        "The Extended Kalman Filter (EKF) rejected measurements from a sensor because they "
+        "disagreed too much with its own estimate.",
+        "Check the calibration and mounting of the sensor named in the finding.",
+    ),
+    "ekf.solution_invalid": (
+        "The EKF marked part of its navigation solution invalid while armed, so the autopilot "
+        "could not trust that estimate.",
+        "Do not fly in modes that need this estimate until the cause is found. Recalibrate sensors "
+        "and inspect hardware.",
+    ),
+    "ekf.gps_glitch": (
+        "The EKF saw the GPS position jump away from where the vehicle actually was, and stopped "
+        "trusting it for a while.",
+        "Check for multipath near structures and GPS interference.",
+    ),
+    "ekf.accel_error": (
+        "The EKF flagged the accelerometer data as bad, usually from clipping under heavy vibration. "
+        "Height and position estimates can fail when this happens.",
+        "Check props, motor mounts and flight-controller damping before flying again.",
+    ),
+    "ekf.innovation_ratio": (
+        "An EKF innovation test ratio went above 1, meaning a sensor's readings were rejected "
+        "as inconsistent with the filter's estimate.",
+        "Check for vibration issues or magnetic disturbances affecting the sensors.",
+    ),
+    "ekf.wind_jump": (
+        "The EKF wind estimate jumped suddenly, which usually follows a sensor anomaly rather than "
+        "a real gust.",
+        "Check airspeed sensor calibration (if equipped) and GPS quality around that time.",
+    ),
+    "battery.thermal": (
+        "The battery temperature exceeded safe operating limits during flight, which accelerates cell "
+        "degradation and poses a thermal runaway risk.",
+        "Allow the battery to cool down. Reduce payload weight or aggressive manoeuvres to lower current draw.",
+    ),
+    "battery.c_rate": (
+        "The battery current draw exceeded a sensible continuous C-rate for its rated capacity, "
+        "stressing the cells.",
+        "Use a higher C-rate battery or reduce the aircraft's weight and power draw.",
+    ),
+    "battery.sag": (
+        "The battery voltage dropped more than it should under load, measured from how the voltage "
+        "responds to changes in current. That means high internal resistance: an ageing pack, a weak "
+        "cell or a bad connection.",
+        "Measure the pack's internal resistance on a charger and check connectors.",
+    ),
+    "battery.capacity_fade": (
+        "The battery delivered noticeably less than its rated capacity, indicating cell aging or damage.",
+        "Cycle the battery to calibrate, and replace the pack if capacity remains low.",
+    ),
+    "params.deprecated": (
+        "A parameter in the configuration no longer exists in this firmware version and has no effect.",
+        "Remove this parameter from your saved parameter file to prevent confusion.",
+    ),
+    "params.below_range": (
+        "A parameter is set below its recommended minimum value, which could cause unstable flight "
+        "or safety issues.",
+        "Increase the parameter value to within the safe range.",
+    ),
+    "params.above_range": (
+        "A parameter is set above its recommended maximum value, which could cause overshoot, "
+        "oscillation, or damage.",
+        "Reduce the parameter value to within the safe range.",
+    ),
+    "params.bat_thr_inverted": (
+        "The battery low warning threshold is set lower than the critical threshold, so the "
+        "failsafe steps fire in the wrong order.",
+        "Set BAT_LOW_THR above BAT_CRIT_THR.",
+    ),
+    "params.rc_loss_short": (
+        "The RC loss timeout is very short, so a brief signal glitch can trigger the failsafe.",
+        "Set COM_RC_LOSS_T to 0.5 s or more.",
+    ),
+    "params.rate_p_high_d_low": (
+        "The rate controller P gain is high while its D gain is very low, a combination that "
+        "tends to oscillate.",
+        "Lower the P gain or raise the D gain towards the firmware default.",
+    ),
+    "params.pos_loop_risk": (
+        "The position loop P gain is high relative to the velocity loop, which may cause position "
+        "overshoot and oscillation.",
+        "Lower MPC_XY_P or raise MPC_XY_VEL_P_ACC.",
+    ),
+}
+
+CATEGORY_FALLBACK = {
+    Category.OSCILLATION: "Check rate controller tuning for this axis.",
+    Category.VIBRATION: "Check physical frame rigidity, motor mounts, and prop balancing.",
+    Category.MOTORS: "Inspect motor and ESC connections and check logs for error flags.",
+    Category.GPS: "Ensure clear view of sky and minimal RF interference.",
+    Category.EKF: "Verify sensor calibration and check for vibration or magnetic interference.",
+    Category.BATTERY: "Inspect battery connections, age, and cell balance.",
+    Category.PARAMETERS: "Verify the parameter values against safe default ranges.",
+}
+DEFAULT_RECOMMENDATION = "Consult the log details or PX4 documentation for troubleshooting."
+
 
 class ExplanationEngine:
-    """
-    Deterministic explanation and summary generator for FlightMD.
-    Provides plain-English explanations, recommendations, and executive summaries
-    without requiring external LLM API calls.
-    """
-
     def __init__(self, *args, **kwargs):
-        # Accept and ignore API keys or model names for compatibility
+        # takes and ignores the old API-key arguments
         self.token_usage = {"input_tokens": 0, "output_tokens": 0}
 
     async def explain_findings(self, findings: list[Finding]) -> list[Finding]:
-        """
-        Populate plain_english and recommendation fields for all findings.
-        """
         for f in findings:
-            self._explain_single(f)
+            self._explain(f)
         return findings
 
-    def _explain_single(self, f: Finding) -> None:
-        title_lower = f.title.lower()
-
-        # --- Category: OSCILLATION ---
-        if f.category == Category.OSCILLATION:
-            axis = "roll" if "roll" in title_lower else "pitch" if "pitch" in title_lower else "yaw" if "yaw" in title_lower else "unknown"
-            f.plain_english = (
-                f"Sustained oscillation detected on the {axis} axis. This is typically "
-                f"caused by PID rate gains that are too high (excessive P term) or "
-                f"insufficient damping (low D term), leading to limit-cycle behavior."
-            )
-            param_name = "MC_ROLLRATE_P" if axis == "roll" else "MC_PITCHRATE_P" if axis == "pitch" else "MC_YAWRATE_P"
-            f.recommendation = (
-                f"Reduce the {axis}-axis rate controller P gain ({param_name}) by approximately "
-                f"10-15%. If the oscillation persists, consider increasing the rate D gain."
-            )
-
-        # --- Category: VIBRATION ---
-        elif f.category == Category.VIBRATION:
-            if "critical vibration" in title_lower:
-                f.plain_english = (
-                    "Vibration levels on the flight controller are extremely high, exceeding "
-                    "critical safety limits. Severe vibration can saturate internal sensors and "
-                    "cause catastrophic EKF estimation failures or flyaways."
-                )
-                f.recommendation = (
-                    "Do not fly. Inspect propellers for balance or damage. Check all motor bell "
-                    "screws and ensure the frame arms and flight controller mounts are tight."
-                )
-            elif "elevated vibration" in title_lower:
-                f.plain_english = (
-                    "Vibration levels are higher than normal. Elevated vibration increases noise "
-                    "in the attitude estimation, reducing flight efficiency and potentially degrading "
-                    "positioning accuracy."
-                )
-                f.recommendation = (
-                    "Balance propellers using a prop balancer. Inspect motor mounts and check if "
-                    "the flight controller mounting tape or dampers are worn out."
-                )
-            elif "hard imu clipping" in title_lower:
-                f.plain_english = (
-                    "The inertial measurement unit (IMU) saturated due to severe physical impacts or "
-                    "extremely high-frequency vibration, causing loss of sensor data."
-                )
-                f.recommendation = (
-                    "Check for a loose propeller, bent motor shaft, or motor bell. Ensure the "
-                    "flight controller is securely mounted on vibration-damping foam."
-                )
-            elif "inconsistency" in title_lower:
-                f.plain_english = (
-                    "The redundant IMU sensors on the flight controller measured significantly different "
-                    "vibration levels, indicating a mounting, isolation, or internal hardware issue."
-                )
-                f.recommendation = (
-                    "Inspect the flight controller mounting. Verify that one side is not touching "
-                    "the frame directly or pinched by wires, bypassing the dampening."
-                )
-            else:
-                f.plain_english = f.technical_summary
-                f.recommendation = "Check physical frame rigidity, motor mounts, and prop balancing."
-
-        # --- Category: MOTORS ---
-        elif f.category == Category.MOTORS:
-            if "imbalance" in title_lower:
-                f.plain_english = (
-                    "The flight controller is commanding significantly different thrust levels to opposite "
-                    "motors to keep the drone level, indicating a physical asymmetry or motor efficiency loss."
-                )
-                f.recommendation = (
-                    "Inspect for bent arms, twisted motor mounts, warped propellers, or motor bearings "
-                    "with high mechanical drag."
-                )
-            elif "thermal stress" in title_lower:
-                f.plain_english = (
-                    "The electronic speed controller (ESC) temperature exceeded safe operating limits, "
-                    "risking thermal shutdown or permanent hardware failure."
-                )
-                f.recommendation = (
-                    "Check motor loading, reduce payload weight, or improve airflow/cooling around the ESCs."
-                )
-            elif "dropout" in title_lower:
-                f.plain_english = (
-                    "A motor output dropout was detected where commanded thrust briefly fell to zero or near-zero, "
-                    "which can cause sudden attitude instability."
-                )
-                f.recommendation = (
-                    "Check ESC signal wiring, power connectors, and check logs for desync events or "
-                    "propeller slips."
-                )
-            else:
-                f.plain_english = f.technical_summary
-                f.recommendation = "Inspect motor and ESC connections and check logs for error flags."
-
-        # --- Category: GPS ---
-        elif f.category == Category.GPS:
-            if "lost" in title_lower:
-                f.plain_english = (
-                    "The GPS receiver completely lost its 3D position fix during flight, forcing the autopilot "
-                    "to fall back to non-GPS manual or altitude-stabilized modes."
-                )
-                f.recommendation = (
-                    "Ensure clear sky view. Check GPS antenna connection and inspect for RF interference "
-                    "from onboard electronics (cameras, transmitters)."
-                )
-            elif "degradation" in title_lower:
-                f.plain_english = (
-                    "The quality of the GPS position estimate degraded, which can cause positioning drift, "
-                    "toilet-bowling behavior, or safety warnings."
-                )
-                f.recommendation = (
-                    "Check for GPS antenna shading or local RF interference sources such as cameras or "
-                    "telemetry transmitters."
-                )
-            elif "drop" in title_lower:
-                f.plain_english = (
-                    "The number of tracked GPS satellites dropped rapidly, indicating antenna obstruction "
-                    "or severe RF interference."
-                )
-                f.recommendation = (
-                    "Inspect the GPS receiver mounting and check for shielding/separation from RF-noisy "
-                    "components."
-                )
-            elif "uncertainty" in title_lower or "hdop" in title_lower:
-                f.plain_english = (
-                    "The GPS dilution of precision (HDOP) was high, meaning satellite geometry or signal "
-                    "quality was poor, reducing position accuracy."
-                )
-                f.recommendation = (
-                    "Avoid flying near tall structures or in poor weather. Check GPS signal health."
-                )
-            elif "interference" in title_lower or "jam" in title_lower:
-                f.plain_english = (
-                    "High levels of radio frequency interference (RFI) were detected in the GPS frequency band, "
-                    "jamming the receiver."
-                )
-                f.recommendation = (
-                    "Relocate GPS antenna away from onboard transmitters, cameras, and processors. Use shielding."
-                )
-            elif "spoofing" in title_lower:
-                f.plain_english = (
-                    "The GPS receiver detected potential signal spoofing, where fake GPS signals are being broadcast."
-                )
-                f.recommendation = (
-                    "Land immediately. Do not rely on GPS-guided flight modes in the affected area."
-                )
-            else:
-                f.plain_english = f.technical_summary
-                f.recommendation = "Ensure clear view of sky and minimal RF interference."
-
-        # --- Category: EKF ---
-        elif f.category == Category.EKF:
-            if "failure" in title_lower:
-                f.plain_english = (
-                    "The Extended Kalman Filter (EKF) rejected sensor measurements because they differed too much "
-                    "from internal state estimates."
-                )
-                f.recommendation = (
-                    "Check sensor calibration (magnetometer, accelerometer). Inspect for mechanical vibration."
-                )
-            elif "invalid" in title_lower:
-                f.plain_english = (
-                    "The EKF status flags indicated that the navigation solution became invalid, meaning the "
-                    "autopilot could not estimate its position or attitude reliably."
-                )
-                f.recommendation = (
-                    "Do not fly in GPS or altitude-stabilized modes. Recalibrate sensors and inspect hardware."
-                )
-            elif "ratio" in title_lower:
-                f.plain_english = (
-                    "The EKF innovation ratio exceeded safe thresholds, indicating high discrepancy between sensor "
-                    "measurements and EKF state."
-                )
-                f.recommendation = (
-                    "Check for vibration issues or magnetic disturbances affecting the sensors."
-                )
-            elif "wind" in title_lower:
-                f.plain_english = (
-                    "The EKF wind velocity estimate jumped suddenly, which is often caused by sensor anomalies "
-                    "or sudden external aerodynamic changes."
-                )
-                f.recommendation = (
-                    "Check airspeed sensor calibration (if equipped) and verify EKF compass alignment."
-                )
-            else:
-                f.plain_english = f.technical_summary
-                f.recommendation = "Verify sensor calibration and check for vibration or magnetic interference."
-
-        # --- Category: BATTERY ---
-        elif f.category == Category.BATTERY:
-            if "thermal" in title_lower:
-                f.plain_english = (
-                    "The battery temperature exceeded safe operating limits during flight, which accelerates cell "
-                    "degradation and poses a thermal runaway risk."
-                )
-                f.recommendation = (
-                    "Allow the battery to cool down. Reduce payload weight or aggressive maneuvers to lower "
-                    "current draw."
-                )
-            elif "c-rate" in title_lower:
-                f.plain_english = (
-                    "The battery current draw exceeded its rated continuous C-rate, causing severe stress to the cells."
-                )
-                f.recommendation = (
-                    "Use a higher C-rate battery or optimize the drone's weight and motor-propeller efficiency."
-                )
-            elif "sag" in title_lower:
-                f.plain_english = (
-                    "The battery voltage dropped excessively under load, indicating high internal resistance, a "
-                    "weak cell, or an overloaded battery."
-                )
-                f.recommendation = (
-                    "Retire or replace this battery pack, as it is nearing the end of its useful life."
-                )
-            elif "capacity" in title_lower:
-                f.plain_english = (
-                    "The calculated battery capacity is significantly below its rated value, indicating cell aging "
-                    "or health degradation."
-                )
-                f.recommendation = (
-                    "Cycle the battery to calibrate, and replace the pack if capacity remains low."
-                )
-            else:
-                f.plain_english = f.technical_summary
-                f.recommendation = "Inspect battery connections, age, and cell balance."
-
-        # --- Category: PARAMETERS ---
-        elif f.category == Category.PARAMETERS:
-            if "deprecated" in title_lower:
-                f.plain_english = (
-                    "A parameter in the flight controller config is deprecated in this firmware version and has "
-                    "no effect."
-                )
-                f.recommendation = "Remove this parameter from your configuration file to prevent confusion."
-            elif "below safe range" in title_lower:
-                f.plain_english = (
-                    "A parameter is set below its recommended safe minimum value, which could cause unstable "
-                    "flight or safety issues."
-                )
-                f.recommendation = "Increase the parameter value to within the safe range."
-            elif "above safe range" in title_lower:
-                f.plain_english = (
-                    "A parameter is set above its recommended safe maximum value, which could cause overshoot, "
-                    "oscillation, or damage."
-                )
-                f.recommendation = "Reduce the parameter value to within the safe range."
-            elif "inverted" in title_lower:
-                f.plain_english = (
-                    "The battery low warning threshold is set lower than the critical warning threshold, which "
-                    "renders failsafes ineffective."
-                )
-                f.recommendation = "Correct the battery thresholds so that BAT_LOW_THR is greater than BAT_CRIT_THR."
-            elif "loss timeout" in title_lower:
-                f.plain_english = (
-                    "The RC loss connection timeout is set extremely short, which could trigger failsafe actions "
-                    "on brief signal glitches."
-                )
-                f.recommendation = "Set COM_RC_LOSS_T to a safe value (typically 0.5s or greater)."
-            elif "high rate p" in title_lower:
-                f.plain_english = (
-                    "The PID rate controller P gain is high while the D gain is extremely low, creating a high risk "
-                    "of rapid rate oscillations."
-                )
-                f.recommendation = "Lower the P gain or increase the D gain to stabilize rate control."
-            elif "instability risk" in title_lower:
-                f.plain_english = (
-                    "The position loop P gain is set high relative to velocity loop limits, which may cause "
-                    "position overshoot and oscillation."
-                )
-                f.recommendation = "Adjust the position loop gains or increase acceleration limits to prevent instability."
-            else:
-                f.plain_english = f.technical_summary
-                f.recommendation = "Verify the parameter values against safe default ranges."
-
-        # --- Fallback ---
-        else:
-            f.plain_english = f.technical_summary
-            f.recommendation = "Consult the log details or PX4 documentation for troubleshooting."
+    def _explain(self, f: Finding) -> None:
+        plain, rec = TEMPLATES.get(f.kind or "", (None, None))
+        f.plain_english = plain or f.technical_summary
+        if not f.recommendation or f.recommendation == f.technical_summary:
+            f.recommendation = rec or CATEGORY_FALLBACK.get(f.category, DEFAULT_RECOMMENDATION)
 
     async def generate_summary(
         self,
@@ -307,39 +231,40 @@ class ExplanationEngine:
         findings: list[Finding],
         overall_score: float,
         score_label: str,
+        results: Optional[list[AnalyserResult]] = None,
     ) -> str:
-        """
-        Generate a concise, deterministic executive summary based on the findings
-        and metadata.
-        """
-        if not findings:
+        """2-3 sentence summary. Pass results to have it name the modules
+        that couldn't be assessed."""
+        unassessed = [r.display_name for r in results or [] if not r.assessed]
+
+        if score_label == NOT_ASSESSED_LABEL:
             return (
-                f"Flight analysed. Health score: {overall_score:.0f}/100 ({score_label}). "
-                f"All systems operating within safe nominal parameters. No anomalies detected."
+                "No health score: none of the analysis modules found data they could assess in "
+                "this log, so this is not a clean bill of health. Check that the file is a full "
+                "flight log with telemetry, not a parameter file or a short bench capture."
             )
 
-        criticals = [f for f in findings if f.severity == Severity.CRITICAL]
-        warnings  = [f for f in findings if f.severity == Severity.WARNING]
-
-        summary_parts = []
-        summary_parts.append(
+        parts = [
             f"Flight health score is {overall_score:.0f}/100 ({score_label}) based on "
             f"{metadata.duration_seconds:.0f}s of log data."
-        )
-
+        ]
+        criticals = [f for f in findings if f.severity == Severity.CRITICAL]
+        warnings = [f for f in findings if f.severity == Severity.WARNING]
         if criticals:
-            summary_parts.append(
+            parts.append(
                 f"CRITICAL issue(s) detected: {', '.join(f.title for f in criticals)}. "
                 f"Action is required to ensure flight safety."
             )
         elif warnings:
-            summary_parts.append(
+            parts.append(
                 f"Warning(s) detected: {', '.join(f.title for f in warnings)}. "
                 f"Review the recommendations to optimize performance and reliability."
             )
+        elif findings:
+            parts.append(f"{len(findings)} minor note(s); no warnings or critical issues.")
         else:
-            summary_parts.append(
-                f"Note: {len(findings)} minor issue(s) detected. All critical metrics remain healthy."
-            )
+            parts.append("No anomalies detected in the checks that could run.")
 
-        return " ".join(summary_parts)
+        if unassessed:
+            parts.append(f"Not assessed (no usable data): {', '.join(unassessed)}.")
+        return " ".join(parts)

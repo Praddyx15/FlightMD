@@ -1,36 +1,39 @@
 """
-BatteryAnalyser — voltage sag, internal resistance, capacity fade, thermal stress.
+BatteryAnalyser: voltage sag (from internal resistance), C-rate, capacity
+fade and temperature.
 
-Battery health directly affects flight safety. High internal resistance causes
-voltage sag under load, reducing effective capacity and potentially triggering
-low-voltage failsafes mid-flight.
+Sag is not "full-pack voltage minus end-of-flight voltage": that is just the
+discharge curve. In short windows (IR_WINDOW_S) where the current moves a
+lot, we fit V = a + b·t − R·I; the open-circuit voltage barely changes in
+that time, so R is the pack's internal resistance. Sag per cell is then
+R × (peak current − resting current) / cells.
 """
 
 import numpy as np
 import pandas as pd
-from typing import Optional
 
 from flightmd_core.analysers.base import BaseAnalyser
+from flightmd_core.analysers.helpers import confidence, downsample, find_col, when
 from flightmd_core.models.findings import (
     AnalyserResult, Finding, Severity, Category
 )
 
-# Sag thresholds (volts per cell, typical LiPo cell = 4.2V full)
-SAG_WARNING_PER_CELL  = 0.50   # V
-SAG_CRITICAL_PER_CELL = 1.00   # V
+SAG_WARNING_PER_CELL  = 0.50   # V at peak load
+SAG_CRITICAL_PER_CELL = 1.00
 
-# Current thresholds for idle vs loaded classification
-IDLE_CURRENT_THRESH   = 5.0    # A — below this = idle
-LOADED_CURRENT_THRESH = 15.0   # A — above this = loaded
+IR_WINDOW_S = 10.0
+IR_MIN_SAMPLES = 10
+IR_MIN_STEP_A = 2.0            # and at least 20% of the flight's current range
 
-# Temperature warning threshold
-TEMP_WARNING_C = 45.0
+TEMP_WARNING_C = 60.0          # LiPo/Li-ion upper limit; 45 fires on any hot day
 
-# C-rate concern (non-racing)
-CRATE_WARNING = 30.0
+CRATE_WARNING = 30.0           # sustained, against rated capacity
 
-# Capacity over-draw factor
 CAPACITY_FADE_FACTOR = 1.15
+MIN_USED_FRACTION = 0.3        # below this the estimate is mostly noise
+CIRCULAR_TOLERANCE = 0.03
+
+LIPO_FULL_V = 4.2
 
 
 class BatteryAnalyser(BaseAnalyser):
@@ -38,254 +41,257 @@ class BatteryAnalyser(BaseAnalyser):
     display_name    = "Battery Analysis"
     required_topics = ["battery_status"]
 
-    def analyse(
-        self,
-        topics: dict[str, pd.DataFrame],
-        params: dict[str, float],
-    ) -> AnalyserResult:
-        df = topics["battery_status"].copy()
+    def analyse(self, topics, params):
+        raw = topics["battery_status"]
+        v_col = find_col(raw, ["voltage_v", "voltage_filtered_v", "voltage"])
+        i_col = find_col(raw, ["current_a", "current_filtered_a", "current"])
+        if v_col is None or i_col is None or "timestamp" not in raw.columns:
+            return self._skip("battery_status missing voltage, current or timestamp columns.")
+
+        # V, I and t must come from the same rows
+        df = raw.dropna(subset=["timestamp", v_col, i_col]).sort_values("timestamp").reset_index(drop=True)
+        df = df[df[v_col] > 0].reset_index(drop=True)
+        if len(df) < 10:
+            return self._skip("Fewer than 10 battery samples with both voltage and current.")
+
+        ts = df["timestamp"].to_numpy(float)
+        ts_s = ts / 1e6
+        voltage = df[v_col].to_numpy(float)
+        current = df[i_col].to_numpy(float)
+
+        n_cells, cells_from = self._cells(df, params, voltage)
+        capacity_mah = self._capacity(df, params)
+        remaining = self._remaining(df)
+        consumed_mah = self._integrate(current, ts_s)
+
         findings: list[Finding] = []
         health_score = 100.0
+        key_metrics: dict[str, float] = {"consumed_mah": round(consumed_mah, 1)}
 
-        # ── Column resolution (PX4 names vary by version) ───────────────────
-        v_col    = self._find_col(df, ["voltage_v", "voltage_filtered_v", "voltage"])
-        i_col    = self._find_col(df, ["current_a", "current_filtered_a", "current"])
-        rem_col  = self._find_col(df, ["remaining", "remaining_capacity"])
-        temp_col = self._find_col(df, ["temperature", "temperature_filtered"])
-        cap_col  = self._find_col(df, ["capacity", "full_charge_capacity_wh"])
+        r_pack, sag = self._sag(voltage, current, ts_s, n_cells)
+        if r_pack is not None:
+            key_metrics["sag_per_cell_v"] = round(sag, 4)
+            key_metrics["internal_resistance_mohm_per_cell"] = round(r_pack / n_cells * 1000, 2)
+            f, p = self._sag_finding(sag, r_pack, n_cells, cells_from, current, ts)
+            findings += f
+            health_score -= p
 
-        if v_col is None or i_col is None:
-            return AnalyserResult(
-                analyser=self.name,
-                display_name=self.display_name,
-                findings=[],
-                skipped=True,
-                skip_reason="battery_status missing voltage or current columns.",
-            )
+        if capacity_mah:
+            f, p, c_rate = self._c_rate(current, ts, capacity_mah)
+            key_metrics["peak_c_rate"] = round(c_rate, 2)
+            findings += f
+            health_score -= p
 
-        voltage  = df[v_col].dropna().values
-        current  = df[i_col].dropna().values
-        min_len  = min(len(voltage), len(current))
-        voltage  = voltage[:min_len]
-        current  = current[:min_len]
-        ts_raw   = df["timestamp"].values[:min_len] if "timestamp" in df.columns else np.arange(min_len)
-        ts_s     = ts_raw / 1e6   # µs → seconds
+        if remaining is not None and capacity_mah:
+            f, p = self._capacity_fade(current, ts_s, remaining, capacity_mah)
+            findings += f
+            health_score -= p
 
-        remaining = df[rem_col].dropna().values[:min_len] if rem_col else np.ones(min_len)
-
-        # Detect number of cells from peak voltage (assume 4.2V/cell at full)
-        peak_v = float(voltage.max())
-        n_cells = max(1, round(peak_v / 4.2))
-
-        # ── 1. Voltage sag analysis ─────────────────────────────────────────
-        sag_findings, sag_penalty, sag_per_cell = self._analyse_sag(
-            voltage, current, remaining, n_cells, ts_s
-        )
-        findings.extend(sag_findings)
-        health_score = max(0.0, health_score - sag_penalty)
-
-        # ── 2. Capacity fade ────────────────────────────────────────────────
-        if len(ts_s) > 10 and rem_col:
-            cap_findings, cap_penalty = self._analyse_capacity(
-                current, ts_s, remaining, cap_col, df
-            )
-            findings.extend(cap_findings)
-            health_score = max(0.0, health_score - cap_penalty)
-
-        # ── 3. Temperature ──────────────────────────────────────────────────
+        temp_col = find_col(df, ["temperature", "temperature_filtered"])
         if temp_col:
-            temp = df[temp_col].dropna().values
-            if len(temp) > 0:
-                max_temp = float(temp.max())
-                if max_temp > TEMP_WARNING_C:
-                    health_score = max(0.0, health_score - 15)
-                    tech = (
-                        f"Battery temperature reached {max_temp:.1f}°C "
-                        f"(threshold: {TEMP_WARNING_C}°C). "
-                        f"Mean temperature: {float(temp.mean()):.1f}°C."
-                    )
-                    findings.append(Finding(
-                        category=Category.BATTERY,
-                        severity=Severity.WARNING,
-                        title=f"Battery Thermal Stress ({max_temp:.0f}°C)",
-                        technical_summary=tech,
-                        plain_english=tech,
-                        recommendation="Allow battery to cool before next flight. Check for adequate airflow around battery. Reduce aggressive manoeuvres.",
-                        confidence=min(1.0, (max_temp - TEMP_WARNING_C) / 20.0),
-                    ))
+            f, p = self._temperature(df[temp_col].to_numpy(float), ts)
+            findings += f
+            health_score -= p
 
-        # ── 4. C-rate ───────────────────────────────────────────────────────
-        if len(current) > 10:
-            peak_current = float(current.max())
-            consumed_mah = self._integrate_current(current, ts_s)
-            if consumed_mah > 50:   # sanity check — need a real flight
-                c_rate = peak_current / (consumed_mah / 1000.0)
-                if c_rate > CRATE_WARNING:
-                    health_score = max(0.0, health_score - 10)
-                    tech = (
-                        f"Peak C-rate: {c_rate:.1f}C (peak current {peak_current:.1f}A, "
-                        f"capacity drawn {consumed_mah:.0f}mAh). "
-                        f"High C-rates accelerate cell degradation."
-                    )
-                    findings.append(Finding(
-                        category=Category.BATTERY,
-                        severity=Severity.WARNING,
-                        title=f"High C-Rate Stress ({c_rate:.0f}C)",
-                        technical_summary=tech,
-                        plain_english=tech,
-                        recommendation="Use higher-capacity battery or reduce payload. Ensure battery is rated for this C-rate.",
-                        confidence=min(1.0, c_rate / 50.0),
-                    ))
-
-        # Build chart data
-        step = max(1, min_len // 500)
+        rem_pct = remaining * 100 if remaining is not None else np.full(len(ts), np.nan)
+        ts_ms, v_ds, i_ds, r_ds = downsample(ts, voltage, current, rem_pct)
         chart_data = {
-            "timestamps": (ts_raw[::step] / 1e3).tolist(),
-            "voltage": voltage[::step].tolist(),
-            "current": current[::step].tolist(),
-            "remaining_pct": (remaining[::step] * 100).tolist(),
+            "timestamps": ts_ms,
+            "voltage": v_ds,
+            "current": i_ds,
+            "remaining_pct": r_ds,
             "n_cells": n_cells,
         }
         for f in findings:
             if f.chart_data is None:
                 f.chart_data = chart_data
 
-        key_metrics = {}
-        if sag_per_cell is not None:
-            key_metrics["sag_per_cell_v"] = round(sag_per_cell, 4)
-
         return AnalyserResult(
             analyser=self.name,
             display_name=self.display_name,
             findings=findings,
-            health_score=health_score,
+            health_score=max(0.0, health_score),
             key_metrics=key_metrics,
         )
 
-    # ── private helpers ──────────────────────────────────────────────────────
+    def _cells(self, df, params, voltage) -> tuple[int, str]:
+        # todo: battery_status_1 / BAT2_N_CELLS once a second pack is analysed
+        if "cell_count" in df.columns:
+            c = df["cell_count"].dropna()
+            if len(c) and c.max() > 0:
+                return int(c.max()), "log"
+        for p in ("BAT1_N_CELLS", "BAT_N_CELLS"):
+            if params.get(p, 0) > 0:
+                return int(params[p]), p
+        # guess from the fullest voltage seen; wrong for Li-ion or HV packs
+        return max(1, round(float(voltage.max()) / LIPO_FULL_V)), "estimated"
 
-    def _find_col(self, df: pd.DataFrame, candidates: list[str]) -> Optional[str]:
-        for c in candidates:
-            if c in df.columns:
-                return c
+    def _capacity(self, df, params):
+        """Rated capacity in mAh, or None. PX4 -1 / 0 mean "not set"."""
+        if "capacity" in df.columns:
+            c = df["capacity"].dropna()
+            if len(c) and c.max() > 100:
+                return float(c.max())
+        for p in ("BAT1_CAPACITY", "BAT_CAPACITY", "BATT_CAPACITY"):
+            if params.get(p, 0) > 100:
+                return float(params[p])
         return None
 
-    def _analyse_sag(
-        self,
-        voltage: np.ndarray,
-        current: np.ndarray,
-        remaining: np.ndarray,
-        n_cells: int,
-        ts_s: np.ndarray,
-    ) -> tuple[list[Finding], float, Optional[float]]:
-        findings: list[Finding] = []
-        penalty = 0.0
+    def _remaining(self, df):
+        col = find_col(df, ["remaining", "remaining_capacity"])
+        if col is None:
+            return None
+        r = df[col].to_numpy(float, copy=True)
+        r[r < 0] = np.nan                    # -1 = unknown on MAVLink
+        if np.nanmax(r, initial=0) > 1.5:     # percent, not fraction
+            r = r / 100.0
+        return r if np.isfinite(r).any() else None
 
-        idle_mask   = current < IDLE_CURRENT_THRESH
-        loaded_mask = current > LOADED_CURRENT_THRESH
+    def _integrate(self, current, ts_s) -> float:
+        """mAh drawn, trapezoidal."""
+        if len(current) < 2:
+            return 0.0
+        return float(np.sum((current[:-1] + current[1:]) / 2 * np.diff(ts_s))) / 3.6
 
-        if not idle_mask.any() or not loaded_mask.any():
-            return findings, penalty, None
+    def _sag(self, voltage, current, ts_s, n_cells):
+        """Pack internal resistance (Ω) from windowed fits, and the sag per
+        cell it implies at this flight's peak load. (None, None) when no
+        window had enough current change to measure it."""
+        spread = np.percentile(current, 95) - np.percentile(current, 5)
+        min_step = max(IR_MIN_STEP_A, 0.2 * spread)
+        estimates = []
+        for start in np.arange(ts_s[0], ts_s[-1], IR_WINDOW_S):
+            m = (ts_s >= start) & (ts_s < start + IR_WINDOW_S)
+            if m.sum() < IR_MIN_SAMPLES:
+                continue
+            i = current[m]
+            if i.max() - i.min() < min_step:
+                continue
+            a = np.column_stack([np.ones(len(i)), ts_s[m] - start, -i])
+            coef, *_ = np.linalg.lstsq(a, voltage[m], rcond=None)
+            estimates.append(coef[2])
+        if not estimates:
+            return None, None
 
-        idle_v   = float(np.percentile(voltage[idle_mask], 50))
-        loaded_v = float(np.percentile(voltage[loaded_mask], 10))   # worst 10%
-        total_sag = idle_v - loaded_v
-        sag_per_cell = total_sag / n_cells
+        r = max(0.0, float(np.median(estimates)))
+        resting = pd.Series(current).rolling(IR_MIN_SAMPLES, min_periods=1).median().min()
+        peak = np.percentile(current, 99)
+        return r, r * max(0.0, peak - resting) / n_cells
 
-        if sag_per_cell > SAG_CRITICAL_PER_CELL:
-            sev     = Severity.CRITICAL
-            penalty = 30.0
-            label   = "CRITICAL — battery near end of life"
-        elif sag_per_cell > SAG_WARNING_PER_CELL:
-            sev     = Severity.WARNING
-            penalty = 15.0
-            label   = "WARNING — high internal resistance"
+    def _sag_finding(self, sag, r_pack, n_cells, cells_from, current, ts):
+        if sag > SAG_CRITICAL_PER_CELL:
+            sev, penalty, thr = Severity.CRITICAL, 30.0, SAG_CRITICAL_PER_CELL
+        elif sag > SAG_WARNING_PER_CELL:
+            sev, penalty, thr = Severity.WARNING, 15.0, SAG_WARNING_PER_CELL
         else:
-            return findings, penalty, sag_per_cell
-
+            return [], 0.0
+        cells = f"{n_cells}S" + (" (estimated from voltage)" if cells_from == "estimated" else "")
+        peak_at = int(np.argmax(current))
         tech = (
-            f"Voltage sag under load: idle voltage {idle_v:.2f}V, "
-            f"loaded voltage {loaded_v:.2f}V, sag {total_sag:.2f}V total "
-            f"({sag_per_cell:.2f}V/cell for {n_cells}S pack). {label}."
+            f"Internal resistance {r_pack * 1000:.0f} mΩ for the pack ({r_pack / n_cells * 1000:.1f} mΩ/cell, "
+            f"{cells}), measured from voltage response to current steps. At the peak load of "
+            f"{np.percentile(current, 99):.1f} A that is {sag:.2f} V/cell of sag "
+            f"(threshold {thr} V/cell). Normal discharge over the flight is not counted."
         )
-        findings.append(Finding(
+        rec = (
+            "This pack's internal resistance is high. Cycle-test it with an IR-capable charger and "
+            "retire it if the reading confirms; check connectors and wiring for a bad joint first."
+            if sev == Severity.CRITICAL else
+            "Measure the pack's internal resistance on a charger and compare with its earlier "
+            "readings; check connectors, and consider a higher-rated pack for this load."
+        )
+        return [Finding(
             category=Category.BATTERY,
             severity=sev,
-            title=f"High Voltage Sag ({sag_per_cell:.2f}V/cell)",
+            kind="battery.sag",
+            title=f"High Voltage Sag ({sag:.2f}V/cell)",
             technical_summary=tech,
             plain_english=tech,
-            recommendation=(
-                "Battery internal resistance is elevated. "
-                "Retire or cycle-test this pack. "
-                "Consider replacing if sag exceeds 1V/cell."
-            ) if sev == Severity.CRITICAL else (
-                "Monitor battery health closely. "
-                "Check pack age and cycle count. "
-                "Storage-charge between flights if not flying regularly."
-            ),
-            confidence=min(1.0, sag_per_cell / SAG_CRITICAL_PER_CELL),
-        ))
-        return findings, penalty, sag_per_cell
+            recommendation=rec,
+            confidence=confidence(sag / thr - 1, quality=0.8 if cells_from == "estimated" else 1.0),
+            **when(ts[peak_at]),
+        )], penalty
 
-    def _analyse_capacity(
-        self,
-        current: np.ndarray,
-        ts_s: np.ndarray,
-        remaining: np.ndarray,
-        cap_col: Optional[str],
-        df: pd.DataFrame,
-    ) -> tuple[list[Finding], float]:
-        findings: list[Finding] = []
-        penalty = 0.0
+    def _c_rate(self, current, ts, capacity_mah):
+        # 1 s median so a single current spike isn't "the C-rate"
+        n = max(1, int(round(1e6 / max(np.median(np.diff(ts)), 1.0))))
+        sustained = pd.Series(current).rolling(n, min_periods=1).median().to_numpy()
+        j = int(np.argmax(sustained))
+        c_rate = float(sustained[j]) / (capacity_mah / 1000.0)
+        if c_rate <= CRATE_WARNING:
+            return [], 0.0, c_rate
+        tech = (
+            f"Sustained peak current {sustained[j]:.1f} A on a {capacity_mah:.0f} mAh pack = "
+            f"{c_rate:.1f}C (threshold {CRATE_WARNING:.0f}C)."
+        )
+        return [Finding(
+            category=Category.BATTERY,
+            severity=Severity.WARNING,
+            kind="battery.c_rate",
+            title=f"High C-Rate Stress ({c_rate:.0f}C)",
+            technical_summary=tech,
+            plain_english=tech,
+            recommendation="Check the pack's continuous C rating covers this load; otherwise use a higher-capacity or higher-rated pack, or reduce weight.",
+            confidence=confidence(c_rate / CRATE_WARNING - 1),
+            **when(ts[j]),
+        )], 10.0, c_rate
 
-        consumed_mah = self._integrate_current(current, ts_s)
+    def _capacity_fade(self, current, ts_s, remaining, capacity_mah):
+        ok = np.isfinite(remaining)
+        if ok.sum() < 10:
+            return [], 0.0
+        drawn = np.concatenate(([0.0], np.cumsum((current[:-1] + current[1:]) / 2 * np.diff(ts_s)) / 3.6))
 
-        # Try to get rated capacity from the log
-        rated_mah: Optional[float] = None
-        if cap_col and cap_col in df.columns:
-            cap_val = df[cap_col].dropna()
-            if len(cap_val) > 0:
-                v = float(cap_val.iloc[0])
-                # PX4 stores capacity in mAh
-                if v > 100:
-                    rated_mah = v
+        # when "remaining" is itself 1 - drawn/capacity (PX4 with capacity
+        # set, every ArduPilot log) comparing the two proves nothing
+        model = 1.0 - drawn / capacity_mah
+        if np.nanmax(np.abs(remaining[ok] - model[ok])) < CIRCULAR_TOLERANCE:
+            return [], 0.0
 
-        # Calculate estimated actual capacity based on remaining state of charge
-        estimated_mah = None
-        if remaining.min() > 0.0:
-            used_fraction = 1.0 - float(remaining.min())
-            if used_fraction > 0.05:
-                estimated_mah = consumed_mah / used_fraction
+        first, last = np.flatnonzero(ok)[[0, -1]]
+        used = float(remaining[first] - remaining[last])
+        if used < MIN_USED_FRACTION:
+            return [], 0.0
+        estimated = (drawn[last] - drawn[first]) / used
+        if estimated * CAPACITY_FADE_FACTOR >= capacity_mah:
+            return [], 0.0
 
-        # Fallback: if rated capacity is not available, we can't detect fade
-        if rated_mah is None:
-            return findings, penalty
+        fade = (capacity_mah - estimated) / capacity_mah * 100
+        tech = (
+            f"{drawn[last] - drawn[first]:.0f} mAh drawn while state of charge fell by {used * 100:.0f}%, "
+            f"which implies ~{estimated:.0f} mAh total against a rated {capacity_mah:.0f} mAh "
+            f"({fade:.0f}% short)."
+        )
+        return [Finding(
+            category=Category.BATTERY,
+            severity=Severity.WARNING,
+            kind="battery.capacity_fade",
+            title=f"Battery Capacity Fade (~{fade:.0f}% below rated)",
+            technical_summary=tech,
+            plain_english=tech,
+            recommendation="Cycle-test the battery with a cell analyser. If capacity is <80% of rated, retire the pack.",
+            confidence=confidence(fade / 30.0, quality=min(1.0, used / 0.6)),
+        )], 15.0
 
-        if estimated_mah and estimated_mah * CAPACITY_FADE_FACTOR < rated_mah:
-            penalty = 15.0
-            fade_pct = (rated_mah - estimated_mah) / rated_mah * 100
-            tech = (
-                f"Estimated capacity is {estimated_mah:.0f}mAh but rated capacity is ~{rated_mah:.0f}mAh. "
-                f"Apparent capacity deficit: {fade_pct:.0f}%. "
-                f"This suggests capacity fade due to aging or cell damage."
-            )
-            findings.append(Finding(
-                category=Category.BATTERY,
-                severity=Severity.WARNING,
-                title=f"Battery Capacity Fade (~{fade_pct:.0f}% below rated)",
-                technical_summary=tech,
-                plain_english=tech,
-                recommendation="Cycle-test the battery with a cell analyser. If capacity is <80% of rated, retire the pack.",
-                confidence=min(1.0, fade_pct / 30.0),
-            ))
-
-        return findings, penalty
-
-    def _integrate_current(self, current: np.ndarray, ts_s: np.ndarray) -> float:
-        """Trapezoidal integration → mAh consumed."""
-        if len(current) < 2 or len(ts_s) < 2:
-            return 0.0
-        dt = np.diff(ts_s)
-        avg_i = (current[:-1] + current[1:]) / 2.0
-        coulombs = float(np.sum(avg_i * dt))
-        return coulombs / 3.6   # A·s → mAh
+    def _temperature(self, temp, ts):
+        if not np.isfinite(temp).any():
+            return [], 0.0
+        peak = float(np.nanmax(temp))
+        if peak <= TEMP_WARNING_C:
+            return [], 0.0
+        hot = np.flatnonzero(temp > TEMP_WARNING_C)
+        tech = (
+            f"Battery temperature reached {peak:.1f}°C (threshold {TEMP_WARNING_C:.0f}°C); "
+            f"mean {float(np.nanmean(temp)):.1f}°C."
+        )
+        return [Finding(
+            category=Category.BATTERY,
+            severity=Severity.WARNING,
+            kind="battery.thermal",
+            title=f"Battery Thermal Stress ({peak:.0f}°C)",
+            technical_summary=tech,
+            plain_english=tech,
+            recommendation="Allow battery to cool before next flight. Check for adequate airflow around battery. Reduce aggressive manoeuvres.",
+            confidence=confidence((peak - TEMP_WARNING_C) / 20.0),
+            **when(ts[hot[0]], ts[hot[-1]]),
+        )], 15.0

@@ -1,11 +1,12 @@
 """
-Tests for ExplanationEngine — verifies deterministic mappings for all finding categories and titles.
+Tests for ExplanationEngine — templates keyed by Finding.kind, summaries.
 """
 
 import pytest
-from flightmd_core.models.findings import Finding, Category, Severity
+
+from flightmd_core.models.findings import AnalyserResult, Finding, Category, Severity
 from flightmd_core.models.metadata import FlightMetadata
-from flightmd_core.services.explanation_engine import ExplanationEngine
+from flightmd_core.services.explanation_engine import ExplanationEngine, TEMPLATES
 
 
 @pytest.fixture
@@ -14,403 +15,149 @@ def engine():
 
 
 @pytest.fixture
-def mock_metadata():
-    return FlightMetadata(
-        duration_seconds=600.0,
-        start_time_utc="2026-07-04T12:00:00Z",
-        hardware="PX4_FMU_V5",
-        firmware_version="1.14.0",
-        original_filename="test_flight.ulg",
-    )
+def metadata():
+    return FlightMetadata(duration_seconds=600.0, firmware_version="1.14.0")
 
 
-@pytest.mark.asyncio
-async def test_oscillation_explanation(engine):
-    finding = Finding(
-        category=Category.OSCILLATION,
-        severity=Severity.WARNING,
-        title="Roll-axis oscillation",
-        technical_summary="Sustained oscillation detected on roll axis.",
+def finding(category, kind, title="Some title", severity=Severity.WARNING, recommendation=""):
+    return Finding(
+        category=category,
+        severity=severity,
+        kind=kind,
+        title=title,
+        technical_summary=f"technical summary for {kind}",
         plain_english="",
-        recommendation="",
-        confidence=1.0,
+        recommendation=recommendation,
+        confidence=0.9,
     )
-    results = await engine.explain_findings([finding])
-    f = results[0]
-    assert "roll" in f.plain_english.lower()
-    assert "MC_ROLLRATE_P" in f.recommendation
+
+
+ANALYSER_KINDS = [
+    (Category.OSCILLATION, "oscillation.rate_p"),
+    (Category.OSCILLATION, "oscillation.rate_d"),
+    (Category.OSCILLATION, "oscillation.mechanical"),
+    (Category.VIBRATION, "vibration.critical"),
+    (Category.VIBRATION, "vibration.elevated"),
+    (Category.VIBRATION, "vibration.clipping"),
+    (Category.VIBRATION, "vibration.imu_mismatch"),
+    (Category.MOTORS, "motors.rpm_imbalance"),
+    (Category.MOTORS, "motors.current_imbalance"),
+    (Category.MOTORS, "motors.esc_thermal"),
+    (Category.MOTORS, "motors.dropout"),
+    (Category.GPS, "gps.no_fix"),
+    (Category.GPS, "gps.fix_lost"),
+    (Category.GPS, "gps.fix_degraded"),
+    (Category.GPS, "gps.sat_drop"),
+    (Category.GPS, "gps.hdop"),
+    (Category.GPS, "gps.jamming"),
+    (Category.GPS, "gps.spoofing"),
+    (Category.EKF, "ekf.innovation_rejected"),
+    (Category.EKF, "ekf.solution_invalid"),
+    (Category.EKF, "ekf.gps_glitch"),
+    (Category.EKF, "ekf.accel_error"),
+    (Category.EKF, "ekf.innovation_ratio"),
+    (Category.EKF, "ekf.wind_jump"),
+    (Category.BATTERY, "battery.thermal"),
+    (Category.BATTERY, "battery.c_rate"),
+    (Category.BATTERY, "battery.sag"),
+    (Category.BATTERY, "battery.capacity_fade"),
+    (Category.PARAMETERS, "params.deprecated"),
+    (Category.PARAMETERS, "params.below_range"),
+    (Category.PARAMETERS, "params.above_range"),
+    (Category.PARAMETERS, "params.bat_thr_inverted"),
+    (Category.PARAMETERS, "params.rc_loss_short"),
+    (Category.PARAMETERS, "params.rate_p_high_d_low"),
+    (Category.PARAMETERS, "params.pos_loop_risk"),
+]
 
 
 @pytest.mark.asyncio
-async def test_vibration_explanations(engine):
-    findings = [
-        Finding(
-            category=Category.VIBRATION,
-            severity=Severity.CRITICAL,
-            title="Critical vibration levels",
-            technical_summary="Vibrations exceeded critical safety limits.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
-        Finding(
-            category=Category.VIBRATION,
-            severity=Severity.WARNING,
-            title="Elevated vibration levels",
-            technical_summary="Vibrations are elevated.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
-        Finding(
-            category=Category.VIBRATION,
-            severity=Severity.CRITICAL,
-            title="Hard IMU clipping detected",
-            technical_summary="IMU saturated.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
-        Finding(
-            category=Category.VIBRATION,
-            severity=Severity.WARNING,
-            title="IMU inconsistency issue",
-            technical_summary="IMUs inconsistent.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
-    ]
-    results = await engine.explain_findings(findings)
-    assert "critical safety limits" in results[0].plain_english
-    assert "Balance propellers" in results[1].recommendation
-    assert "saturated" in results[2].plain_english
-    assert "mounting" in results[3].recommendation
+@pytest.mark.parametrize("category, kind", ANALYSER_KINDS)
+async def test_every_analyser_kind_has_a_template(engine, category, kind):
+    assert kind in TEMPLATES
+    [f] = await engine.explain_findings([finding(category, kind)])
+    assert f.plain_english == TEMPLATES[kind][0]
+    assert f.recommendation == TEMPLATES[kind][1]
 
 
 @pytest.mark.asyncio
-async def test_motor_explanations(engine):
-    findings = [
-        Finding(
-            category=Category.MOTORS,
-            severity=Severity.WARNING,
-            title="Motor thrust imbalance",
-            technical_summary="Thrust imbalance detected.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
-        Finding(
-            category=Category.MOTORS,
-            severity=Severity.WARNING,
-            title="ESC thermal stress",
-            technical_summary="ESC temperature high.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
-        Finding(
-            category=Category.MOTORS,
-            severity=Severity.WARNING,
-            title="Motor output dropout",
-            technical_summary="Thrust dropped to zero.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
-    ]
-    results = await engine.explain_findings(findings)
-    assert "thrust levels" in results[0].plain_english
-    assert "ESC" in results[1].plain_english
-    assert "dropout" in results[2].plain_english
+async def test_dispatch_ignores_the_title(engine):
+    """Titles are display text; 'Motor Balance Warning' used to match no
+    rule and 'Current Imbalance' got the thrust text."""
+    a = finding(Category.MOTORS, "motors.current_imbalance", title="Motor Balance Warning")
+    b = finding(Category.MOTORS, "motors.rpm_imbalance", title="Motor Current Imbalance")
+    await engine.explain_findings([a, b])
+    assert a.plain_english == TEMPLATES["motors.current_imbalance"][0]
+    assert b.plain_english == TEMPLATES["motors.rpm_imbalance"][0]
 
 
 @pytest.mark.asyncio
-async def test_gps_explanations(engine):
-    findings = [
-        Finding(
-            category=Category.GPS,
-            severity=Severity.CRITICAL,
-            title="GPS signal lost",
-            technical_summary="GPS lost.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
-        Finding(
-            category=Category.GPS,
-            severity=Severity.WARNING,
-            title="GPS accuracy degradation",
-            technical_summary="Accuracy degraded.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
-        Finding(
-            category=Category.GPS,
-            severity=Severity.WARNING,
-            title="Satellite count drop",
-            technical_summary="Satellites dropped.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
-        Finding(
-            category=Category.GPS,
-            severity=Severity.WARNING,
-            title="High HDOP / uncertainty",
-            technical_summary="HDOP high.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
-        Finding(
-            category=Category.GPS,
-            severity=Severity.WARNING,
-            title="GPS jamming / interference",
-            technical_summary="Jamming detected.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
-        Finding(
-            category=Category.GPS,
-            severity=Severity.CRITICAL,
-            title="GPS spoofing detected",
-            technical_summary="Spoofing.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
-    ]
-    results = await engine.explain_findings(findings)
-    assert "completely lost" in results[0].plain_english
-    assert "degraded" in results[1].plain_english
-    assert "antenna obstruction" in results[2].plain_english
-    assert "HDOP" in results[3].plain_english
-    assert "jamming" in results[4].plain_english
-    assert "spoofing" in results[5].plain_english
+async def test_analyser_recommendation_is_kept(engine):
+    """The analyser's own recommendation names the parameter and values;
+    the old engine replaced it with generic text."""
+    f = finding(Category.OSCILLATION, "oscillation.rate_p",
+                recommendation="Reduce MC_ROLLRATE_P from 0.15 to 0.1305 (about 13%), then re-test.")
+    await engine.explain_findings([f])
+    assert f.recommendation.startswith("Reduce MC_ROLLRATE_P from 0.15 to 0.1305")
 
 
 @pytest.mark.asyncio
-async def test_ekf_explanations(engine):
-    findings = [
-        Finding(
-            category=Category.EKF,
-            severity=Severity.CRITICAL,
-            title="EKF innovation failure",
-            technical_summary="Innovation test failed.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
-        Finding(
-            category=Category.EKF,
-            severity=Severity.CRITICAL,
-            title="EKF solution invalid",
-            technical_summary="State invalid.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
-        Finding(
-            category=Category.EKF,
-            severity=Severity.WARNING,
-            title="EKF innovation ratio exceeded",
-            technical_summary="Ratio exceeded.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
-        Finding(
-            category=Category.EKF,
-            severity=Severity.WARNING,
-            title="EKF wind estimate jump",
-            technical_summary="Wind jump.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
-    ]
-    results = await engine.explain_findings(findings)
-    assert "rejected" in results[0].plain_english
-    assert "invalid" in results[1].plain_english
-    assert "ratio" in results[2].plain_english
-    assert "wind" in results[3].plain_english
+async def test_mid_band_oscillation_text_does_not_say_raise_d(engine):
+    [f] = await engine.explain_findings([finding(Category.OSCILLATION, "oscillation.rate_d")])
+    assert "increase the rate D" not in f.recommendation
+    assert "Lower the rate D" in f.recommendation
 
 
 @pytest.mark.asyncio
-async def test_battery_explanations(engine):
-    findings = [
-        Finding(
-            category=Category.BATTERY,
-            severity=Severity.WARNING,
-            title="Battery thermal stress",
-            technical_summary="Temp high.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
-        Finding(
-            category=Category.BATTERY,
-            severity=Severity.WARNING,
-            title="High C-rate draw",
-            technical_summary="C-rate high.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
-        Finding(
-            category=Category.BATTERY,
-            severity=Severity.WARNING,
-            title="High voltage sag",
-            technical_summary="Sag high.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
-        Finding(
-            category=Category.BATTERY,
-            severity=Severity.WARNING,
-            title="Battery capacity fade",
-            technical_summary="Capacity low.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
-    ]
-    results = await engine.explain_findings(findings)
-    assert "temperature" in results[0].plain_english
-    assert "C-rate" in results[1].plain_english
-    assert "voltage dropped" in results[2].plain_english
-    assert "capacity" in results[3].plain_english
-
-
-@pytest.mark.asyncio
-async def test_parameter_explanations(engine):
-    findings = [
-        Finding(
-            category=Category.PARAMETERS,
-            severity=Severity.INFO,
-            title="Deprecated parameter",
-            technical_summary="Deprecated.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
-        Finding(
-            category=Category.PARAMETERS,
-            severity=Severity.WARNING,
-            title="Parameter below safe range",
-            technical_summary="Below range.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
-        Finding(
-            category=Category.PARAMETERS,
-            severity=Severity.WARNING,
-            title="Parameter above safe range",
-            technical_summary="Above range.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
-        Finding(
-            category=Category.PARAMETERS,
-            severity=Severity.CRITICAL,
-            title="Battery thresholds inverted",
-            technical_summary="Inverted.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
-        Finding(
-            category=Category.PARAMETERS,
-            severity=Severity.WARNING,
-            title="RC loss timeout short",
-            technical_summary="Timeout short.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
-        Finding(
-            category=Category.PARAMETERS,
-            severity=Severity.WARNING,
-            title="High rate P gain",
-            technical_summary="P gain high.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
-        Finding(
-            category=Category.PARAMETERS,
-            severity=Severity.WARNING,
-            title="Position loop instability risk",
-            technical_summary="Instability risk.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
-    ]
-    results = await engine.explain_findings(findings)
-    assert "deprecated" in results[0].plain_english
-    assert "minimum" in results[1].plain_english
-    assert "maximum" in results[2].plain_english
-    assert "threshold" in results[3].plain_english
-    assert "timeout" in results[4].plain_english
-    assert "PID" in results[5].plain_english
-    assert "overshoot" in results[6].plain_english
-
-
-@pytest.mark.asyncio
-async def test_fallback_explanation(engine):
-    finding = Finding(
-        category=Category.SYSTEM,
-        severity=Severity.WARNING,
-        title="Some undocumented finding",
-        technical_summary="System anomaly.",
-        plain_english="",
-        recommendation="",
-        confidence=1.0,
-    )
-    results = await engine.explain_findings([finding])
-    f = results[0]
-    assert f.plain_english == "System anomaly."
+async def test_unknown_kind_falls_back_to_technical_summary(engine):
+    f = finding(Category.SYSTEM, None, title="Some undocumented finding")
+    await engine.explain_findings([f])
+    assert f.plain_english == f.technical_summary
     assert "Consult" in f.recommendation
 
 
 @pytest.mark.asyncio
-async def test_summary_generation_empty(engine, mock_metadata):
-    summary = await engine.generate_summary(mock_metadata, [], 95.0, "Excellent")
-    assert "Excellent" in summary
-    assert "95" in summary
-    assert "All systems operating within safe nominal parameters" in summary
+async def test_ascent_findings_keep_their_own_text(engine):
+    f = finding(Category.ASCENT_PROFILE, "ascent.apogee", severity=Severity.GOOD,
+                recommendation="No action needed — this is a factual measurement of the flight profile.")
+    await engine.explain_findings([f])
+    assert f.plain_english == f.technical_summary
+    assert f.recommendation.startswith("No action needed")
 
 
 @pytest.mark.asyncio
-async def test_summary_generation_with_findings(engine, mock_metadata):
-    findings = [
-        Finding(
-            category=Category.VIBRATION,
-            severity=Severity.CRITICAL,
-            title="Critical vibration levels",
-            technical_summary="Vibrations exceeded critical safety limits.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
-        Finding(
-            category=Category.OSCILLATION,
-            severity=Severity.WARNING,
-            title="Roll-axis oscillation",
-            technical_summary="Sustained oscillation detected on roll axis.",
-            plain_english="",
-            recommendation="",
-            confidence=1.0,
-        ),
+async def test_summary_without_findings(engine, metadata):
+    summary = await engine.generate_summary(metadata, [], 95.0, "Excellent")
+    assert "95/100 (Excellent)" in summary
+    assert "No anomalies detected" in summary
+    assert "All systems" not in summary
+
+
+@pytest.mark.asyncio
+async def test_summary_not_assessed_is_not_a_clean_bill(engine, metadata):
+    summary = await engine.generate_summary(metadata, [], 0.0, "Not assessed")
+    assert "No health score" in summary
+    assert "/100" not in summary
+
+
+@pytest.mark.asyncio
+async def test_summary_lists_unassessed_modules(engine, metadata):
+    results = [
+        AnalyserResult(analyser="gps", display_name="GPS Analysis", findings=[]),
+        AnalyserResult(analyser="ekf", display_name="EKF Health Analysis", findings=[],
+                       skipped=True, skip_reason="no estimator_status"),
     ]
-    summary = await engine.generate_summary(mock_metadata, findings, 45.0, "Poor")
-    assert "45" in summary
-    assert "Poor" in summary
-    assert "CRITICAL issue(s) detected: Critical vibration levels" in summary
+    summary = await engine.generate_summary(metadata, [], 100.0, "Excellent", results=results)
+    assert "Not assessed (no usable data): EKF Health Analysis." in summary
+
+
+@pytest.mark.asyncio
+async def test_summary_with_findings(engine, metadata):
+    findings = [
+        finding(Category.VIBRATION, "vibration.critical", title="Critical Vibration — IMU 0",
+                severity=Severity.CRITICAL),
+        finding(Category.OSCILLATION, "oscillation.rate_p", title="Roll-Axis Oscillation at 6.1 Hz"),
+    ]
+    summary = await engine.generate_summary(metadata, findings, 45.0, "Critical")
+    assert "45/100 (Critical)" in summary
+    assert "CRITICAL issue(s) detected: Critical Vibration — IMU 0" in summary

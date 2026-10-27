@@ -1,49 +1,56 @@
 """
-OscillationAnalyser — FFT-based roll/pitch/yaw oscillation detector.
+OscillationAnalyser: sustained roll/pitch/yaw rate oscillations.
 
-Uses scipy.fft to detect sustained oscillations in angular velocity data.
-A dominant peak in 1–30 Hz range with high normalised amplitude indicates
-PID tuning issues (usually D term too low or P too high).
+Each in-flight stretch of angular-rate data is resampled onto a uniform grid
+(gaps over GAP_FACTOR x the normal interval split it) and cut into ~4 s
+Hann windows with 50% overlap (a spectrogram). Per window we take the
+biggest narrow peak in the band and estimate its amplitude in deg/s from
+the power around the peak. Fixed-length windows make the numbers independent
+of log length, and looking per window means a 20 s burst in a 20 min flight
+still shows up. Windows are 4 s so a 1 Hz attitude-loop wobble still gets
+four cycles per window.
+
+Severity comes from the oscillation amplitude (deg/s), gated on the peak
+standing well clear of the noise floor (prominence). What to change depends
+on where the peak sits:
+  < MID_BAND_HZ        rate P too high      -> reduce P
+  MID..HIGH_BAND_HZ    D term / D filtering -> reduce D, lower D cutoff
+  > HIGH_BAND_HZ       mechanical / noise   -> no gain change, check frame
 """
 
 import numpy as np
-from scipy import fft, signal
 import pandas as pd
-from typing import Optional
+from scipy import signal
 
 from flightmd_core.analysers.base import BaseAnalyser
+from flightmd_core.analysers.helpers import confidence, find_col, sample_rate_hz, to_list, when
+from flightmd_core.analysers.phases import flight_phases
+from flightmd_core.analysers.vehicle import rate_gain_names, vehicle_from_params
 from flightmd_core.models.findings import (
     AnalyserResult, Finding, Severity, Category, ParamRecommendation
 )
 
+PENALTIES = {"SEVERE": 30, "MODERATE": 15, "MILD": 5}
 
-# Penalty applied to module health score per finding severity
-PENALTIES = {
-    "SEVERE":    30,
-    "MODERATE":  15,
-    "MILD":       5,
-}
+# oscillation amplitude, deg/s
+AMP_SEVERE   = 40.0
+AMP_MODERATE = 15.0
+AMP_MILD     = 5.0
 
-# Oscillation thresholds (prominence ratio)
-THRESH_SEVERE   = 35.0
-THRESH_MODERATE = 18.0
-THRESH_MILD     = 10.0
+# peak power / median band power in one window; white noise alone stays
+# under ~20, and a peak also has to hold for three windows in a row
+MIN_PROMINENCE = 25.0
 
-# Frequency range of interest (Hz)
-FREQ_LOW  = 1.0
-FREQ_HIGH = 30.0
+FREQ_LOW = 1.0          # Hz; slower than this is piloting, not a control loop
+FREQ_HIGH_CAP = 100.0
+MID_BAND_HZ = 12.0
+HIGH_BAND_HZ = 35.0
 
-# Severe finding requires peak in this band
-SEVERE_BAND_LOW  = 2.0
-SEVERE_BAND_HIGH = 10.0
-
-# Default P-gain param names per axis (used when params dict has no match)
-AXIS_PARAMS = {
-    "roll":  "MC_ROLLRATE_P",
-    "pitch": "MC_PITCHRATE_P",
-    "yaw":   "MC_YAWRATE_P",
-}
-DEFAULT_RATE_P = 0.15  # fallback when param not in log
+SEGMENT_S = 4.0
+GAP_FACTOR = 5.0
+MIN_RATE_HZ = 10.0      # tlog ATTITUDE at 2-4 Hz can't see a control-loop oscillation
+CHART_FREQ_MIN = 0.5
+CHART_MAX_BINS = 512
 
 
 class OscillationAnalyser(BaseAnalyser):
@@ -51,111 +58,66 @@ class OscillationAnalyser(BaseAnalyser):
     display_name  = "Oscillation Analysis"
     required_topics = ["vehicle_angular_velocity"]
 
-    def analyse(
-        self,
-        topics: dict[str, pd.DataFrame],
-        params: dict[str, float],
-    ) -> AnalyserResult:
-        df = topics["vehicle_angular_velocity"].copy()
-
-        # PX4 column names vary by version — normalise
-        col_map = {
-            "rollspeed":  self._find_col(df, ["rollspeed", "xyz[0]", "x"]),
-            "pitchspeed": self._find_col(df, ["pitchspeed", "xyz[1]", "y"]),
-            "yawspeed":   self._find_col(df, ["yawspeed", "xyz[2]", "z"]),
-        }
-
-        # Estimate sample rate from timestamps
-        if "timestamp" in df.columns:
-            dt_us = df["timestamp"].diff().median()
-            sample_rate = 1e6 / dt_us if dt_us > 0 else 250.0
-        else:
-            sample_rate = 250.0  # typical PX4 angular velocity rate
+    def analyse(self, topics, params):
+        df = topics["vehicle_angular_velocity"]
+        if "timestamp" not in df.columns:
+            return self._skip("Angular velocity topic has no timestamps.")
 
         axes = {
-            "roll":  col_map["rollspeed"],
-            "pitch": col_map["pitchspeed"],
-            "yaw":   col_map["yawspeed"],
+            "roll":  find_col(df, ["rollspeed", "xyz[0]", "x"]),
+            "pitch": find_col(df, ["pitchspeed", "xyz[1]", "y"]),
+            "yaw":   find_col(df, ["yawspeed", "xyz[2]", "z"]),
         }
+        phases = flight_phases(topics)
+        vehicle = vehicle_from_params(params)
 
         findings: list[Finding] = []
         health_score = 100.0
-        all_chart_data: dict[str, dict] = {}
+        key_metrics: dict[str, float] = {}
+        assessed_any = False
+        slow_rate = None
 
-        for axis_name, col_name in axes.items():
-            if col_name is None:
+        for axis, col in axes.items():
+            if col is None:
+                continue
+            d = df[["timestamp", col]].dropna().sort_values("timestamp")
+            d = d[phases.mask(d["timestamp"].to_numpy(float), "in_air")]
+            ts = d["timestamp"].to_numpy(float)
+            x = d[col].to_numpy(float)
+            fs = sample_rate_hz(ts, 0.0)
+            if fs < MIN_RATE_HZ:
+                slow_rate = fs
                 continue
 
-            signal_data = df[col_name].dropna().values
-            if len(signal_data) < 64:
+            spec = self._spectrogram(ts, x, fs)
+            if spec is None:
                 continue
+            assessed_any = True
+            res = self._worst(spec)
+            # print(axis, res["peak_hz"], res["amp_dps"], res["prominence"])
 
-            level, dominant_hz, norm_amp, freqs, amps = self._analyse_axis(
-                signal_data, sample_rate
-            )
+            key_metrics[f"{axis}_peak_hz"] = round(res["peak_hz"], 3)
+            key_metrics[f"{axis}_norm_amp"] = round(res["prominence"], 3)
+            key_metrics[f"{axis}_osc_amp_dps"] = round(res["amp_dps"], 2)
 
-            # Store chart data regardless of finding
-            all_chart_data[axis_name] = {
-                "frequencies": freqs[:512].tolist(),     # limit payload
-                "amplitudes":  amps[:512].tolist(),
-                "peak_hz":     dominant_hz,
-                "norm_amp":    norm_amp,
-            }
+            chart = {"axis": axis, **self._chart(spec), "peak_hz": res["peak_hz"],
+                     "norm_amp": res["prominence"], "amp_dps": res["amp_dps"]}
 
+            level = self._level(res)
             if level == "NONE":
                 continue
-
-            severity = {
-                "SEVERE":   Severity.CRITICAL,
-                "MODERATE": Severity.WARNING,
-                "MILD":     Severity.INFO,
-            }[level]
-
-            # Penalty
             health_score = max(0.0, health_score - PENALTIES[level])
+            findings.append(self._finding(axis, level, res, fs, chart, params, vehicle, phases))
 
-            # Param recommendation
-            param_name = AXIS_PARAMS[axis_name]
-            current_p  = params.get(param_name, DEFAULT_RATE_P)
-            suggested_p = round(current_p * 0.87, 4)
-
-            param_changes = [
-                ParamRecommendation(
-                    param_name=param_name,
-                    current_value=round(current_p, 4),
-                    suggested_value=suggested_p,
-                    unit=None,
-                    change_direction="decrease",
-                    reason=f"Reduce {axis_name}-rate P by ~13% to dampen {dominant_hz:.1f} Hz oscillation",
+        if not assessed_any:
+            if slow_rate is not None:
+                return self._skip(
+                    f"Angular rate is logged at {slow_rate:.1f} Hz; oscillation analysis needs "
+                    f"at least {MIN_RATE_HZ:.0f} Hz."
                 )
-            ]
-
-            technical_summary = (
-                f"{axis_name.capitalize()} axis: dominant oscillation at {dominant_hz:.1f} Hz, "
-                f"normalised amplitude {norm_amp:.2f} ({level.lower()}). "
-                f"Sample rate {sample_rate:.0f} Hz. "
-                f"Current {param_name}={current_p}, suggested={suggested_p}."
+            return self._skip(
+                f"Not enough angular-rate data ({phases.describe()}) for a {SEGMENT_S:.0f} s analysis window."
             )
-
-            findings.append(Finding(
-                category=Category.OSCILLATION,
-                severity=severity,
-                title=f"{axis_name.capitalize()}-Axis Oscillation at {dominant_hz:.1f} Hz",
-                technical_summary=technical_summary,
-                plain_english=technical_summary,   # overwritten by the explanation engine
-                recommendation=f"Reduce {param_name} from {current_p} to {suggested_p}.",
-                confidence=float(np.clip(norm_amp, 0.0, 1.0)),
-                chart_data={
-                    "axis": axis_name,
-                    **all_chart_data[axis_name],
-                },
-                param_changes=param_changes,
-            ))
-
-        key_metrics = {}
-        for axis_name, data in all_chart_data.items():
-            key_metrics[f"{axis_name}_peak_hz"]  = round(data["peak_hz"], 3)
-            key_metrics[f"{axis_name}_norm_amp"] = round(data["norm_amp"], 3)
 
         return AnalyserResult(
             analyser=self.name,
@@ -165,68 +127,167 @@ class OscillationAnalyser(BaseAnalyser):
             key_metrics=key_metrics,
         )
 
-    # ── helpers ─────────────────────────────────────────────────────────────
+    def _spectrogram(self, ts, x, fs):
+        """Per-window PSDs over every gap-free stretch. Returns the band
+        frequencies, PSD columns, window centre times (µs) and the full
+        frequency axis + mean PSD for the chart; None if no stretch is long
+        enough for one window."""
+        nper = int(2 ** round(np.log2(SEGMENT_S * fs)))
+        dt_us = 1e6 / fs
+        breaks = np.flatnonzero(np.diff(ts) > GAP_FACTOR * dt_us) + 1
+        cols, times = [], []
+        freqs = None
+        for seg in np.split(np.arange(len(ts)), breaks):
+            if len(seg) < nper:
+                continue
+            t_seg = ts[seg]
+            grid = np.arange(t_seg[0], t_seg[-1], dt_us)
+            if len(grid) < nper:
+                continue
+            y = np.interp(grid, t_seg, x[seg])
+            f, tt, S = signal.spectrogram(
+                y, fs=fs, window="hann", nperseg=nper, noverlap=nper // 2,
+                detrend="constant", scaling="density", mode="psd",
+            )
+            freqs = f
+            cols.append(S)
+            times.append(grid[0] + tt * 1e6)
+        if not cols:
+            return None
 
-    def _find_col(self, df: pd.DataFrame, candidates: list[str]) -> Optional[str]:
-        for c in candidates:
-            if c in df.columns:
-                return c
-        return None
+        S = np.concatenate(cols, axis=1)
+        hi = min(FREQ_HIGH_CAP, 0.8 * fs / 2)
+        band = (freqs >= FREQ_LOW) & (freqs <= hi)
+        return {
+            "freqs": freqs, "band": band, "S": S,
+            "times": np.concatenate(times), "df": float(freqs[1] - freqs[0]),
+            "fs": fs, "seg_us": nper * dt_us,
+        }
 
-    def _analyse_axis(
-        self,
-        data: np.ndarray,
-        sample_rate: float,
-    ) -> tuple[str, float, float, np.ndarray, np.ndarray]:
-        """
-        Returns (level, dominant_hz, norm_amplitude, freq_bins, amplitudes)
-        level ∈ {"NONE", "MILD", "MODERATE", "SEVERE"}
-        """
-        # Detrend + window
-        detrended = data - np.mean(data)
-        window    = np.hanning(len(detrended))
-        windowed  = detrended * window
+    def _worst(self, spec):
+        fb = spec["freqs"][spec["band"]]
+        Sb = spec["S"][spec["band"]]
+        cols = np.arange(Sb.shape[1])
+        pk = Sb.argmax(axis=0)
+        floor = np.median(Sb, axis=0)
+        prom = Sb[pk, cols] / np.maximum(floor, 1e-30)
 
-        # FFT — keep positive frequencies only
-        spectrum = np.abs(fft.fft(windowed))
-        freqs    = fft.fftfreq(len(windowed), d=1.0 / sample_rate)
-        pos_mask = freqs > 0
-        freqs    = freqs[pos_mask]
-        spectrum = spectrum[pos_mask]
+        # sinusoid power = PSD above the floor over the Hann main lobe
+        amp = np.empty(len(cols))
+        for j, k in enumerate(pk):
+            lo, hi = max(0, k - 2), min(len(fb), k + 3)
+            p = np.clip(Sb[lo:hi, j] - floor[j], 0, None).sum() * spec["df"]
+            amp[j] = np.degrees(np.sqrt(2 * p))
+        amp[prom < MIN_PROMINENCE] = 0.0
 
-        if len(spectrum) == 0:
-            return "NONE", 0.0, 0.0, np.array([]), np.array([])
-
-        # Interest band mask
-        band_mask = (freqs >= FREQ_LOW) & (freqs <= FREQ_HIGH)
-        if not band_mask.any():
-            return "NONE", 0.0, 0.0, freqs, spectrum
-
-        band_freqs   = freqs[band_mask]
-        band_spectrum = spectrum[band_mask]
-
-        # Find peaks
-        min_height = band_spectrum.max() * 0.15
-        peaks, _   = signal.find_peaks(band_spectrum, height=min_height, distance=3)
-
-        if len(peaks) == 0:
-            return "NONE", 0.0, 0.0, freqs, spectrum
-
-        # Dominant peak
-        dominant_idx = peaks[np.argmax(band_spectrum[peaks])]
-        dominant_hz  = float(band_freqs[dominant_idx])
-        peak_amp     = float(band_spectrum[dominant_idx])
-        median_val   = np.median(band_spectrum)
-        norm_amp     = peak_amp / median_val if median_val > 0 else 0.0
-
-        # Classify
-        if norm_amp > THRESH_SEVERE and SEVERE_BAND_LOW <= dominant_hz <= SEVERE_BAND_HIGH:
-            level = "SEVERE"
-        elif norm_amp > THRESH_MODERATE:
-            level = "MODERATE"
-        elif norm_amp > THRESH_MILD:
-            level = "MILD"
+        # sustained = median of three neighbouring windows (~8 s), so one
+        # window with a bump doesn't count
+        amp_s = pd.Series(amp).rolling(3, min_periods=1, center=True).median().to_numpy()
+        prom_s = pd.Series(prom).rolling(3, min_periods=1, center=True).median().to_numpy()
+        j = int(np.argmax(amp_s))
+        if amp_s[j] > 0:
+            peak_hz = float(fb[pk[j]])
         else:
-            level = "NONE"
+            # nothing stands out; report where the average spectrum peaks so
+            # the trend metric still means something
+            peak_hz = float(fb[np.argmax(Sb.mean(axis=1))])
 
-        return level, dominant_hz, norm_amp, freqs, spectrum
+        # windows that carry the same oscillation, for the time span
+        same = (amp >= AMP_MILD) & (np.abs(fb[pk] - peak_hz) <= 2.0)
+        half = spec["seg_us"] / 2
+        t0 = float(spec["times"][same].min() - half) if same.any() else None
+        t1 = float(spec["times"][same].max() + half) if same.any() else None
+        hop_s = spec["seg_us"] / 2e6
+        return {
+            "peak_hz": peak_hz,
+            "amp_dps": float(amp_s[j]),
+            "prominence": float(prom_s[j]),
+            "t0": t0, "t1": t1,
+            "duration_s": float(same.sum() * hop_s),
+            "fs": spec["fs"],
+        }
+
+    def _level(self, res) -> str:
+        if res["prominence"] < MIN_PROMINENCE:
+            return "NONE"
+        a = res["amp_dps"]
+        if a >= AMP_SEVERE:
+            return "SEVERE"
+        if a >= AMP_MODERATE:
+            return "MODERATE"
+        if a >= AMP_MILD:
+            return "MILD"
+        return "NONE"
+
+    def _chart(self, spec) -> dict:
+        f = spec["freqs"]
+        psd = spec["S"].mean(axis=1)
+        keep = f >= CHART_FREQ_MIN
+        f, psd = f[keep], psd[keep]
+        step = max(1, int(np.ceil(len(f) / CHART_MAX_BINS)))
+        return {
+            "frequencies": to_list(f[::step]),
+            "amplitudes": to_list(np.sqrt(psd[::step])),   # rad/s/√Hz
+        }
+
+    def _finding(self, axis, level, res, fs, chart, params, vehicle, phases) -> Finding:
+        hz = res["peak_hz"]
+        amp = res["amp_dps"]
+        severity = {"SEVERE": Severity.CRITICAL, "MODERATE": Severity.WARNING, "MILD": Severity.INFO}[level]
+        threshold = {"SEVERE": AMP_SEVERE, "MODERATE": AMP_MODERATE, "MILD": AMP_MILD}[level]
+        p_name, d_name = rate_gain_names(vehicle, axis)
+
+        changes: list[ParamRecommendation] = []
+        if hz < MID_BAND_HZ:
+            kind = "oscillation.rate_p"
+            rec = f"Lower the {axis} rate P gain by about 13%."
+            cur = params.get(p_name) if p_name else None
+            if cur is not None and cur > 0:
+                new = round(cur * 0.87, 4)
+                changes.append(ParamRecommendation(
+                    param_name=p_name, current_value=round(cur, 6), suggested_value=new,
+                    change_direction="decrease",
+                    reason=f"Reduce {axis}-rate P by ~13% to damp the {hz:.1f} Hz oscillation",
+                ))
+                rec = f"Reduce {p_name} from {cur:g} to {new:g} (about 13%), then re-test."
+        elif hz < HIGH_BAND_HZ:
+            kind = "oscillation.rate_d"
+            rec = f"Lower the {axis} rate D gain by about 15%, or lower the D-term filter cutoff."
+            cur = params.get(d_name) if d_name else None
+            if cur is not None and cur > 0:
+                new = round(cur * 0.85, 5)
+                changes.append(ParamRecommendation(
+                    param_name=d_name, current_value=round(cur, 6), suggested_value=new,
+                    change_direction="decrease",
+                    reason=f"{hz:.0f} Hz is D-term territory; reduce {axis}-rate D by ~15%",
+                ))
+                rec = (f"Reduce {d_name} from {cur:g} to {new:g} (about 15%), or lower the "
+                       f"D-term filter cutoff. Don't raise D for this one.")
+        else:
+            kind = "oscillation.mechanical"
+            rec = ("Check props, motor mounts and flight-controller mounting before touching gains; "
+                   "if it persists, set up a notch filter at this frequency.")
+
+        if not changes and kind != "oscillation.mechanical" and p_name is None:
+            rec += f" (No {axis} gain is suggested for this vehicle type: {vehicle.frame}, {vehicle.autopilot}.)"
+
+        tech = (
+            f"{axis.capitalize()} rate oscillation at {hz:.1f} Hz, amplitude {amp:.1f} deg/s "
+            f"({level.lower()}, threshold {threshold:.0f} deg/s), peak {res['prominence']:.0f}x "
+            f"the noise floor, present for ~{res['duration_s']:.0f} s {phases.describe()}. "
+            f"Rate data at {fs:.0f} Hz."
+        )
+        quality = min(1.0, (fs / 2) / (2 * hz)) if hz > 0 else 1.0
+        return Finding(
+            category=Category.OSCILLATION,
+            severity=severity,
+            kind=kind,
+            title=f"{axis.capitalize()}-Axis Oscillation at {hz:.1f} Hz",
+            technical_summary=tech,
+            plain_english=tech,
+            recommendation=rec,
+            confidence=confidence(amp / threshold - 1, res["duration_s"], quality),
+            chart_data=chart,
+            param_changes=changes,
+            **when(res["t0"], res["t1"]),
+        )

@@ -1,10 +1,15 @@
 """
-ScoreCalculator — weighted health score from analyser results.
+Overall health score: weighted mean of the assessed modules' own scores.
+
+Each analyser's health_score is used as it computed it (with its own caps
+and extra penalties). Modules that were skipped or couldn't check anything
+are left out of the mean, and when none could be assessed the report is
+"Not assessed", never 100 / A.
 """
 
 from flightmd_core.models.findings import AnalyserResult, Severity
 
-# Weights must sum to 100
+# sum to 100; ascent_profile is deliberately unweighted (see its docstring)
 MODULE_WEIGHTS: dict[str, float] = {
     "oscillation": 20.0,
     "vibration":   20.0,
@@ -15,6 +20,7 @@ MODULE_WEIGHTS: dict[str, float] = {
     "motors":       5.0,
 }
 
+# the usual per-finding penalties; analysers apply their own variants
 SEVERITY_PENALTY: dict[str, float] = {
     Severity.CRITICAL: 30.0,
     Severity.WARNING:  15.0,
@@ -22,76 +28,60 @@ SEVERITY_PENALTY: dict[str, float] = {
     Severity.GOOD:      0.0,
 }
 
-SCORE_LABELS = [
-    (90, "Excellent"),
-    (75, "Good"),
-    (60, "Caution"),
-    (40, "Warning"),
-    (0,  "Critical"),
+NOT_ASSESSED_LABEL = "Not assessed"
+NOT_ASSESSED_GRADE = "-"
+
+# one table for both, so a label and a grade can't disagree
+# (score floor, label, grade)
+BANDS = [
+    (90, "Excellent", "A"),
+    (80, "Good",      "B"),
+    (70, "Caution",   "C"),
+    (60, "Caution",   "D"),
+    (50, "Warning",   "E"),
+    (0,  "Critical",  "F"),
 ]
+SCORE_LABELS = [(floor, label) for floor, label, _ in BANDS]
 
 
 class ScoreCalculator:
     def calculate(self, results: list[AnalyserResult]) -> tuple[float, str, str]:
-        """
-        Calculate overall health score, label, and letter grade.
-
-        Returns:
-            (score, label, letter_grade) where score ∈ [0, 100]
-        """
+        """(score 0-100, label, letter grade). Marks unassessed results
+        (assessed=False) as a side effect. Nothing assessed gives
+        (0.0, "Not assessed", "-")."""
         total_weight = 0.0
         weighted_sum = 0.0
 
-        # Build a lookup by analyser name
-        result_map = {r.analyser: r for r in results}
-
-        for module_name, weight in MODULE_WEIGHTS.items():
-            if module_name not in result_map:
-                # Analyser wasn't applicable — skip (don't penalise)
-                continue
-            r = result_map[module_name]
+        for r in results:
             if r.skipped:
-                # Skipped — don't penalise, don't count
+                r.assessed = False
+            if r.analyser not in MODULE_WEIGHTS or not r.assessed:
                 continue
-
-            # Apply per-finding penalties to module score
-            module_score = 100.0
-            for finding in r.findings:
-                penalty = SEVERITY_PENALTY.get(finding.severity, 0.0)
-                module_score = max(0.0, module_score - penalty)
-
-            # Update result's health_score field
-            r.health_score = module_score
-
-            weighted_sum  += module_score * weight
-            total_weight  += weight
+            weight = MODULE_WEIGHTS[r.analyser]
+            r.health_score = max(0.0, min(100.0, r.health_score))
+            weighted_sum += r.health_score * weight
+            total_weight += weight
 
         if total_weight == 0:
-            overall = 100.0
-        else:
-            overall = weighted_sum / total_weight
+            return 0.0, NOT_ASSESSED_LABEL, NOT_ASSESSED_GRADE
 
-        overall = round(max(0.0, min(100.0, overall)), 1)
-        label   = self._label(overall)
-        grade   = self.get_letter_grade(overall)
-        return overall, label, grade
+        overall = round(max(0.0, min(100.0, weighted_sum / total_weight)), 1)
+        return overall, self._label(overall), self.get_letter_grade(overall)
+
+    def assessed_fraction(self, results: list[AnalyserResult]) -> float:
+        """Share of the total weight that was actually assessed, 0-1."""
+        done = sum(MODULE_WEIGHTS.get(r.analyser, 0.0) for r in results
+                   if r.assessed and not r.skipped)
+        return round(done / sum(MODULE_WEIGHTS.values()), 3)
 
     def get_letter_grade(self, score: float) -> str:
-        if score >= 90:
-            return "A"
-        elif score >= 80:
-            return "B"
-        elif score >= 70:
-            return "C"
-        elif score >= 60:
-            return "D"
-        elif score >= 50:
-            return "E"
-        else:
-            return "F"
+        for floor, _, grade in BANDS:
+            if score >= floor:
+                return grade
+        return "F"
 
     def _label(self, score: float) -> str:
-        for threshold, label in SCORE_LABELS:
-            if score >= threshold:
+        for floor, label, _ in BANDS:
+            if score >= floor:
                 return label
         return "Critical"
