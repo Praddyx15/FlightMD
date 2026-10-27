@@ -264,4 +264,4 @@ class TestPreFixRows:
         alt = np.concatenate([ascent, fast, np.clip(crawl, 0, None), np.zeros(50)])
         gps = make_gps_df(alt, dt_s=dt)
         result = AscentProfileAnalyser().safe_analyse({"vehicle_gps_position": gps}, {})
-        assert not any("Parachute Deployment Detected" in f.title for f in result.findings)
+        assert not any(f.kind == "ascent.deployment" for f in result.findings)
