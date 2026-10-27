@@ -9,7 +9,6 @@
   "plugins": ["@typescript-eslint", "tailwindcss"],
   "settings": {
     "tailwindcss": {
-      "config": "tailwind.config.ts",
       "callees": ["cn", "clsx"]
     }
   },
