@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     ask_rate_limit_per_hour: int = 30
     pdf_rate_limit_per_hour: int = 30
     max_concurrent_analyses: int = 2
-    cors_origins: str = "http://localhost:3000,http://localhost:3001"
+    cors_origins: str = "http://localhost:3000,http://localhost:3001,http://localhost:3100,http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:3100"
     app_version: str = _package_version()
 
     # Comma-separated IPs/CIDRs of reverse proxies whose X-Forwarded-For we believe.
