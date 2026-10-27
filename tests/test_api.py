@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from flightmd_core.models.findings import FlightMDReport
 from flightmd_core.models.metadata import FlightMetadata
 
-ULOG_MAGIC = b"\x55\x4C\x6F\x67\x01\x00\x00\x00" + b"\x00" * 100
+ULOG_MAGIC = b"ULog\x01\x12\x35\x01" + b"\x00" * 100
 ULOG_SHA = hashlib.sha256(ULOG_MAGIC).hexdigest()
 
 
