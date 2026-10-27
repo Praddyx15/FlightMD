@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useState } from "react";
 import { ChevronDown } from "lucide-react";
+import { useTranslations } from "next-intl";
 import type { Finding } from "@/lib/types";
 import { SeverityBadge } from "@/components/shared/SeverityBadge";
 import { CategoryIcon } from "@/components/shared/CategoryIcon";
@@ -16,6 +17,7 @@ interface Props {
 }
 
 export function FindingCard({ finding, defaultOpen = false, activeId, onShowChart }: Props) {
+  const t = useTranslations("findings");
   const [open, setOpen] = useState(defaultOpen);
   const bodyId = useId();
   const active = activeId === finding.id;
@@ -55,7 +57,7 @@ export function FindingCard({ finding, defaultOpen = false, activeId, onShowChar
           aria-controls={bodyId}
           className="btn no-print shrink-0 px-2"
         >
-          <span className="sr-only">{open ? "Hide details" : "Show details"} for {finding.title}</span>
+          <span className="sr-only">{t(open ? "hideDetails" : "showDetails", { title: finding.title })}</span>
           <ChevronDown aria-hidden className={cn("h-4 w-4 transition-transform", open && "rotate-180")} />
         </button>
       </div>

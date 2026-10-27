@@ -3,10 +3,16 @@ import { isNum } from "./format";
 
 // chart_data is an untyped dict from the analysers. Everything is checked here, once:
 // non-numbers and nulls become null (drawn as a gap, never as 0), wrong shapes give no chart.
+// Text comes out as message keys under "charts" so the chart components translate it.
+
+export interface Msg {
+  key: string;
+  values?: Record<string, string | number>;
+}
 
 export interface Series {
   key: string;
-  label: string;
+  label: Msg;
   values: (number | null)[];
   axis?: "left" | "right";
   step?: boolean;
@@ -16,19 +22,19 @@ export interface TimeChartSpec {
   kind: "time";
   key: string;
   category: Finding["category"];
-  title: string;
+  title: Msg;
   t: number[]; // log-relative seconds
   series: Series[];
   leftUnit?: string;
   rightUnit?: string;
-  refLines?: { y: number; label: string; axis?: "left" | "right" }[];
+  refLines?: { y: number; label: Msg; axis?: "left" | "right" }[];
 }
 
 export interface SpectrumChartSpec {
   kind: "spectrum";
   key: string;
   category: Finding["category"];
-  title: string;
+  title: Msg;
   freq: number[];
   amp: (number | null)[];
   peakHz: number | null;
@@ -62,7 +68,7 @@ function pickIndices(t: (number | null)[]): number[] {
 function timeSpec(
   key: string,
   category: Finding["category"],
-  title: string,
+  title: Msg,
   rawT: unknown,
   series: Series[],
   extra: Partial<TimeChartSpec> = {}
@@ -100,7 +106,7 @@ export function chartSpecsFor(f: Finding): ChartSpec[] {
         kind: "spectrum",
         key: `oscillation:${axis}`,
         category: f.category,
-        title: `Frequency spectrum, ${axis || "rate"} axis`,
+        title: axis ? { key: "spectrumAxis", values: { axis } } : { key: "spectrum" },
         freq: keep.map((i) => freq[i] as number),
         amp: keep.map((i) => amp[i]),
         peakHz: isNum(cd.peak_hz) ? cd.peak_hz : null,
@@ -113,15 +119,32 @@ export function chartSpecsFor(f: Finding): ChartSpec[] {
         ? Object.entries(cd.instances).filter((e): e is [string, Dict] => isDict(e[1]))
         : [["", cd]];
       return sources.slice(0, 3).flatMap(([name, d]) => {
+        // the autopilot's own vibration metric: one series against its warn/crit limits
+        if (Array.isArray(d.vibe)) {
+          const metric = typeof d.metric === "string" ? d.metric : "";
+          const refLines = [
+            ...(isNum(d.warn) ? [{ y: d.warn, label: { key: "vibeWarn", values: { v: d.warn } } }] : []),
+            ...(isNum(d.crit) ? [{ y: d.crit, label: { key: "vibeCrit", values: { v: d.crit } } }] : []),
+          ];
+          const spec = timeSpec(
+            `vibration:${name || metric || "vibe"}`,
+            f.category,
+            metric ? { key: "vibeMetric", values: { metric } } : { key: "vibe" },
+            d.timestamps,
+            [{ key: "vibe", label: { key: metric ? "raw" : "vibe", values: { text: metric } }, values: nums(d.vibe) }],
+            { leftUnit: /gyro/i.test(metric) ? "rad/s" : "m/s²", refLines }
+          );
+          return spec ? [spec] : [];
+        }
         const spec = timeSpec(
           `vibration:${name}`,
           f.category,
-          `IMU acceleration${name ? ` (${name})` : ""}`,
+          name ? { key: "imuNamed", values: { name } } : { key: "imu" },
           d.timestamps,
           [
-            { key: "x", label: "X", values: nums(d.x) },
-            { key: "y", label: "Y", values: nums(d.y) },
-            { key: "z", label: "Z", values: nums(d.z) },
+            { key: "x", label: { key: "axis", values: { axis: "X" } }, values: nums(d.x) },
+            { key: "y", label: { key: "axis", values: { axis: "Y" } }, values: nums(d.y) },
+            { key: "z", label: { key: "axis", values: { axis: "Z" } }, values: nums(d.z) },
           ],
           { leftUnit: "m/s²" }
         );
@@ -130,34 +153,34 @@ export function chartSpecsFor(f: Finding): ChartSpec[] {
     }
 
     case "battery": {
-      const spec = timeSpec("battery", f.category, "Battery voltage and current", cd.timestamps, [
-        { key: "v", label: "Voltage", values: nums(cd.voltage), axis: "left" },
-        { key: "i", label: "Current", values: nums(cd.current), axis: "right" },
+      const spec = timeSpec("battery", f.category, { key: "battery" }, cd.timestamps, [
+        { key: "v", label: { key: "voltage" }, values: nums(cd.voltage), axis: "left" },
+        { key: "i", label: { key: "current" }, values: nums(cd.current), axis: "right" },
       ], { leftUnit: "V", rightUnit: "A" });
       return spec ? [spec] : [];
     }
 
     case "gps": {
-      const spec = timeSpec("gps", f.category, "GPS satellites and HDOP", cd.timestamps, [
-        { key: "sats", label: "Satellites", values: nums(cd.satellites), axis: "left", step: true },
-        { key: "hdop", label: "HDOP", values: nums(cd.hdop), axis: "right" },
-      ], { refLines: [{ y: 2, label: "HDOP 2", axis: "right" }] });
+      const spec = timeSpec("gps", f.category, { key: "gps" }, cd.timestamps, [
+        { key: "sats", label: { key: "satellites" }, values: nums(cd.satellites), axis: "left", step: true },
+        { key: "hdop", label: { key: "hdop" }, values: nums(cd.hdop), axis: "right" },
+      ], { refLines: [{ y: 2, label: { key: "hdopLimit", values: { v: 2 } }, axis: "right" }] });
       return spec ? [spec] : [];
     }
 
     case "ekf": {
-      const ref = [{ y: 1, label: "Test limit 1.0" }];
+      const ref = [{ y: 1, label: { key: "testLimit" } }];
       if (isDict(cd.innov_ratios)) {
         const series = Object.entries(cd.innov_ratios)
           .slice(0, 6)
-          .map(([k, v]) => ({ key: k, label: k, values: nums(v) }));
-        const spec = timeSpec("ekf", f.category, "EKF innovation test ratios", cd.timestamps, series, { refLines: ref });
+          .map(([k, v]) => ({ key: k, label: { key: "raw", values: { text: k } }, values: nums(v) }));
+        const spec = timeSpec("ekf", f.category, { key: "ekf" }, cd.timestamps, series, { refLines: ref });
         return spec ? [spec] : [];
       }
       if (cd.ratio !== undefined) {
         const col = typeof cd.col === "string" ? cd.col : "ratio";
-        const spec = timeSpec(`ekf:${col}`, f.category, `EKF test ratio: ${col}`, cd.timestamps, [
-          { key: "ratio", label: col, values: nums(cd.ratio) },
+        const spec = timeSpec(`ekf:${col}`, f.category, { key: "ekfColumn", values: { col } }, cd.timestamps, [
+          { key: "ratio", label: { key: "raw", values: { text: col } }, values: nums(cd.ratio) },
         ], { refLines: ref });
         return spec ? [spec] : [];
       }
@@ -168,8 +191,8 @@ export function chartSpecsFor(f: Finding): ChartSpec[] {
       if (!isDict(cd.rpm_per_motor)) return [];
       const series = Object.entries(cd.rpm_per_motor)
         .slice(0, 8)
-        .map(([k, v], i) => ({ key: k, label: `Motor ${i + 1}`, values: nums(v) }));
-      const spec = timeSpec("motors", f.category, "Motor RPM", cd.timestamps, series, { leftUnit: "rpm" });
+        .map(([k, v], i) => ({ key: k, label: { key: "motor", values: { n: i + 1 } }, values: nums(v) }));
+      const spec = timeSpec("motors", f.category, { key: "motors" }, cd.timestamps, series, { leftUnit: "rpm" });
       return spec ? [spec] : [];
     }
 

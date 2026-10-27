@@ -1,7 +1,9 @@
 import type { Config } from "tailwindcss";
 import plugin from "tailwindcss/plugin";
+import tokens from "./design/tokens.json";
 
-// colours resolve to the CSS variables in app/globals.css; the -rgb form keeps bg-x/15 working
+// colours resolve to the CSS variables that scripts/tokens-to-css.mjs writes from
+// design/tokens.json; the -rgb form keeps bg-x/15 working
 const token = (name: string) => `rgb(var(--${name}-rgb) / <alpha-value>)`;
 
 const config: Config = {
@@ -39,9 +41,9 @@ const config: Config = {
         DEFAULT: token("border"),
       },
       borderRadius: {
-        DEFAULT: "6px",
-        sm: "4px",
-        md: "6px",
+        DEFAULT: `${tokens.radius.web}px`,
+        sm: `${tokens.radius.web - 2}px`,
+        md: `${tokens.radius.web}px`,
       },
       fontFamily: {
         sans: ["var(--font-geist-sans)", "ui-sans-serif", "system-ui", "sans-serif"],

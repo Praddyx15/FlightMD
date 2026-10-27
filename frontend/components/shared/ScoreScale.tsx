@@ -1,12 +1,13 @@
+import { useTranslations } from "next-intl";
 import { TONE_CLASSES, type Tone } from "@/lib/utils";
 import { TONE_ICON } from "./SeverityBadge";
 
 const SCORE_BANDS: { range: string; label: string; tone: Tone }[] = [
-  { range: "90–100", label: "Excellent", tone: "ok" },
-  { range: "80–89",  label: "Good",      tone: "ok" },
-  { range: "60–79",  label: "Caution",   tone: "caution" },
-  { range: "50–59",  label: "Warning",   tone: "caution" },
-  { range: "0–49",   label: "Critical",  tone: "critical" },
+  { range: "90–100", label: "excellent", tone: "ok" },
+  { range: "80–89",  label: "good",      tone: "ok" },
+  { range: "60–79",  label: "caution",   tone: "caution" },
+  { range: "50–59",  label: "warning",   tone: "caution" },
+  { range: "0–49",   label: "critical",  tone: "critical" },
 ];
 
 const GRADES = [
@@ -19,10 +20,11 @@ const GRADES = [
 ];
 
 export function ScoreScale() {
+  const t = useTranslations("scoreScale");
   return (
     <div className="panel space-y-4 p-4">
       <div>
-        <h3 className="mb-2 text-sm font-semibold">Overall score, 0–100, weighted across the modules that were assessed</h3>
+        <h3 className="mb-2 text-sm font-semibold">{t("overall")}</h3>
         <ul className="grid grid-cols-2 gap-2 sm:grid-cols-5">
           {SCORE_BANDS.map((b) => {
             const Icon = TONE_ICON[b.tone];
@@ -30,7 +32,7 @@ export function ScoreScale() {
               <li key={b.label} className={`rounded border px-2 py-1.5 ${TONE_CLASSES[b.tone]}`}>
                 <div className="flex items-center gap-1 text-xs font-semibold">
                   <Icon aria-hidden className="h-3.5 w-3.5" />
-                  {b.label}
+                  {t(`bands.${b.label}`)}
                 </div>
                 <div className="num text-2xs text-fg-muted">{b.range}</div>
               </li>
@@ -40,7 +42,7 @@ export function ScoreScale() {
       </div>
 
       <div>
-        <h3 className="mb-2 text-sm font-semibold">Letter grade: the same score on an A–F scale</h3>
+        <h3 className="mb-2 text-sm font-semibold">{t("grades")}</h3>
         <ul className="grid grid-cols-3 gap-2 sm:grid-cols-6">
           {GRADES.map((g) => (
             <li key={g.grade} className="rounded border bg-elevated px-2 py-1.5 text-center">
@@ -51,12 +53,7 @@ export function ScoreScale() {
         </ul>
       </div>
 
-      <p className="text-xs text-fg-muted">
-        Oscillation, vibration and EKF weigh 20 % each; battery and GPS 15 % each; parameters and
-        motors 5 % each. Ascent &amp; Recovery (rockets, balloons) is situational and not weighted.
-        A module that could not be assessed is left out of the score and shown as &quot;Not
-        assessed&quot;, never as 100.
-      </p>
+      <p className="text-xs text-fg-muted">{t("weights")}</p>
     </div>
   );
 }

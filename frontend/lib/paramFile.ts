@@ -9,7 +9,7 @@ export function guessAutopilot(report: FlightMDReport): "ardupilot" | "px4" | nu
   const m = report.metadata;
   const fw = `${m.firmware_version ?? ""} ${m.vehicle_type ?? ""}`.toLowerCase();
   const name = report.file_name.toLowerCase();
-  if (m.px4_version || /px4/.test(fw) || /\.ulog?$/.test(name)) return "px4";
+  if (m.px4_version || /px4/.test(fw) || /\.ulo?g$/.test(name)) return "px4";
   if (/ardu|copter|plane|rover|sub\b/.test(fw) || name.endsWith(".bin")) return "ardupilot";
   const names = report.param_change_sheet.map((p) => p.param_name);
   if (names.some((n) => /^(ATC_|INS_|PSC_|MOT_|BATT_|EK3_)/.test(n))) return "ardupilot";
@@ -58,7 +58,8 @@ export function paramLine(p: ParamRecommendation, format: ParamFormat): string {
     : `${p.param_name},${fmtParam(p.suggested_value)}`;
 }
 
-export const FORMAT_FILE: Record<ParamFormat, { name: string; label: string }> = {
-  missionplanner: { name: "flightmd_changes.param", label: "Mission Planner (.param)" },
-  qgc: { name: "flightmd_changes.params", label: "QGroundControl (.params)" },
+// display names are in messages ("params.formats")
+export const FORMAT_FILE: Record<ParamFormat, { name: string }> = {
+  missionplanner: { name: "flightmd_changes.param" },
+  qgc: { name: "flightmd_changes.params" },
 };

@@ -1,0 +1,671 @@
+{
+  "meta": {
+    "title": "FlightMD: drone flight log diagnostics",
+    "description": "Upload a PX4, ArduPilot or MAVLink telemetry log and get a deterministic diagnostic report: oscillation, vibration, EKF health, battery, GPS, parameters and motors, with the parameter changes to make.",
+    "ogDescription": "Deterministic drone flight log diagnostics for PX4, ArduPilot and MAVLink.",
+    "report": {
+      "description": "Health score {score}, grade {grade} · {vehicle} · flown {date}",
+      "descriptionNotAssessed": "Not assessed · {vehicle} · flown {date}",
+      "pendingTitle": "Analysing flight log",
+      "missingTitle": "Report not found",
+      "unknownVehicle": "unknown vehicle",
+      "unknownDate": "date unknown"
+    }
+  },
+  "layout": {
+    "skip": "Skip to main content",
+    "nav": "Site",
+    "github": "GitHub",
+    "apiDocs": "API docs",
+    "suite": "Part of {suite}: FlightMD · AeroAtlas · UAOP",
+    "license": "MIT License · Pradum Behl · Untagged reports expire after 1 hour"
+  },
+  "common": {
+    "copyNamed": "Copy {name}"
+  },
+  "theme": {
+    "toLight": "Switch to light (field) theme",
+    "toDark": "Switch to dark (ops) theme",
+    "lightTitle": "Light theme",
+    "darkTitle": "Dark theme"
+  },
+  "units": {
+    "label": "Units",
+    "metric": "Metric (m, m/s, °C)",
+    "imperial": "Imperial (ft, mph, °F)",
+    "aviation": "Aviation (ft, kt, °C)"
+  },
+  "errors": {
+    "generic": "Something went wrong. Please try again.",
+    "network": "Network error. Is the API running?",
+    "timeout": "The server took too long to answer.",
+    "invalidResponse": "Invalid response from server.",
+    "airframeBelongs": "This airframe belongs to someone else, or needs its access token.",
+    "airframeNeedsToken": "This airframe needs its access token.",
+    "airframeWrongToken": "That token does not match this airframe.",
+    "tooLarge": "File too large for this server.",
+    "uploadLimit": "Upload limit reached. Try again later.",
+    "busy": "Server busy, try again in a minute.",
+    "server": "Server error ({status}).",
+    "upload": "Upload failed. Please try again.",
+    "uploadTimeout": "Upload timed out.",
+    "uploadCancelled": "Upload cancelled.",
+    "datasetStats": "Dataset stats error ({status}).",
+    "status": "Status check failed ({status}).",
+    "report": "Could not load the report ({status}).",
+    "download": "Download failed ({status}).",
+    "trends": "Could not load the trend history ({status}).",
+    "diffNotFound": "One or both reports were not found or have expired.",
+    "diff": "Cannot compare these two flights ({status}).",
+    "askLimit": "Too many questions for now. Try again in a minute.",
+    "ask": "The AI request failed ({status}).",
+    "airframeConfig": "Could not load the airframe settings ({status}).",
+    "airframeUpdate": "Could not save the settings ({status}).",
+    "maintenance": "Could not add the entry ({status}).",
+    "changesSave": "Could not record the changes ({status}).",
+    "changes": "Could not load the applied changes ({status}).",
+    "claim": "Could not claim this airframe.",
+    "alertsSave": "Could not save the alert rules.",
+    "withdraw": "Could not withdraw the contribution ({status})."
+  },
+  "errorPage": {
+    "title": "Something broke on this page",
+    "body": "The page hit an error while drawing. Your report is not lost: reload, or go back and open it again.",
+    "retry": "Try again",
+    "home": "Home"
+  },
+  "notFound": {
+    "title": "Page not found",
+    "body": "There is nothing at this address.",
+    "cta": "Analyse a log"
+  },
+  "unavailable": {
+    "message": "{what} unavailable: the data in this report could not be drawn.",
+    "section": "This section",
+    "chart": "Chart",
+    "charts": "Charts",
+    "flightPath": "Flight path",
+    "map": "Map",
+    "view3d": "3D view"
+  },
+  "home": {
+    "hero": "Find out why your drone flew badly.",
+    "intro": "Drop a PX4 .ulg, ArduPilot .bin or MAVLink .tlog. About 20 seconds later you get a scored report and the exact parameter changes to make. Deterministic, no account, untagged logs deleted after 1 hour.",
+    "unsupported": "Unsupported file. Upload a PX4 (.ulg), ArduPilot (.bin or .log), MAVLink (.tlog), Betaflight (.bbl) or DJI (.txt, .DAT) log, or one of them in a .gz or .zip.",
+    "tooLarge": "File too large. The limit is {mb} MB.",
+    "tokenHint": "If this is your airframe, paste its access token on the <link>airframe page</link>, then upload again.",
+    "dismiss": "Dismiss",
+    "airframeLabel": "Airframe label (optional)",
+    "airframePlaceholder": "e.g. Quad-1",
+    "airframeHelp": "Untagged flights expire after 1 hour. A label keeps this flight in that airframe's trend history; the first time you manage a label you get an access token for it.",
+    "contribute": "Contribute this log anonymously",
+    "contributeHelp": "Saves a copy of the log and its report to FlightMD's open dataset to improve the analysis. No name, account or source is stored. Off by default.",
+    "checksTitle": "What it checks",
+    "checks": {
+      "oscillation": {
+        "name": "Oscillation",
+        "what": "control-loop oscillation per axis, with the rate-P change to make"
+      },
+      "vibration": {
+        "name": "Vibration",
+        "what": "IMU RMS and clipping per sensor"
+      },
+      "ekf": {
+        "name": "EKF health",
+        "what": "innovation test ratios and solution flags"
+      },
+      "battery": {
+        "name": "Battery",
+        "what": "sag per cell under load"
+      },
+      "gps": {
+        "name": "GPS",
+        "what": "fix, satellites, HDOP, jamming"
+      },
+      "parameters": {
+        "name": "Parameters",
+        "what": "known-bad and out-of-range values"
+      },
+      "motors": {
+        "name": "Motors / ESC",
+        "what": "balance, dropouts, saturation"
+      }
+    },
+    "checksNote": "Rockets and balloons also get an ascent & recovery check, and logs with board voltage a power supply check; neither is scored. Checks the log has no data for are marked \"Not assessed\".",
+    "scoringTitle": "How scoring works",
+    "briefSummary": "Planned in AeroAtlas? Link the planning brief",
+    "briefLabel": "Planning brief hash (SHA-256)",
+    "briefPlaceholder": "64 hex characters",
+    "briefHelp": "Copy it from the brief in AeroAtlas. The report shows it so the flight can be traced back to its planning evidence.",
+    "badBrief": "The planning brief hash must be 64 hex characters (a SHA-256)."
+  },
+  "dropzone": {
+    "inputLabel": "Flight log file",
+    "dropHere": "Drop the log here",
+    "prompt": "Drop a flight log here, or click to choose one",
+    "chips": {
+      "px4": "PX4 .ulg",
+      "ardupilot": "ArduPilot .bin .log",
+      "mavlink": "MAVLink .tlog",
+      "betaflight": "Betaflight .bbl",
+      "dji": "DJI .txt .DAT",
+      "compressed": ".gz .zip"
+    },
+    "maxSize": "max {mb} MB",
+    "tooLarge": "{name} is larger than {mb} MB.",
+    "invalidType": "{name} is not a flight log this server reads.",
+    "tooMany": "Drop one log at a time.",
+    "rejected": "File rejected."
+  },
+  "upload": {
+    "uploading": "Uploading flight log",
+    "cancel": "Cancel upload"
+  },
+  "recent": {
+    "title": "Recent on this device",
+    "compare": "Compare selected",
+    "clear": "Clear list",
+    "empty": "Logs you analyse in this browser are listed here. Nothing is shared with other visitors.",
+    "select": "Select {name} to compare",
+    "flown": "Flown {date}",
+    "uploaded": "Uploaded {date}",
+    "expired": "probably expired",
+    "notAssessed": "Not assessed",
+    "remove": "Remove {name} from this list",
+    "withdraw": "Withdraw contribution"
+  },
+  "score": {
+    "notAssessed": "Not assessed",
+    "notAssessedBecause": "Not assessed: {reason}",
+    "aria": "Health score {score} out of 100, {label}"
+  },
+  "scoreScale": {
+    "overall": "Overall score, 0–100, weighted across the modules that were assessed",
+    "bands": {
+      "excellent": "Excellent",
+      "good": "Good",
+      "caution": "Caution",
+      "warning": "Warning",
+      "critical": "Critical"
+    },
+    "grades": "Letter grade: the same score on an A–F scale",
+    "weights": "Oscillation, vibration and EKF weigh 20 % each; battery and GPS 15 % each; parameters and motors 5 % each. Ascent & Recovery (rockets, balloons) and Power supply are reported but not weighted. A module that could not be assessed is left out of the score and shown as \"Not assessed\", never as 100."
+  },
+  "severity": {
+    "critical": "Critical",
+    "warning": "Warning",
+    "info": "Info",
+    "good": "Good"
+  },
+  "report": {
+    "loading": "Loading report",
+    "analysing": "Analysing your flight log",
+    "queued": "Waiting for a free worker…",
+    "working": "Working…",
+    "analysis": "Analysis",
+    "eta": "About {eta} left. The page updates itself; you can leave this tab open.",
+    "usually": "Usually about 20 seconds. You can leave this tab open; the page updates itself.",
+    "retry": "Try again",
+    "analyseAnother": "Analyse another log",
+    "expiredTitle": "Report expired",
+    "expiredBody": "Untagged reports are deleted 1 hour after upload. Upload the log again to get a new one.",
+    "failedTitle": "Analysis failed",
+    "failedDefault": "The log could not be analysed.",
+    "unreachableTitle": "Can't reach the server",
+    "stoppedTitle": "Still not finished",
+    "stoppedBody": "The analysis has run for over 10 minutes, so this page stopped checking. It may still finish.",
+    "displayTitle": "This report could not be displayed",
+    "displayBody": "The report loaded but part of it could not be drawn. The JSON and PDF exports may still work.",
+    "printed": "FlightMD report · {url} · printed {time}",
+    "interrupted": "The server restarted during the analysis. Upload the log again.",
+    "duplicate": "Same log as an earlier upload: this is the report from that upload."
+  },
+  "header": {
+    "flown": "Flown",
+    "dateMissing": "Flight date not in log",
+    "vehicle": "Vehicle",
+    "duration": "Duration",
+    "fileSize": "File size",
+    "planningBrief": "Planning brief",
+    "print": "Print",
+    "copyLink": "Copy link",
+    "linkCopied": "Link copied",
+    "grade": "Grade {grade}",
+    "allClear": "No critical or warning findings",
+    "assessed": "Assessed <num>{done}</num> of <num>{total}</num> checks.",
+    "assessedFraction": "They carry <num>{pct} %</num> of the weighted score.",
+    "notAssessedNote": "Modules the log had no data for are listed as Not assessed below.",
+    "noneAssessed": "None of the checks could run on this log, so there is no score. See flight details for what was missing.",
+    "parserWarnings": "{count, plural, one {# parser warning} other {# parser warnings}}."
+  },
+  "findings": {
+    "title": "Findings",
+    "none": "No findings. Every check that could run on this log passed.",
+    "noPrimary": "No critical or warning findings.",
+    "others": "{count, plural, one {# other check} other {# other checks}} (info and passed)",
+    "filter": "Filter findings by severity",
+    "all": "All",
+    "timeline": "Timeline",
+    "timelineLabel": "Findings along the flight",
+    "marker": "{severity} at {time}: {title}",
+    "armedBand": "grey band = armed",
+    "showDetails": "Show details for {title}",
+    "hideDetails": "Hide details for {title}",
+    "showGroup": "Show the {count} {title} findings",
+    "hideGroup": "Hide the {count} {title} findings",
+    "confidence": "<num>{pct} %</num> conf.",
+    "confidenceLevel": "<num>{pct} %</num> conf. ({level})",
+    "level": {
+      "high": "high",
+      "medium": "medium",
+      "low": "low"
+    },
+    "showOnChart": "Show on chart",
+    "whatToDo": "What to do",
+    "whatHappened": "What happened",
+    "technical": "Technical detail"
+  },
+  "params": {
+    "title": "Parameter changes",
+    "format": "File format",
+    "formats": {
+      "missionplanner": "Mission Planner",
+      "qgc": "QGroundControl"
+    },
+    "copyAll": "Copy all",
+    "copied": "Copied",
+    "selectAll": "Select every change",
+    "select": "Select {name}",
+    "parameter": "Parameter",
+    "current": "Current",
+    "suggested": "Suggested",
+    "reason": "Reason",
+    "copy": "Copy",
+    "copyOne": "Copy {name}",
+    "direction": {
+      "increase": "increase",
+      "decrease": "decrease",
+      "set": "set"
+    },
+    "hintQgc": "QGroundControl: Parameters → Tools → Load from file. Whole-number values are written as INT32, the rest as REAL32; QGC skips a row whose type doesn't match the vehicle.",
+    "hintMp": "Mission Planner: Config → Full Parameter List → Load from file, then Write Params.",
+    "pickedFor": "Format picked for {autopilot}.",
+    "applyHelp": "Tune, fly, verify: tick the changes you put on the vehicle and mark them applied. The next flight tagged with the same airframe label shows whether they helped.",
+    "airframe": "Airframe label",
+    "markApplied": "{count, plural, =0 {Mark as applied} one {Mark # change as applied} other {Mark # changes as applied}}",
+    "applied": "{count, plural, one {# change} other {# changes}} recorded on {label}. The result shows on the <link>airframe page</link> after its next tagged flight.",
+    "needsToken": "Add the airframe's access token on the <link>airframe page</link>, then try again."
+  },
+  "charts": {
+    "evidence": "Evidence",
+    "evidenceNote": "Shaded spans and dashed lines mark when each finding happened, in the finding's severity colour.",
+    "titles": {
+      "spectrum": "Frequency spectrum, rate axis",
+      "spectrumAxis": "Frequency spectrum, {axis} axis",
+      "imu": "IMU acceleration",
+      "imuNamed": "IMU acceleration ({name})",
+      "battery": "Battery voltage and current",
+      "gps": "GPS satellites and HDOP",
+      "ekf": "EKF innovation test ratios",
+      "ekfColumn": "EKF test ratio: {col}",
+      "motors": "Motor RPM",
+      "vibe": "Autopilot vibration metric",
+      "vibeMetric": "Autopilot vibration metric: {metric}"
+    },
+    "series": {
+      "axis": "{axis}",
+      "voltage": "Voltage",
+      "current": "Current",
+      "satellites": "Satellites",
+      "hdop": "HDOP",
+      "motor": "Motor {n}",
+      "raw": "{text}",
+      "vibe": "Vibration"
+    },
+    "refs": {
+      "hdopLimit": "HDOP {v}",
+      "testLimit": "Test limit 1.0",
+      "vibeWarn": "warning limit {v}",
+      "vibeCrit": "critical limit {v}"
+    },
+    "seriesRange": "{label} {lo} to {hi}",
+    "timeAria": "{title}, {from} to {to}. {summary}",
+    "spectrumAria": "{title}, 0 to {max}",
+    "spectrumAriaPeak": "{title}, 0 to {max}, peak at {peak}",
+    "amplitude": "Amplitude",
+    "peak": "peak {hz}",
+    "unitLeft": "{unit}, left",
+    "unitRight": "{unit}, right",
+    "armedShaded": "shaded grey: armed",
+    "trend": "Trend",
+    "trendAria": "{title}, {count} flights",
+    "noValues": "No assessed values yet",
+    "values": "Values",
+    "notAssessed": "not assessed"
+  },
+  "details": {
+    "title": "Flight details",
+    "moduleScores": "Module scores",
+    "flightStart": "Flight start",
+    "duration": "Duration",
+    "armEvents": "Arm events",
+    "maxAltitude": "Max altitude",
+    "maxSpeed": "Max speed",
+    "distance": "Distance",
+    "vehicle": "Vehicle",
+    "airframe": "Airframe",
+    "firmware": "Firmware",
+    "hardware": "Hardware",
+    "modes": "Flight modes",
+    "location": "Location",
+    "weather": "Weather (day)",
+    "windMax": "wind max {wind}",
+    "tempRange": "{min} to {max}",
+    "logFormat": "Log format",
+    "logHash": "Log SHA-256",
+    "processedIn": "Processed in",
+    "schema": "Schema",
+    "parserWarnings": "{count, plural, one {# parser warning} other {# parser warnings}}: parts of the log that were skipped or repaired",
+    "generated": "Report generated"
+  },
+  "formats": {
+    "px4_ulog": "PX4 ULog",
+    "ardupilot_bin": "ArduPilot DataFlash (.bin)",
+    "ardupilot_log": "ArduPilot DataFlash text (.log)",
+    "mavlink_tlog": "MAVLink telemetry (.tlog)",
+    "betaflight_bbl": "Betaflight blackbox",
+    "dji_txt": "DJI flight record (.txt)",
+    "dji_dat": "DJI flight log (.DAT)"
+  },
+  "path": {
+    "title": "Flight path",
+    "noGps": "No GPS positions in this log, so there is no path to draw.",
+    "loadingMap": "Loading map…",
+    "loading3d": "Loading 3D view…",
+    "view": "View",
+    "map": "Map",
+    "view3d": "3D",
+    "colour": "Path colour",
+    "plain": "Plain",
+    "wind": "Wind",
+    "byWind": "Colour by wind speed",
+    "hdop": "HDOP",
+    "byHdop": "Colour by GPS HDOP",
+    "top": "Top",
+    "reset": "Reset",
+    "launch": "Launch",
+    "land": "Land / log end",
+    "legend": {
+      "wind": {
+        "label": "Wind speed",
+        "low": "calm",
+        "high": "strong"
+      },
+      "signal": {
+        "label": "GPS HDOP",
+        "low": "good",
+        "high": "poor"
+      }
+    },
+    "noReading": "grey = no reading",
+    "highlighted": "Blue band: the selected finding",
+    "altRange": "Altitude range (GPS): {range}",
+    "distance": "Distance: {distance}",
+    "orbitHint": "Drag to orbit, scroll to zoom. Height ×3."
+  },
+  "qa": {
+    "title": "Search this report",
+    "titleAI": "Ask about this report",
+    "scope": "Answers come only from this report: its findings, module scores and metrics.",
+    "scopeAI": "The AI is told to answer from this report only; check its answer against the findings.",
+    "useAI": "Use AI",
+    "noProvider": "No AI provider is configured on this server",
+    "aiUnavailable": "This server has no AI provider configured, so questions use the built-in search. That is expected without an API key.",
+    "empty": "Ask about a check, a parameter, or a word from the findings.",
+    "youAsked": "You asked:",
+    "aiAnswer": "AI answer, from this report only",
+    "noAnswer": "No answer came back.",
+    "asking": "Asking…",
+    "to": "to",
+    "presets": {
+      "vibration": "Vibration",
+      "battery": "Battery",
+      "gps": "GPS",
+      "params": "Parameter changes"
+    },
+    "inputLabel": "Question about this report",
+    "placeholder": "e.g. battery, HDOP, MC_ROLLRATE_P",
+    "placeholderAI": "e.g. why did the GPS finding fire?",
+    "ask": "Ask",
+    "search": "Search",
+    "answer": {
+      "params": "{count, plural, =0 {The report suggests no parameter changes.} one {The report suggests # parameter change.} other {The report suggests # parameter changes.}}",
+      "noCheck": "This report has no {label} check.",
+      "notAssessed": "{label}: not assessed.",
+      "notAssessedBecause": "{label}: not assessed ({reason}).",
+      "module": "{label}: module score {score}, {count, plural, one {# finding} other {# findings}}.",
+      "moduleClean": "{label}: no finding in this category; module score {score}.",
+      "matches": "Matches for \"{text}\" in this report:",
+      "nothing": "Nothing in this report mentions \"{text}\". Try a check name: oscillation, vibration, EKF, battery, GPS, motors, or \"parameter changes\"."
+    }
+  },
+  "export": {
+    "title": "Export",
+    "hint": {
+      "pdf": "printable record",
+      "json": "raw report",
+      "gpx": "flight path",
+      "kml": "Google Earth"
+    },
+    "note": "The link to this page works for 1 hour unless the flight was tagged with an airframe label.",
+    "pdfFallback": "This server can't render PDFs, so the print dialog opened instead: choose \"Save as PDF\" there."
+  },
+  "modules": {
+    "oscillation": "Oscillation",
+    "vibration": "Vibration",
+    "ekf": "EKF Health",
+    "battery": "Battery",
+    "gps": "GPS Quality",
+    "parameters": "Parameters",
+    "motors": "Motors / ESC",
+    "ascent_profile": "Ascent & Recovery",
+    "power": "Power supply"
+  },
+  "metrics": {
+    "oscillation": {
+      "roll_peak_hz": "Roll oscillation frequency",
+      "pitch_peak_hz": "Pitch oscillation frequency",
+      "yaw_peak_hz": "Yaw oscillation frequency",
+      "roll_norm_amp": "Roll oscillation amplitude",
+      "pitch_norm_amp": "Pitch oscillation amplitude",
+      "yaw_norm_amp": "Yaw oscillation amplitude"
+    },
+    "vibration": {
+      "max_imu_rms": "Max IMU vibration (RMS)",
+      "total_clip_count": "IMU clip count",
+      "vibration_vs_limit": "Vibration against the autopilot's limit",
+      "max_accel_vibration_metric": "Max accelerometer vibration metric",
+      "max_gyro_vibration_metric": "Max gyro vibration metric"
+    },
+    "battery": {
+      "sag_per_cell_v": "Battery sag per cell"
+    },
+    "ekf": {
+      "max_innovation_ratio": "Max EKF innovation ratio"
+    },
+    "gps": {
+      "max_hdop": "Max GPS HDOP",
+      "min_satellites": "Min satellites tracked"
+    },
+    "motors": {
+      "motor_balance_index": "Motor balance index"
+    },
+    "parameters": {
+      "anomaly_count": "Parameter anomalies"
+    },
+    "ascent_profile": {
+      "apogee_altitude_m": "Apogee altitude",
+      "time_to_apogee_s": "Time to apogee",
+      "peak_boost_g": "Peak boost acceleration",
+      "boost_duration_s": "Boost duration",
+      "parachute_deployment_altitude_m": "Parachute deployment altitude",
+      "time_from_apogee_to_deployment_s": "Apogee to deployment"
+    },
+    "power": {
+      "min_vcc_v": "Min board voltage (Vcc)",
+      "vcc_range_v": "Board voltage range (Vcc)"
+    }
+  },
+  "delta": {
+    "none": "no change",
+    "better": "+{n} better",
+    "worse": "−{n} worse"
+  },
+  "compare": {
+    "loading": "Loading…",
+    "comparing": "Comparing flights…",
+    "needTwo": "Two report ids are needed: /compare?a=…&b=…",
+    "failedTitle": "Could not compare",
+    "home": "Home",
+    "title": "Flight comparison",
+    "mismatch": "These flights are from different vehicles or autopilots, so the module scores are not directly comparable.",
+    "noDates": "The flight date is missing from at least one log, so A and B are in the order you picked them.",
+    "earlier": "Earlier",
+    "later": "Later",
+    "flightA": "Flight A",
+    "flightB": "Flight B",
+    "modules": "Module scores",
+    "module": "Module",
+    "change": "Change",
+    "notAssessed": "not assessed",
+    "metrics": "Raw metrics",
+    "metricsNote": "Higher is not always better here (HDOP, vibration), so changes are shown without colour.",
+    "metric": "Metric",
+    "resolved": "Resolved",
+    "new": "New",
+    "noneResolvedEarlier": "No finding from the earlier flight went away.",
+    "noneResolvedA": "No finding from flight A went away.",
+    "noneNewLater": "No new findings in the later flight.",
+    "noneNewB": "No new findings in flight B.",
+    "persisting": "Still present",
+    "to": "to",
+    "scoreLine": "{label} · Grade {grade}",
+    "flown": "Flown {date}",
+    "dateUnknown": "Flight date unknown"
+  },
+  "airframe": {
+    "malformed": "This airframe link is malformed.",
+    "loading": "Loading {label}…",
+    "loadFailed": "Could not load {label}",
+    "retry": "Try again",
+    "flightCount": "<num>{count}</num> tagged {count, plural, one {flight} other {flights}}",
+    "compare": "Compare selected",
+    "noFlights": "No flights tagged \"{label}\" yet. Upload a log with this airframe label to start its trend history; untagged flights expire after an hour.",
+    "upload": "Upload a flight",
+    "overallTitle": "Overall health score",
+    "overall": "Overall score",
+    "modulesTitle": "Module health over time",
+    "modulesNote": "Gaps are flights where the module was not assessed.",
+    "notAssessed": "not assessed",
+    "metricsTitle": "Raw metrics over time",
+    "metricsNote": "The numbers behind each score: a slow drift shows here before a finding fires.",
+    "historyTitle": "Flight history",
+    "historyNote": "Tick two flights to compare them.",
+    "select": "Select {name} to compare",
+    "uploaded": "Uploaded {date}"
+  },
+  "access": {
+    "unclaimedTitle": "\"{label}\" is not claimed yet",
+    "unclaimedBody": "Claiming the label creates an access token for it. Only someone with the token can read its trend history or change its maintenance log, alerts and webhook. The token is saved in this browser; copy it somewhere safe to use it elsewhere.",
+    "claim": "Claim this airframe",
+    "wrongTitle": "That access token doesn't match",
+    "lockedTitle": "This airframe needs its access token",
+    "lockedBody": "\"{label}\" belongs to whoever claimed it. Paste the token you saved when you claimed it.",
+    "token": "Access token",
+    "useToken": "Use token",
+    "forgetSaved": "Forget the saved token",
+    "saved": "Access token saved in this browser:",
+    "show": "Show token",
+    "hide": "Hide token",
+    "copy": "Copy token",
+    "forget": "Forget"
+  },
+  "alerts": {
+    "title": "Alerts",
+    "help": "When a new flight tagged \"{label}\" breaks a rule, FlightMD posts a message to this airframe's webhook (Slack and Discord work). Only holders of the airframe token can change it.",
+    "overall": "Overall score",
+    "moduleScore": "{module} module score",
+    "badThreshold": "Threshold for \"{metric}\" is not a number.",
+    "badWebhook": "The webhook URL must start with https://",
+    "rule": "Rule {n}",
+    "metric": "Metric",
+    "comparison": "Comparison",
+    "below": "below",
+    "above": "above",
+    "threshold": "Threshold",
+    "description": "Description",
+    "descriptionPlaceholder": "Description (optional)",
+    "remove": "Remove rule {n}",
+    "add": "Add rule",
+    "webhook": "Webhook URL",
+    "webhookPlaceholder": "https://hooks.slack.com/… or https://discord.com/api/webhooks/…",
+    "webhookHelp": "Must be https:// and reach a public address.",
+    "save": "Save alert rules",
+    "saved": "Saved"
+  },
+  "maintenance": {
+    "title": "Maintenance",
+    "record": "Flight record (PDF)",
+    "due": "Due for service: <num>{hours}</num> since last maintenance",
+    "ok": "OK: <num>{hours}</num> since last maintenance",
+    "interval": "(interval <num>{hours}</num>)",
+    "badInterval": "Interval must be a positive number of hours.",
+    "log": "Maintenance log",
+    "noEntries": "No entries yet.",
+    "date": "Date",
+    "work": "Work done",
+    "workPlaceholder": "Work done, e.g. propeller replacement",
+    "notes": "Notes",
+    "notesPlaceholder": "Notes (optional)",
+    "logEntry": "Log entry",
+    "intervalLabel": "Service interval (flight hours)",
+    "intervalPlaceholder": "e.g. 20",
+    "checklist": "Pre-flight checklist",
+    "noItems": "No items yet.",
+    "removeItem": "Remove \"{item}\"",
+    "newItem": "New checklist item",
+    "newItemPlaceholder": "Add a checklist item",
+    "add": "Add",
+    "save": "Save checklist and interval",
+    "saved": "Saved"
+  },
+  "changes": {
+    "title": "Applied changes",
+    "help": "Parameter changes marked as applied from a report's parameter sheet, checked against the next tagged flight: the findings that touch those parameters, and the scores.",
+    "empty": "No changes marked as applied yet. On a report's parameter sheet, tick the changes you made and mark them applied.",
+    "status": {
+      "pending": "Pending: no later flight yet",
+      "improved": "Improved",
+      "unchanged": "Unchanged",
+      "worse": "Worse",
+      "mixed": "Mixed"
+    },
+    "appliedByUser": "Marked applied {when}",
+    "appliedByUaop": "Applied by UAOP {when}",
+    "tableCaption": "Parameters changed",
+    "parameter": "Parameter",
+    "from": "From",
+    "to": "To",
+    "pendingHelp": "Fly again with the same airframe label to see whether this helped.",
+    "resolved": "Resolved findings",
+    "new": "New findings",
+    "noneResolved": "None",
+    "noneNew": "None",
+    "deltas": "Score and metric changes",
+    "overall": "Overall score",
+    "moduleScore": "{module}",
+    "appliedOn": "Flight it came from",
+    "verifiedBy": "Next flight",
+    "compare": "Compare the two"
+  }
+}

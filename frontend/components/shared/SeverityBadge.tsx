@@ -1,6 +1,7 @@
 import { AlertOctagon, AlertTriangle, CheckCircle2, Info, type LucideIcon } from "lucide-react";
+import { useTranslations } from "next-intl";
 import type { Severity } from "@/lib/types";
-import { SEVERITY_LABELS, SEVERITY_TONE, TONE_CLASSES, cn, type Tone } from "@/lib/utils";
+import { SEVERITY_TONE, TONE_CLASSES, cn, type Tone } from "@/lib/utils";
 
 export const TONE_ICON: Record<Tone, LucideIcon> = {
   critical: AlertOctagon,
@@ -15,6 +16,7 @@ export function SeverityIcon({ severity, className }: { severity: Severity; clas
 }
 
 export function SeverityBadge({ severity, count }: { severity: Severity; count?: number }) {
+  const t = useTranslations("severity");
   const tone = SEVERITY_TONE[severity];
   const Icon = TONE_ICON[tone];
   return (
@@ -26,7 +28,7 @@ export function SeverityBadge({ severity, count }: { severity: Severity; count?:
     >
       <Icon aria-hidden className="h-3.5 w-3.5" />
       {count !== undefined && <span className="num">{count}</span>}
-      {SEVERITY_LABELS[severity]}
+      {t(severity)}
     </span>
   );
 }

@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { CheckCircle2, ChevronDown } from "lucide-react";
+import { useTranslations } from "next-intl";
 import type { Finding, Severity } from "@/lib/types";
 import { groupFindings, isFindingGroup, type FindingOrGroup } from "@/lib/groupFindings";
-import { SEVERITY_LABELS, SEVERITY_ORDER, cn } from "@/lib/utils";
+import { SEVERITY_ORDER, cn } from "@/lib/utils";
 import { SeverityIcon } from "@/components/shared/SeverityBadge";
 import { FindingCard } from "./FindingCard";
 import { GroupedFindingCard } from "./GroupedFindingCard";
@@ -24,6 +25,8 @@ interface Props {
 }
 
 export function FindingsList({ findings, duration = 0, armed, activeId, chartable, onShowChart, onSelect }: Props) {
+  const t = useTranslations("findings");
+  const ts = useTranslations("severity");
   const [filter, setFilter] = useState<Severity | "all">("all");
   const [showOthers, setShowOthers] = useState(false);
 
@@ -64,10 +67,10 @@ export function FindingsList({ findings, duration = 0, armed, activeId, chartabl
   if (findings.length === 0) {
     return (
       <section id="findings" aria-labelledby="findings-h" className="scroll-mt-4 space-y-3">
-        <h2 id="findings-h" className="text-base font-semibold">Findings</h2>
+        <h2 id="findings-h" className="text-base font-semibold">{t("title")}</h2>
         <p className="panel flex items-center gap-2 p-4 text-sm">
           <CheckCircle2 aria-hidden className="h-4 w-4 text-ok" />
-          No findings. Every check that could run on this log passed.
+          {t("none")}
         </p>
       </section>
     );
@@ -80,16 +83,16 @@ export function FindingsList({ findings, duration = 0, armed, activeId, chartabl
     <section id="findings" aria-labelledby="findings-h" className="scroll-mt-4 space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <h2 id="findings-h" className="text-base font-semibold">
-          Findings <span className="num font-normal text-fg-muted">({findings.length})</span>
+          {t("title")} <span className="num font-normal text-fg-muted">({findings.length})</span>
         </h2>
-        <div className="no-print ml-auto flex flex-wrap gap-1.5" role="group" aria-label="Filter findings by severity">
-          <FilterPill label="All" count={findings.length} active={filter === "all"} onClick={() => setFilter("all")} />
+        <div className="no-print ml-auto flex flex-wrap gap-1.5" role="group" aria-label={t("filter")}>
+          <FilterPill label={t("all")} count={findings.length} active={filter === "all"} onClick={() => setFilter("all")} />
           {ALL_SEVERITIES.map((s) =>
             counts[s] > 0 ? (
               <FilterPill
                 key={s}
                 severity={s}
-                label={SEVERITY_LABELS[s]}
+                label={ts(s)}
                 count={counts[s]}
                 active={filter === s}
                 onClick={() => setFilter(s)}
@@ -110,7 +113,7 @@ export function FindingsList({ findings, duration = 0, armed, activeId, chartabl
           ) : (
             <p className="panel flex items-center gap-2 p-4 text-sm">
               <CheckCircle2 aria-hidden className="h-4 w-4 text-ok" />
-              No critical or warning findings.
+              {t("noPrimary")}
             </p>
           )}
 
@@ -123,9 +126,7 @@ export function FindingsList({ findings, duration = 0, armed, activeId, chartabl
                 aria-controls="other-findings"
                 className="btn no-print w-full justify-between"
               >
-                <span>
-                  {others.length} other {others.length === 1 ? "check" : "checks"} (info and passed)
-                </span>
+                <span>{t("others", { count: others.length })}</span>
                 <ChevronDown aria-hidden className={cn("h-4 w-4 transition-transform", showOthers && "rotate-180")} />
               </button>
               <div id="other-findings" hidden={!showOthers} className="print-expand mt-2 space-y-2">

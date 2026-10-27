@@ -3,108 +3,19 @@
 @tailwind utilities;
 
 /*
- * UAV suite tokens (design-system.md section 3). Dark "ops" is the default on :root,
- * light "field" lives under .light. Each colour has a hex form (--x) for SVG/canvas and
- * an rgb-channel form (--x-rgb) so Tailwind opacity modifiers like bg-accent/10 work.
- * Components never use a hex directly.
+ * The suite colour tokens (dark :root, light .light) are generated into app/tokens.css
+ * from design/tokens.json; the root layout imports that file first. Each colour has a
+ * hex form (--x) for SVG/canvas and an rgb-channel form (--x-rgb) for Tailwind opacity
+ * modifiers. Only what the suite file doesn't cover lives here.
  */
 @layer base {
   :root {
-    color-scheme: dark;
-
-    --bg: #0b0e11;
-    --bg-rgb: 11 14 17;
-    --surface: #12161b;
-    --surface-rgb: 18 22 27;
-    --elevated: #1a2027;
-    --elevated-rgb: 26 32 39;
-    --border: #2a323c;
-    --border-rgb: 42 50 60;
-    --text: #e6eaee;
-    --text-rgb: 230 234 238;
-    --text-muted: #9aa5b1;
-    --text-muted-rgb: 154 165 177;
-    /* disabled text, or text >= 18 px only */
-    --text-subtle: #5c6773;
-    --text-subtle-rgb: 92 103 115;
-
-    --accent: #3b82f6;
-    --accent-rgb: 59 130 246;
-    --accent-solid: #2563eb;
-    --accent-solid-rgb: 37 99 235;
-    --accent-text: #60a5fa;
-    --accent-text-rgb: 96 165 250;
     --on-accent: #ffffff;
     --on-accent-rgb: 255 255 255;
-
-    /* aviation semantics: text values; always next to an icon and a word */
-    --critical: #f58a8e;
-    --critical-rgb: 245 138 142;
-    --caution: #f5a524;
-    --caution-rgb: 245 165 36;
-    --advisory: #4cc2d9;
-    --advisory-rgb: 76 194 217;
-    --ok: #3dbb7c;
-    --ok-rgb: 61 187 124;
-    --sim: #8b7ec8;
-    --sim-rgb: 139 126 200;
-
-    /* fills stay the bright values in both themes, used at 12-16 % alpha */
-    --critical-fill: #e5484d;
-    --critical-fill-rgb: 229 72 77;
-    --caution-fill: #f5a524;
-    --caution-fill-rgb: 245 165 36;
-    --advisory-fill: #4cc2d9;
-    --advisory-fill-rgb: 76 194 217;
-    --ok-fill: #3dbb7c;
-    --ok-fill-rgb: 61 187 124;
-
-    /* chart series: never semantic */
-    --series-1: #5b8def;
-    --series-2: #e0a458;
-    --series-3: #7cc7a6;
-    --series-4: #c77ca6;
-    --series-5: #8fa35c;
-    --series-6: #6bb8c4;
-
-    --radius: 6px;
   }
 
   .light {
-    color-scheme: light;
-
-    --bg: #f8fafc;
-    --bg-rgb: 248 250 252;
-    --surface: #ffffff;
-    --surface-rgb: 255 255 255;
-    --elevated: #f1f5f9;
-    --elevated-rgb: 241 245 249;
-    --border: #cbd5e1;
-    --border-rgb: 203 213 225;
-    --text: #0f172a;
-    --text-rgb: 15 23 42;
-    --text-muted: #475569;
-    --text-muted-rgb: 71 85 105;
-    --text-subtle: #64748b;
-    --text-subtle-rgb: 100 116 139;
-
-    --accent: #2563eb;
-    --accent-rgb: 37 99 235;
-    --accent-solid: #1e40af;
-    --accent-solid-rgb: 30 64 175;
-    --accent-text: #1d4ed8;
-    --accent-text-rgb: 29 78 216;
-
-    --critical: #b91c1c;
-    --critical-rgb: 185 28 28;
-    --caution: #b45309;
-    --caution-rgb: 180 83 9;
-    --advisory: #0e7490;
-    --advisory-rgb: 14 116 144;
-    --ok: #15803d;
-    --ok-rgb: 21 128 61;
-
-    /* the dark ramp is too light on white for 3:1 lines */
+    /* the dark chart ramp is too light on white for 3:1 lines */
     --series-1: #3567d6;
     --series-2: #a8681c;
     --series-3: #2e8a63;
@@ -176,7 +87,7 @@
   }
 
   .btn {
-    @apply inline-flex min-h-[32px] items-center justify-center gap-1.5 rounded border border-border bg-elevated px-3 text-sm font-medium text-fg no-underline transition-colors hover:border-fg-subtle disabled:cursor-not-allowed disabled:opacity-50 pointer-coarse:min-h-[44px];
+    @apply inline-flex min-h-8 items-center justify-center gap-1.5 rounded border border-border bg-elevated px-3 text-sm font-medium text-fg no-underline transition-colors hover:border-fg-subtle disabled:cursor-not-allowed disabled:opacity-50 pointer-coarse:min-h-11;
   }
 
   .btn-primary {
@@ -184,7 +95,7 @@
   }
 
   .input {
-    @apply min-h-[32px] rounded border border-border bg-elevated px-2.5 text-sm text-fg placeholder:text-fg-muted pointer-coarse:min-h-[44px];
+    @apply min-h-8 rounded border border-border bg-elevated px-2.5 text-sm text-fg placeholder:text-fg-muted pointer-coarse:min-h-11;
   }
 }
 

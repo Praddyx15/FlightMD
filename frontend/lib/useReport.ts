@@ -5,16 +5,19 @@ import { ApiError, getReport, getStatus } from "./api";
 import type { FlightMDReport } from "./types";
 
 export type ReportState =
-  | { phase: "queued" | "processing"; progress: number; message: string }
+  | { phase: "queued" | "processing"; progress: number; message: string; eta: number | null }
   | { phase: "done"; report: FlightMDReport }
-  | { phase: "failed"; error: string }
+  | { phase: "failed"; error: string | null } // null: the server gave no reason
   | { phase: "expired" }
-  | { phase: "error"; error: string } // network trouble, retries used up
+  | { phase: "error"; error: unknown } // network trouble, retries used up
   | { phase: "stopped" }; // gave up waiting; user can resume
 
-const FIRST_DELAY = 1000;
-const MAX_DELAY = 5000;
-const MAX_WAIT_MS = 10 * 60_000;
+export interface PollOptions {
+  firstDelay?: number;
+  maxDelay?: number;
+  maxWaitMs?: number;
+}
+
 const MAX_NET_FAILURES = 5;
 
 const sleep = (ms: number, signal: AbortSignal) =>
@@ -28,68 +31,76 @@ const sleep = (ms: number, signal: AbortSignal) =>
 
 // Status polling with backoff. 202 from /report (status says complete but the file isn't
 // written yet) keeps polling instead of failing; 404 means expired and stops for good.
+// Resolves once it reaches a final state or the signal aborts.
+export async function pollReport(
+  id: string,
+  signal: AbortSignal,
+  onState: (s: ReportState) => void,
+  { firstDelay = 1000, maxDelay = 5000, maxWaitMs = 10 * 60_000 }: PollOptions = {}
+): Promise<void> {
+  const started = Date.now();
+  let delay = firstDelay;
+  let netFailures = 0;
+
+  while (!signal.aborted) {
+    if (Date.now() - started > maxWaitMs) {
+      onState({ phase: "stopped" });
+      return;
+    }
+    try {
+      const st = await getStatus(id, signal);
+      netFailures = 0;
+      if (st.status === "failed") {
+        onState({ phase: "failed", error: st.error || null });
+        return;
+      }
+      if (st.status === "complete") {
+        const report = await getReport(id, signal);
+        if (report) {
+          onState({ phase: "done", report });
+          return;
+        }
+      } else {
+        onState({
+          phase: st.progress > 0 ? "processing" : "queued",
+          progress: st.progress,
+          message: st.message,
+          eta: typeof st.eta_seconds === "number" && st.eta_seconds >= 0 ? st.eta_seconds : null,
+        });
+      }
+    } catch (e) {
+      if (signal.aborted) return;
+      if (e instanceof ApiError && e.status === 404) {
+        onState({ phase: "expired" });
+        return;
+      }
+      if (e instanceof ApiError && (e.status === 422 || e.status === 500)) {
+        onState({ phase: "failed", error: e.code ? null : e.message });
+        return;
+      }
+      netFailures++;
+      if (netFailures >= MAX_NET_FAILURES) {
+        onState({ phase: "error", error: e });
+        return;
+      }
+    }
+    // TODO pause while the tab is hidden, it keeps polling in the background now
+    await sleep(delay, signal);
+    delay = Math.min(maxDelay, Math.round(delay * 1.5));
+  }
+}
+
 export function useReport(id: string | undefined) {
-  const [state, setState] = useState<ReportState>({ phase: "queued", progress: 0, message: "" });
+  const [state, setState] = useState<ReportState>({ phase: "queued", progress: 0, message: "", eta: null });
   const [run, setRun] = useState(0);
 
   useEffect(() => {
     if (!id) return;
     const ctrl = new AbortController();
-    const { signal } = ctrl;
-    setState({ phase: "queued", progress: 0, message: "" });
-
-    (async () => {
-      const started = Date.now();
-      let delay = FIRST_DELAY;
-      let netFailures = 0;
-
-      while (!signal.aborted) {
-        if (Date.now() - started > MAX_WAIT_MS) {
-          setState({ phase: "stopped" });
-          return;
-        }
-        try {
-          const st = await getStatus(id, signal);
-          netFailures = 0;
-          if (st.status === "failed") {
-            setState({ phase: "failed", error: st.error || "The log could not be analysed." });
-            return;
-          }
-          if (st.status === "complete") {
-            const report = await getReport(id, signal);
-            if (report) {
-              setState({ phase: "done", report });
-              return;
-            }
-          } else {
-            setState({
-              phase: st.progress > 0 ? "processing" : "queued",
-              progress: st.progress,
-              message: st.message,
-            });
-          }
-        } catch (e) {
-          if (signal.aborted) return;
-          if (e instanceof ApiError && e.status === 404) {
-            setState({ phase: "expired" });
-            return;
-          }
-          if (e instanceof ApiError && (e.status === 422 || e.status === 500)) {
-            setState({ phase: "failed", error: e.message });
-            return;
-          }
-          netFailures++;
-          if (netFailures >= MAX_NET_FAILURES) {
-            setState({ phase: "error", error: e instanceof Error ? e.message : "Could not reach the server." });
-            return;
-          }
-        }
-        // TODO pause while the tab is hidden, it keeps polling in the background now
-        await sleep(delay, signal);
-        delay = Math.min(MAX_DELAY, Math.round(delay * 1.5));
-      }
-    })();
-
+    setState({ phase: "queued", progress: 0, message: "", eta: null });
+    pollReport(id, ctrl.signal, (s) => {
+      if (!ctrl.signal.aborted) setState(s);
+    });
     return () => ctrl.abort();
   }, [id, run]);
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useState } from "react";
 import { ChevronDown } from "lucide-react";
+import { useTranslations } from "next-intl";
 import type { FindingGroup } from "@/lib/groupFindings";
 import { groupItemLabel } from "@/lib/groupFindings";
 import { SeverityBadge } from "@/components/shared/SeverityBadge";
@@ -18,6 +19,7 @@ interface Props {
 }
 
 export function GroupedFindingCard({ group, defaultOpen = false, activeId, chartable, onShowChart }: Props) {
+  const t = useTranslations("findings");
   const [open, setOpen] = useState(defaultOpen);
   const bodyId = useId();
   const containsActive = group.items.some((f) => f.id === activeId);
@@ -45,7 +47,9 @@ export function GroupedFindingCard({ group, defaultOpen = false, activeId, chart
           aria-controls={bodyId}
           className="btn no-print shrink-0 px-2"
         >
-          <span className="sr-only">{open ? "Hide" : "Show"} the {group.items.length} {group.groupTitle} findings</span>
+          <span className="sr-only">
+            {t(open ? "hideGroup" : "showGroup", { count: group.items.length, title: group.groupTitle })}
+          </span>
           <ChevronDown aria-hidden className={cn("h-4 w-4 transition-transform", open && "rotate-180")} />
         </button>
       </div>

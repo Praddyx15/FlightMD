@@ -2,8 +2,10 @@ import type {
   AirframeConfigResponse,
   AlertRule,
   AnalyseResponse,
+  ChangeRecord,
   DiffResponse,
   FlightMDReport,
+  NewChangeRecord,
   StatusResponse,
   TrendsResponse,
 } from "./types";
@@ -18,20 +20,24 @@ export const API_URL = (
 
 const TIMEOUT_MS = 20_000;
 
+// `message` is the server's own text when it sent one. Otherwise `code` names our text,
+// a key under "errors" in messages/*.json, and the message is only the code, for the console.
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
-    super(message);
+  code?: string;
+  constructor(status: number, message: string | null, code?: string) {
+    super(message || code || `HTTP ${status}`);
     this.status = status;
+    this.code = message ? undefined : code;
   }
 }
 
 // 401/403 on anything airframe-scoped. `unclaimed` = nobody holds a token yet.
 export class AirframeAuthError extends ApiError {
   unclaimed: boolean;
-  constructor(status: number, message: string) {
-    super(status, message);
-    this.unclaimed = /not claimed/i.test(message);
+  constructor(status: number, message: string | null, code?: string) {
+    super(status, message, code);
+    this.unclaimed = /not claimed/i.test(message ?? "");
   }
 }
 
@@ -57,16 +63,17 @@ async function request(path: string, init: RequestInit = {}, timeout = TIMEOUT_M
     return await fetch(`${API_URL}${path}`, { ...init, signal: ctrl.signal });
   } catch (e) {
     if (outer?.aborted) throw e;
-    if (ctrl.signal.aborted) throw new ApiError(0, "The server took too long to answer.");
-    throw new ApiError(0, "Network error. Is the API running?");
+    if (ctrl.signal.aborted) throw new ApiError(0, null, "timeout");
+    throw new ApiError(0, null, "network");
   } finally {
     clearTimeout(timer);
     outer?.removeEventListener("abort", onAbort);
   }
 }
 
+// fallback is an "errors" key, used when the server sent no detail of its own
 async function fail(res: Response, fallback: string): Promise<never> {
-  throw new ApiError(res.status, (await detail(res)) || `${fallback} (${res.status})`);
+  throw new ApiError(res.status, await detail(res), fallback);
 }
 
 async function json<T>(res: Response, fallback: string): Promise<T> {
@@ -90,9 +97,7 @@ async function airframeRequest<T>(label: string, path: string, init: RequestInit
     headers: airframeHeaders(label, (init.headers as Record<string, string>) ?? {}),
   });
   if (res.status === 401 || res.status === 403) {
-    const msg = (await detail(res)) ||
-      (res.status === 401 ? "This airframe needs its access token." : "That token does not match this airframe.");
-    throw new AirframeAuthError(res.status, msg);
+    throw new AirframeAuthError(res.status, await detail(res), res.status === 401 ? "airframeNeedsToken" : "airframeWrongToken");
   }
   const body = await json<T>(res, fallback);
   keepToken(label, body);
@@ -101,12 +106,17 @@ async function airframeRequest<T>(label: string, path: string, init: RequestInit
 
 const af = (label: string) => encodeURIComponent(label);
 
+export interface UploadOptions {
+  airframeLabel?: string;
+  contribute?: boolean;
+  planningBrief?: string; // AeroAtlas brief hash, 64 hex
+  signal?: AbortSignal;
+}
+
 export function uploadLog(
   file: File,
   onProgress: (pct: number) => void,
-  airframeLabel?: string,
-  contributeToDataset?: boolean,
-  signal?: AbortSignal
+  { airframeLabel, contribute, planningBrief, signal }: UploadOptions = {}
 ): Promise<AnalyseResponse> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -114,7 +124,8 @@ export function uploadLog(
     const label = airframeLabel?.trim() || "";
     form.append("file", file);
     if (label) form.append("airframe_label", label);
-    if (contributeToDataset) form.append("contribute_to_dataset", "true");
+    if (contribute) form.append("contribute_to_dataset", "true");
+    if (planningBrief) form.append("planning_brief_sha256", planningBrief.toLowerCase());
 
     xhr.upload.addEventListener("progress", (e) => {
       if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
@@ -136,27 +147,27 @@ export function uploadLog(
           if (label) keepToken(label, body);
           resolve(body);
         } catch {
-          reject(new ApiError(xhr.status, "Invalid response from server."));
+          reject(new ApiError(xhr.status, null, "invalidResponse"));
         }
         return;
       }
       const d = serverDetail();
       if (xhr.status === 401 || xhr.status === 403) {
-        reject(new AirframeAuthError(xhr.status, d || `Airframe "${label}" belongs to someone else, or needs its access token.`));
+        reject(new AirframeAuthError(xhr.status, d, "airframeBelongs"));
       } else if (xhr.status === 413) {
-        reject(new ApiError(413, d || "File too large for this server."));
+        reject(new ApiError(413, d, "tooLarge"));
       } else if (xhr.status === 429) {
-        reject(new ApiError(429, d || "Upload limit reached. Try again later."));
+        reject(new ApiError(429, d, "uploadLimit"));
       } else if (xhr.status === 503) {
-        reject(new ApiError(503, "Server busy, try again in a minute."));
+        reject(new ApiError(503, null, "busy"));
       } else {
-        reject(new ApiError(xhr.status, d || `Server error (${xhr.status}).`));
+        reject(new ApiError(xhr.status, d, "server"));
       }
     });
 
-    xhr.addEventListener("error", () => reject(new ApiError(0, "Network error. Is the API running?")));
-    xhr.addEventListener("timeout", () => reject(new ApiError(0, "Upload timed out.")));
-    xhr.addEventListener("abort", () => reject(new ApiError(0, "Upload cancelled.")));
+    xhr.addEventListener("error", () => reject(new ApiError(0, null, "network")));
+    xhr.addEventListener("timeout", () => reject(new ApiError(0, null, "uploadTimeout")));
+    xhr.addEventListener("abort", () => reject(new ApiError(0, null, "uploadCancelled")));
     signal?.addEventListener("abort", () => xhr.abort());
 
     xhr.open("POST", `${API_URL}/analyse`);
@@ -175,19 +186,25 @@ export interface DatasetStats {
 }
 
 export async function getDatasetStats(): Promise<DatasetStats> {
-  return json(await request("/dataset/stats"), "Dataset stats error");
+  return json(await request("/dataset/stats"), "datasetStats");
+}
+
+// 404 means it is already gone, which is what the caller wanted
+export async function withdrawContribution(contributionId: string): Promise<void> {
+  const res = await request(`/dataset/${encodeURIComponent(contributionId)}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 404) await fail(res, "withdraw");
 }
 
 export async function getStatus(reportId: string, signal?: AbortSignal): Promise<StatusResponse> {
   const res = await request(`/status/${encodeURIComponent(reportId)}`, { signal });
-  return json(res, "Status error");
+  return json(res, "status");
 }
 
 // null while the report file is still being written (202)
 export async function getReport(reportId: string, signal?: AbortSignal): Promise<FlightMDReport | null> {
   const res = await request(`/report/${encodeURIComponent(reportId)}`, { signal });
   if (res.status === 202) return null;
-  return json(res, "Report error");
+  return json(res, "report");
 }
 
 export function pdfExportUrl(reportId: string): string {
@@ -209,7 +226,7 @@ export function kmlExportUrl(reportId: string): string {
 // Cross-origin <a download> ignores the file name, so fetch and save the blob.
 export async function downloadFile(url: string, fileName: string, headers?: Record<string, string>) {
   const res = await request(url.startsWith(API_URL) ? url.slice(API_URL.length) : url, { headers }, 60_000);
-  if (!res.ok) await fail(res, "Download failed");
+  if (!res.ok) await fail(res, "download");
   saveBlob(await res.blob(), fileName);
 }
 
@@ -227,20 +244,20 @@ function saveBlob(blob: Blob, fileName: string) {
 export async function downloadAirframeRecord(label: string) {
   const res = await request(`/export/airframe/${af(label)}/pdf`, { headers: airframeHeaders(label) }, 60_000);
   if (res.status === 401 || res.status === 403) {
-    throw new AirframeAuthError(res.status, (await detail(res)) || "This airframe needs its access token.");
+    throw new AirframeAuthError(res.status, await detail(res), "airframeNeedsToken");
   }
-  if (!res.ok) await fail(res, "Download failed");
+  if (!res.ok) await fail(res, "download");
   saveBlob(await res.blob(), `flightmd_${label}_record.pdf`);
 }
 
 export async function getTrends(airframeLabel: string): Promise<TrendsResponse> {
-  return airframeRequest(airframeLabel, `/trends/${af(airframeLabel)}`, {}, "Trends error");
+  return airframeRequest(airframeLabel, `/trends/${af(airframeLabel)}`, {}, "trends");
 }
 
 export async function getDiff(a: string, b: string): Promise<DiffResponse> {
   const res = await request(`/diff?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
-  if (res.status === 404) throw new ApiError(404, "One or both reports were not found or have expired.");
-  return json(res, "Cannot compare these two flights");
+  if (res.status === 404) throw new ApiError(404, null, "diffNotFound");
+  return json(res, "diff");
 }
 
 export const ASK_MAX_CHARS = 500;
@@ -260,12 +277,12 @@ export async function askAI(reportId: string, question: string): Promise<AskResp
     },
     60_000
   );
-  if (res.status === 429) throw new ApiError(429, "Too many questions for now. Try again in a minute.");
-  return json(res, "AI assistant error");
+  if (res.status === 429) throw new ApiError(429, null, "askLimit");
+  return json(res, "ask");
 }
 
 export async function getAirframeConfig(airframeLabel: string): Promise<AirframeConfigResponse> {
-  return airframeRequest(airframeLabel, `/airframe/${af(airframeLabel)}/config`, {}, "Airframe config error");
+  return airframeRequest(airframeLabel, `/airframe/${af(airframeLabel)}/config`, {}, "airframeConfig");
 }
 
 export interface AirframeConfigUpdate {
@@ -284,7 +301,7 @@ export async function updateAirframeConfig(
     airframeLabel,
     `/airframe/${af(airframeLabel)}/config`,
     { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(update) },
-    "Airframe update error"
+    "airframeUpdate"
   );
 }
 
@@ -296,6 +313,20 @@ export async function addMaintenanceEntry(
     airframeLabel,
     `/airframe/${af(airframeLabel)}/maintenance`,
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(entry) },
-    "Maintenance entry error"
+    "maintenance"
   );
+}
+
+// tune, fly, verify: which of the suggested changes went onto the vehicle
+export async function recordAppliedChanges(airframeLabel: string, body: NewChangeRecord): Promise<ChangeRecord> {
+  return airframeRequest(
+    airframeLabel,
+    `/airframe/${af(airframeLabel)}/changes`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
+    "changesSave"
+  );
+}
+
+export async function getAppliedChanges(airframeLabel: string): Promise<ChangeRecord[]> {
+  return airframeRequest(airframeLabel, `/airframe/${af(airframeLabel)}/changes`, {}, "changes");
 }

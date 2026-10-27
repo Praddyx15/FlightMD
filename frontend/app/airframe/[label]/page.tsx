@@ -4,14 +4,18 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AlertTriangle, ArrowLeftRight, TrendingUp } from "lucide-react";
-import { AirframeAuthError, getAirframeConfig, getTrends } from "@/lib/api";
-import type { AirframeConfigResponse, TrendsResponse } from "@/lib/types";
-import { MODULE_LABELS, humaniseMetricKey } from "@/lib/metricLabels";
+import { useTranslations } from "next-intl";
+import { AirframeAuthError, getAirframeConfig, getAppliedChanges, getTrends } from "@/lib/api";
+import type { AirframeConfigResponse, ChangeRecord, TrendsResponse } from "@/lib/types";
 import { fmtDateTime, fmtScore } from "@/lib/format";
 import { TONE_CLASSES, scoreColour, scoreTone } from "@/lib/utils";
+import { useErrorText } from "@/lib/errors";
+import { useLabels } from "@/lib/useLabels";
+import { useUnits } from "@/lib/units";
 import { TrendLineChart, type TrendSeriesPoint } from "@/components/charts/TrendLineChart";
 import { MaintenancePanel } from "@/components/airframe/MaintenancePanel";
 import { AlertsPanel } from "@/components/airframe/AlertsPanel";
+import { ChangesPanel } from "@/components/airframe/ChangesPanel";
 import { AirframeLocked, AirframeTokenInfo } from "@/components/airframe/AirframeAccess";
 
 function decodeLabel(raw: unknown): string | null {
@@ -27,9 +31,14 @@ type Load =
   | { phase: "loading" }
   | { phase: "locked"; error: AirframeAuthError }
   | { phase: "error"; message: string }
-  | { phase: "ready"; trends: TrendsResponse; config: AirframeConfigResponse };
+  // changes is null when the API doesn't have the endpoint (older server)
+  | { phase: "ready"; trends: TrendsResponse; config: AirframeConfigResponse; changes: ChangeRecord[] | null };
 
 export default function AirframeTrendsPage() {
+  const t = useTranslations("airframe");
+  const errText = useErrorText();
+  const labels = useLabels();
+  const units = useUnits();
   const params = useParams();
   const router = useRouter();
   const label = decodeLabel(params?.label);
@@ -43,29 +52,29 @@ export default function AirframeTrendsPage() {
     let cancelled = false;
     setLoad({ phase: "loading" });
     (async () => {
-      const [t, c] = await Promise.allSettled([getTrends(label), getAirframeConfig(label)]);
+      const [tr, c, ch] = await Promise.allSettled([getTrends(label), getAirframeConfig(label), getAppliedChanges(label)]);
       if (cancelled) return;
-      const auth = [t, c].find(
+      const auth = [tr, c].find(
         (r): r is PromiseRejectedResult => r.status === "rejected" && r.reason instanceof AirframeAuthError
       );
       if (auth) setLoad({ phase: "locked", error: auth.reason as AirframeAuthError });
-      else if (t.status === "rejected") setLoad({ phase: "error", message: String(t.reason?.message ?? t.reason) });
-      else if (c.status === "rejected") setLoad({ phase: "error", message: String(c.reason?.message ?? c.reason) });
-      else setLoad({ phase: "ready", trends: t.value, config: c.value });
+      else if (tr.status === "rejected") setLoad({ phase: "error", message: errText(tr.reason, "trends") });
+      else if (c.status === "rejected") setLoad({ phase: "error", message: errText(c.reason, "airframeConfig") });
+      else setLoad({ phase: "ready", trends: tr.value, config: c.value, changes: ch.status === "fulfilled" ? ch.value : null });
     })();
     return () => {
       cancelled = true;
     };
-  }, [label, reloadKey]);
+  }, [label, reloadKey, errText]);
 
   const reload = () => setReloadKey((k) => k + 1);
 
   if (!label) {
-    return <p className="px-4 py-20 text-center text-sm text-fg-muted">This airframe link is malformed.</p>;
+    return <p className="px-4 py-20 text-center text-sm text-fg-muted">{t("malformed")}</p>;
   }
 
   if (load.phase === "loading") {
-    return <p className="px-4 py-20 text-center text-sm text-fg-muted" role="status">Loading {label}…</p>;
+    return <p className="px-4 py-20 text-center text-sm text-fg-muted" role="status">{t("loading", { label })}</p>;
   }
 
   if (load.phase === "locked") {
@@ -81,16 +90,16 @@ export default function AirframeTrendsPage() {
       <div className="mx-auto max-w-xl px-4 py-20 text-center" role="alert">
         <h1 className="mb-2 flex items-center justify-center gap-2 text-value font-semibold">
           <AlertTriangle aria-hidden className="h-5 w-5 text-caution" />
-          Could not load {label}
+          {t("loadFailed", { label })}
         </h1>
         <p className="text-sm text-fg-muted">{load.message}</p>
-        <button type="button" onClick={reload} className="btn mt-6">Try again</button>
+        <button type="button" onClick={reload} className="btn mt-6">{t("retry")}</button>
       </div>
     );
   }
 
-  const { trends, config } = load;
-  const setConfig = (c: AirframeConfigResponse) => setLoad({ phase: "ready", trends, config: c });
+  const { trends, config, changes } = load;
+  const setConfig = (c: AirframeConfigResponse) => setLoad({ ...load, config: c });
   const flights = trends.flights;
 
   function toggleSelect(id: string) {
@@ -117,13 +126,13 @@ export default function AirframeTrendsPage() {
             {label}
           </h1>
           <p className="text-sm text-fg-muted">
-            <span className="num">{trends.flight_count}</span> tagged {trends.flight_count === 1 ? "flight" : "flights"}
+            {t.rich("flightCount", { count: trends.flight_count, num: (chunks) => <span className="num">{chunks}</span> })}
           </p>
         </div>
         {selected.length === 2 && (
           <button type="button" onClick={compare} className="btn-primary">
             <ArrowLeftRight aria-hidden className="h-4 w-4" />
-            Compare selected
+            {t("compare")}
           </button>
         )}
       </div>
@@ -143,8 +152,7 @@ export default function AirframeTrendsPage() {
       <div className="mx-auto max-w-5xl space-y-8 px-4 py-8">
         {header}
         <p className="panel p-4 text-sm text-fg-muted">
-          No flights tagged &quot;{label}&quot; yet. Upload a log with this airframe label to start its
-          trend history; untagged flights expire after an hour. <Link href="/">Upload a flight</Link>
+          {t("noFlights", { label })} <Link href="/">{t("upload")}</Link>
         </p>
         {panels}
       </div>
@@ -160,13 +168,13 @@ export default function AirframeTrendsPage() {
       {header}
 
       <section aria-labelledby="overall-h" className="panel p-4">
-        <h2 id="overall-h" className="mb-2 text-sm font-semibold">Overall health score</h2>
-        <TrendLineChart points={scorePoints} yDomain={[0, 100]} digits={0} title="Overall score" />
+        <h2 id="overall-h" className="mb-2 text-sm font-semibold">{t("overallTitle")}</h2>
+        <TrendLineChart points={scorePoints} yDomain={[0, 100]} digits={0} title={t("overall")} />
       </section>
 
       <section aria-labelledby="modules-h" className="space-y-3">
-        <h2 id="modules-h" className="text-base font-semibold">Module health over time</h2>
-        <p className="text-xs text-fg-muted">Gaps are flights where the module was not assessed.</p>
+        <h2 id="modules-h" className="text-base font-semibold">{t("modulesTitle")}</h2>
+        <p className="text-xs text-fg-muted">{t("modulesNote")}</p>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {moduleKeys.map((mod) => {
             // missing or null = skipped / not assessed: a gap, never 100
@@ -175,13 +183,13 @@ export default function AirframeTrendsPage() {
               return { x: i, y: typeof v === "number" ? v : null, label: f.file_name };
             });
             const latest = [...points].reverse().find((p) => p.y !== null)?.y ?? null;
-            const name = MODULE_LABELS[mod] ?? mod;
+            const name = labels.module(mod);
             return (
               <div key={mod} className="panel p-3">
                 <div className="mb-1 flex items-center justify-between">
                   <h3 className="text-sm font-semibold">{name}</h3>
                   <span className="num text-xs" style={latest !== null ? { color: scoreColour(latest) } : undefined}>
-                    {latest === null ? "not assessed" : fmtScore(latest)}
+                    {latest === null ? t("notAssessed") : fmtScore(latest)}
                   </span>
                 </div>
                 <TrendLineChart points={points} yDomain={[0, 100]} height={110} digits={0} title={name} />
@@ -193,14 +201,14 @@ export default function AirframeTrendsPage() {
 
       {metricKeys.length > 0 && (
         <section aria-labelledby="metrics-h" className="space-y-3">
-          <h2 id="metrics-h" className="text-base font-semibold">Raw metrics over time</h2>
-          <p className="text-xs text-fg-muted">The numbers behind each score: a slow drift shows here before a finding fires.</p>
+          <h2 id="metrics-h" className="text-base font-semibold">{t("metricsTitle")}</h2>
+          <p className="text-xs text-fg-muted">{t("metricsNote")}</p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {metricKeys.map((key) => {
-              const meta = humaniseMetricKey(key);
+              const meta = labels.metric(key, units);
               const points = flights.map((f, i) => {
                 const v = f.key_metrics[key];
-                return { x: i, y: typeof v === "number" ? v : null, label: f.file_name };
+                return { x: i, y: labels.convert(key, typeof v === "number" ? v : null, units), label: f.file_name };
               });
               return (
                 <div key={key} className="panel p-3">
@@ -213,11 +221,13 @@ export default function AirframeTrendsPage() {
         </section>
       )}
 
+      {changes && <ChangesPanel changes={changes} />}
+
       {panels}
 
       <section aria-labelledby="history-h" className="space-y-3">
-        <h2 id="history-h" className="text-base font-semibold">Flight history</h2>
-        <p className="text-xs text-fg-muted">Tick two flights to compare them.</p>
+        <h2 id="history-h" className="text-base font-semibold">{t("historyTitle")}</h2>
+        <p className="text-xs text-fg-muted">{t("historyNote")}</p>
         <ul className="panel divide-y">
           {[...flights].reverse().map((f) => (
             <li key={f.report_id} className="flex items-center gap-3 px-3 py-2.5">
@@ -228,12 +238,12 @@ export default function AirframeTrendsPage() {
                 onChange={() => toggleSelect(f.report_id)}
                 className="h-4 w-4 shrink-0 accent-[var(--accent)] pointer-coarse:h-6 pointer-coarse:w-6"
               />
-              <label htmlFor={`sel-${f.report_id}`} className="sr-only">Select {f.file_name} to compare</label>
+              <label htmlFor={`sel-${f.report_id}`} className="sr-only">{t("select", { name: f.file_name })}</label>
               <div className="min-w-0 flex-1">
                 <Link href={`/report/${encodeURIComponent(f.report_id)}`} className="block truncate text-sm font-medium text-fg hover:underline">
                   {f.file_name}
                 </Link>
-                <div className="text-xs text-fg-muted">Uploaded {fmtDateTime(new Date(f.created_at * 1000))}</div>
+                <div className="text-xs text-fg-muted">{t("uploaded", { date: fmtDateTime(new Date(f.created_at * 1000)) })}</div>
               </div>
               <span className={`num shrink-0 rounded-sm border px-1.5 py-px text-xs font-semibold ${TONE_CLASSES[scoreTone(f.overall_score)]}`}>
                 {f.letter_grade} · {fmtScore(f.overall_score)}

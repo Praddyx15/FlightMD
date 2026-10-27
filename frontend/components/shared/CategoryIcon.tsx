@@ -1,5 +1,5 @@
 import {
-  Activity, BatteryCharging, Compass, Cpu, Fan, Rocket, Satellite, SlidersHorizontal, Vibrate,
+  Activity, BatteryCharging, Compass, Cpu, Fan, Plug, Rocket, Satellite, SlidersHorizontal, Vibrate,
   type LucideIcon,
 } from "lucide-react";
 import type { Category } from "@/lib/types";
@@ -13,6 +13,7 @@ const ICONS: Record<Category, LucideIcon> = {
   parameters:     SlidersHorizontal,
   motors:         Fan,
   ascent_profile: Rocket,
+  power:          Plug,
   system:         Cpu,
 };
 

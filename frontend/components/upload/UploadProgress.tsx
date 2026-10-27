@@ -1,17 +1,20 @@
 "use client";
 
+import { useTranslations } from "next-intl";
+
 interface Props {
   progress: number;
   label?: string;
   onCancel?: () => void;
 }
 
-export function UploadProgress({ progress, label = "Uploading flight log", onCancel }: Props) {
+export function UploadProgress({ progress, label, onCancel }: Props) {
+  const t = useTranslations("upload");
   const pct = Math.max(0, Math.min(100, Math.round(progress)));
   return (
     <div className="py-4">
       <div className="mb-2 flex items-baseline justify-between text-sm">
-        <span id="upload-label">{label}</span>
+        <span id="upload-label">{label ?? t("uploading")}</span>
         <span className="num text-fg-muted" aria-live="polite">{pct} %</span>
       </div>
       <div
@@ -26,7 +29,7 @@ export function UploadProgress({ progress, label = "Uploading flight log", onCan
       </div>
       {onCancel && (
         <button type="button" onClick={onCancel} className="btn mt-3">
-          Cancel upload
+          {t("cancel")}
         </button>
       )}
     </div>

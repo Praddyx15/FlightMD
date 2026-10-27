@@ -127,3 +127,39 @@ export function fmtParam(v: number): string {
   if (!s.includes("e")) return s;
   return v.toFixed(10).replace(/0+$/, "").replace(/\.$/, "");
 }
+
+// Reports are always SI; conversion happens only here, at display time.
+export type UnitSystem = "metric" | "imperial" | "aviation";
+export type Quantity = "altitude" | "distance" | "speed" | "temperature";
+
+export const UNIT_SYSTEMS: UnitSystem[] = ["metric", "imperial", "aviation"];
+
+export function isUnitSystem(v: unknown): v is UnitSystem {
+  return typeof v === "string" && (UNIT_SYSTEMS as string[]).includes(v);
+}
+
+const FT_PER_M = 1 / 0.3048;
+const KT_PER_MS = 3600 / 1852;
+const MPH_PER_MS = 3600 / 1609.344;
+
+// metric: m, m/s, °C · imperial: ft, mph, °F · aviation: ft, kt, °C
+export function toUnit(v: number, q: Quantity, sys: UnitSystem): { value: number; unit: string } {
+  if (sys === "metric") {
+    return { value: v, unit: q === "speed" ? "m/s" : q === "temperature" ? "°C" : "m" };
+  }
+  switch (q) {
+    case "altitude":
+    case "distance":
+      return { value: v * FT_PER_M, unit: "ft" };
+    case "speed":
+      return sys === "aviation" ? { value: v * KT_PER_MS, unit: "kt" } : { value: v * MPH_PER_MS, unit: "mph" };
+    case "temperature":
+      return sys === "aviation" ? { value: v, unit: "°C" } : { value: (v * 9) / 5 + 32, unit: "°F" };
+  }
+}
+
+export function fmtQty(v: number | null | undefined, q: Quantity, sys: UnitSystem, digits = 1): string {
+  if (!isNum(v)) return DASH;
+  const { value, unit } = toUnit(v, q, sys);
+  return fmtNum(value, digits, unit);
+}

@@ -2,10 +2,14 @@
 
 import { useRef, useState } from "react";
 import { ArrowRight, Search, Sparkles } from "lucide-react";
+import { useTranslations } from "next-intl";
 import type { Category, Finding, FlightMDReport, ParamRecommendation } from "@/lib/types";
 import { ASK_MAX_CHARS, askAI } from "@/lib/api";
-import { fmtParam, fmtScore } from "@/lib/format";
-import { MODULE_LABELS, formatMetric, humaniseMetricKey } from "@/lib/metricLabels";
+import { fmtParam, fmtScore, type UnitSystem } from "@/lib/format";
+import type { Labels } from "@/lib/metricLabels";
+import { useLabels } from "@/lib/useLabels";
+import { useErrorText } from "@/lib/errors";
+import { useUnits } from "@/lib/units";
 import { cn, isAssessed } from "@/lib/utils";
 import { SeverityIcon } from "@/components/shared/SeverityBadge";
 
@@ -23,51 +27,58 @@ interface QAEntry {
   source: "search" | "ai" | "error";
 }
 
+type Translate = (key: string, values?: Record<string, string | number>) => string;
+
+// keyword matching stays English for now: the words people type about drones mostly are
 const TOPICS: [Category, RegExp][] = [
   ["oscillation", /oscillat|wobbl|shak|pid|tun/],
   ["vibration", /vibrat|clip|imu|accel/],
   ["ekf", /ekf|estimator|innovation/],
+  // before battery, which also matches "power"
+  ["power", /vcc|brownout|power supply|board volt/],
   ["battery", /batter|voltage|sag|power|cell/],
   ["gps", /gps|satellite|hdop|fix|jamm|spoof/],
   ["motors", /motor|esc|rpm|prop/],
 ];
 
-const PRESETS = ["Vibration", "Battery", "GPS", "Parameter changes"];
+const PRESETS = ["vibration", "battery", "gps", "params"] as const;
 
 // Only says what the report itself contains: module score, findings, key_metrics.
-function searchReport(report: FlightMDReport, text: string): Omit<QAEntry, "id" | "query" | "source"> {
+export function searchReport(
+  report: FlightMDReport,
+  text: string,
+  t: Translate,
+  labels: Labels,
+  units: UnitSystem = "metric"
+): Omit<QAEntry, "id" | "query" | "source"> {
   const q = text.toLowerCase();
 
   if (/param|change|recommend|setting/.test(q)) {
     const params = report.param_change_sheet;
-    return {
-      answer: params.length
-        ? `The report suggests ${params.length} parameter ${params.length === 1 ? "change" : "changes"}.`
-        : "The report suggests no parameter changes.",
-      findings: [],
-      params,
-    };
+    return { answer: t("answer.params", { count: params.length }), findings: [], params };
   }
 
   const topic = TOPICS.find(([, re]) => re.test(q))?.[0];
   if (topic) {
-    const label = MODULE_LABELS[topic] ?? topic;
+    const label = labels.module(topic);
     const result = report.analyser_results.find((r) => r.analyser === topic);
     const findings = report.findings.filter((f) => f.category === topic);
-    if (!result) return { answer: `This report has no ${label} check.`, findings, params: [] };
+    if (!result) return { answer: t("answer.noCheck", { label }), findings, params: [] };
     if (!isAssessed(result)) {
       return {
-        answer: `${label}: not assessed${result.skip_reason ? ` (${result.skip_reason})` : ""}.`,
+        answer: result.skip_reason
+          ? t("answer.notAssessedBecause", { label, reason: result.skip_reason })
+          : t("answer.notAssessed", { label }),
         findings: [],
         params: [],
       };
     }
     const lines = Object.entries(result.key_metrics).map(
-      ([k, v]) => `${humaniseMetricKey(`${topic}.${k}`).label}: ${formatMetric(`${topic}.${k}`, v)}`
+      ([k, v]) => `${labels.metric(`${topic}.${k}`, units).label}: ${labels.format(`${topic}.${k}`, v, units)}`
     );
     const answer = findings.length
-      ? `${label}: module score ${fmtScore(result.health_score)}, ${findings.length} ${findings.length === 1 ? "finding" : "findings"}.`
-      : `${label}: no finding in this category; module score ${fmtScore(result.health_score)}.`;
+      ? t("answer.module", { label, score: fmtScore(result.health_score), count: findings.length })
+      : t("answer.moduleClean", { label, score: fmtScore(result.health_score) });
     return { answer, lines, findings, params: [] };
   }
 
@@ -78,15 +89,17 @@ function searchReport(report: FlightMDReport, text: string): Omit<QAEntry, "id" 
     (p) => p.param_name.toLowerCase().includes(q) || p.reason.toLowerCase().includes(q)
   );
   return {
-    answer: findings.length || params.length
-      ? `Matches for "${text}" in this report:`
-      : `Nothing in this report mentions "${text}". Try a check name: oscillation, vibration, EKF, battery, GPS, motors, or "parameter changes".`,
+    answer: findings.length || params.length ? t("answer.matches", { text }) : t("answer.nothing", { text }),
     findings,
     params,
   };
 }
 
 export default function QAAssistant({ report }: QAAssistantProps) {
+  const t = useTranslations("qa");
+  const labels = useLabels();
+  const units = useUnits();
+  const errText = useErrorText();
   const [query, setQuery] = useState("");
   const [history, setHistory] = useState<QAEntry[]>([]);
   const [useAI, setUseAI] = useState(false);
@@ -110,21 +123,21 @@ export default function QAAssistant({ report }: QAAssistantProps) {
       try {
         const res = await askAI(report.report_id, q);
         if (res.configured) {
-          push({ query: q, answer: res.answer || "No answer came back.", findings: [], params: [], source: "ai" });
+          push({ query: q, answer: res.answer || t("noAnswer"), findings: [], params: [], source: "ai" });
           return;
         }
         // server has no AI key -> plain search for the rest of the session
         setAiUnavailable(true);
       } catch (e) {
         // a one-off failure; the toggle stays usable
-        push({ query: q, answer: e instanceof Error ? e.message : "The AI request failed.", findings: [], params: [], source: "error" });
+        push({ query: q, answer: errText(e, "ask"), findings: [], params: [], source: "error" });
         return;
       } finally {
         setThinking(false);
       }
     }
 
-    push({ query: q, ...searchReport(report, q), source: "search" });
+    push({ query: q, ...searchReport(report, q, t, labels, units), source: "search" });
   }
 
   return (
@@ -133,22 +146,23 @@ export default function QAAssistant({ report }: QAAssistantProps) {
         <div className="min-w-0 flex-1">
           <h2 id="qa-h" className="flex items-center gap-2 text-base font-semibold">
             {aiOn ? <Sparkles aria-hidden className="h-4 w-4 text-accent" /> : <Search aria-hidden className="h-4 w-4 text-accent" />}
-            {aiOn ? "Ask about this report" : "Search this report"}
+            {aiOn ? t("titleAI") : t("title")}
           </h2>
           <p className="text-xs text-fg-muted">
-            Answers come only from this report: its findings, module scores and metrics.
-            {aiOn ? " The AI is told to answer from this report only; check its answer against the findings." : ""}
+            {t("scope")}
+            {aiOn ? ` ${t("scopeAI")}` : ""}
           </p>
         </div>
-        <label className="flex cursor-pointer items-center gap-2 text-xs text-fg-muted">
-          <span>Use AI</span>
+        <div className="flex items-center gap-2 text-xs text-fg-muted">
+          <span id="qa-ai-label">{t("useAI")}</span>
           <button
             type="button"
             role="switch"
             aria-checked={aiOn}
+            aria-labelledby="qa-ai-label"
             disabled={aiUnavailable}
             onClick={() => setUseAI((v) => !v)}
-            title={aiUnavailable ? "No AI provider is configured on this server" : undefined}
+            title={aiUnavailable ? t("noProvider") : undefined}
             className={cn(
               "relative h-5 w-9 rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-50",
               aiOn ? "border-accent-solid bg-accent-solid" : "bg-elevated"
@@ -156,32 +170,28 @@ export default function QAAssistant({ report }: QAAssistantProps) {
           >
             <span
               className={cn(
-                "absolute left-0.5 top-0.5 h-3.5 w-3.5 rounded-full bg-fg transition-transform",
+                "absolute left-0.5 top-0.5 size-3.5 rounded-full bg-fg transition-transform",
                 aiOn && "translate-x-4 bg-on-accent"
               )}
             />
           </button>
-        </label>
+        </div>
       </div>
 
-      {aiUnavailable && (
-        <p className="text-xs text-fg-muted">
-          This server has no AI provider configured, so questions use the built-in search. That is expected without an API key.
-        </p>
-      )}
+      {aiUnavailable && <p className="text-xs text-fg-muted">{t("aiUnavailable")}</p>}
 
       <div aria-live="polite" className="panel max-h-[420px] space-y-3 overflow-y-auto p-3">
         {history.length === 0 && !thinking && (
-          <p className="py-4 text-center text-sm text-fg-muted">Ask about a check, a parameter, or a word from the findings.</p>
+          <p className="py-4 text-center text-sm text-fg-muted">{t("empty")}</p>
         )}
         {history.map((item) => (
           <div key={item.id} className="space-y-2 border-b pb-3 last:border-b-0 last:pb-0">
             <p className="text-sm font-medium">
-              <span className="sr-only">You asked: </span>
+              <span className="sr-only">{t("youAsked")} </span>
               {item.query}
             </p>
             <div className="space-y-2 rounded bg-elevated p-3 text-sm">
-              {item.source === "ai" && <p className="label">AI answer, from this report only</p>}
+              {item.source === "ai" && <p className="label">{t("aiAnswer")}</p>}
               <p className={cn("whitespace-pre-line", item.source === "error" && "text-critical")}>{item.answer}</p>
               {item.lines && item.lines.length > 0 && (
                 <ul className="num space-y-0.5 text-xs text-fg-muted">
@@ -207,7 +217,7 @@ export default function QAAssistant({ report }: QAAssistantProps) {
                       <span className="num font-medium">{p.param_name}</span>
                       <span className="num">
                         <span className="text-fg-muted">{fmtParam(p.current_value)}</span>
-                        <ArrowRight aria-label="to" className="mx-1 inline h-3 w-3" />
+                        <ArrowRight aria-label={t("to")} className="mx-1 inline h-3 w-3" />
                         <span className="font-semibold text-accent-text">{fmtParam(p.suggested_value)}</span>
                       </span>
                     </li>
@@ -217,13 +227,13 @@ export default function QAAssistant({ report }: QAAssistantProps) {
             </div>
           </div>
         ))}
-        {thinking && <p className="text-sm text-fg-muted">Asking…</p>}
+        {thinking && <p className="text-sm text-fg-muted">{t("asking")}</p>}
       </div>
 
       <div className="flex flex-wrap gap-2">
         {PRESETS.map((p) => (
-          <button key={p} type="button" disabled={thinking} onClick={() => ask(p)} className="btn text-xs">
-            {p}
+          <button key={p} type="button" disabled={thinking} onClick={() => ask(t(`presets.${p}`))} className="btn text-xs">
+            {t(`presets.${p}`)}
           </button>
         ))}
       </div>
@@ -235,7 +245,7 @@ export default function QAAssistant({ report }: QAAssistantProps) {
         }}
         className="flex gap-2"
       >
-        <label htmlFor="qa-input" className="sr-only">Question about this report</label>
+        <label htmlFor="qa-input" className="sr-only">{t("inputLabel")}</label>
         <input
           id="qa-input"
           type="text"
@@ -243,11 +253,11 @@ export default function QAAssistant({ report }: QAAssistantProps) {
           disabled={thinking}
           maxLength={ASK_MAX_CHARS}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder={aiOn ? "e.g. why did the GPS finding fire?" : "e.g. battery, HDOP, MC_ROLLRATE_P"}
+          placeholder={aiOn ? t("placeholderAI") : t("placeholder")}
           className="input min-w-0 flex-1"
         />
         <button type="submit" disabled={thinking || !query.trim()} className="btn-primary">
-          {aiOn ? "Ask" : "Search"}
+          {aiOn ? t("ask") : t("search")}
         </button>
       </form>
     </section>

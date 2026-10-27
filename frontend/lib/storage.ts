@@ -1,4 +1,4 @@
-// Everything kept in the browser: recent uploads and airframe tokens. localStorage can
+// Everything kept in the browser: recent uploads, airframe tokens, units. localStorage can
 // throw (private mode, blocked site data), so every access goes through these two.
 
 function read<T>(key: string, fallback: T): T {
@@ -33,6 +33,8 @@ export interface RecentReport {
   flightStart?: string | null;
   vehicle?: string | null;
   firmware?: string | null;
+  deduplicated?: boolean;
+  contributionId?: string | null;
 }
 
 export function getRecentReports(): RecentReport[] {
@@ -80,4 +82,14 @@ export function forgetAirframeToken(label: string) {
   const all = read<Record<string, string>>(TOKENS_KEY, {});
   delete all[labelKey(label)];
   write(TOKENS_KEY, all);
+}
+
+const UNITS_KEY = "flightmd.units";
+
+export function getUnitSystem(): string | null {
+  return read<string | null>(UNITS_KEY, null);
+}
+
+export function setUnitSystem(system: string) {
+  write(UNITS_KEY, system);
 }

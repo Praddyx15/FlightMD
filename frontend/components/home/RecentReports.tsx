@@ -4,7 +4,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ArrowLeftRight, Clock, TrendingUp, X } from "lucide-react";
-import { clearRecentReports, getRecentReports, removeRecentReport, type RecentReport } from "@/lib/storage";
+import { useTranslations } from "next-intl";
+import { withdrawContribution } from "@/lib/api";
+import { useErrorText } from "@/lib/errors";
+import {
+  clearRecentReports, getRecentReports, removeRecentReport, updateRecentReport, type RecentReport,
+} from "@/lib/storage";
 import { fmtDate, fmtScore, parseIsoDate } from "@/lib/format";
 import { TONE_CLASSES, gradeTone } from "@/lib/utils";
 
@@ -15,9 +20,12 @@ function when(r: RecentReport): number {
 }
 
 export function RecentReports() {
+  const t = useTranslations("recent");
+  const errText = useErrorText();
   const router = useRouter();
   const [items, setItems] = useState<RecentReport[] | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setItems(getRecentReports());
@@ -36,6 +44,18 @@ export function RecentReports() {
     setSelected((prev) => prev.filter((x) => x !== id));
   }
 
+  async function withdraw(r: RecentReport) {
+    if (!r.contributionId) return;
+    setError(null);
+    try {
+      await withdrawContribution(r.contributionId);
+      updateRecentReport(r.id, { contributionId: null });
+      setItems(getRecentReports());
+    } catch (e) {
+      setError(errText(e, "withdraw"));
+    }
+  }
+
   function compare() {
     if (!items) return;
     // older flight first, whatever order they were ticked in
@@ -50,12 +70,12 @@ export function RecentReports() {
   return (
     <section aria-labelledby="recent-h" className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <h2 id="recent-h" className="text-base font-semibold">Recent on this device</h2>
+        <h2 id="recent-h" className="text-base font-semibold">{t("title")}</h2>
         <div className="ml-auto flex gap-2">
           {selected.length === 2 && (
             <button type="button" onClick={compare} className="btn-primary">
               <ArrowLeftRight aria-hidden className="h-4 w-4" />
-              Compare selected
+              {t("compare")}
             </button>
           )}
           {items.length > 0 && (
@@ -68,16 +88,16 @@ export function RecentReports() {
                 setSelected([]);
               }}
             >
-              Clear list
+              {t("clear")}
             </button>
           )}
         </div>
       </div>
 
+      {error && <p role="alert" className="text-xs text-critical">{error}</p>}
+
       {items.length === 0 ? (
-        <p className="panel px-4 py-6 text-sm text-fg-muted">
-          Logs you analyse in this browser are listed here. Nothing is shared with other visitors.
-        </p>
+        <p className="panel px-4 py-6 text-sm text-fg-muted">{t("empty")}</p>
       ) : (
         <ul className="panel divide-y">
           {items.map((r) => {
@@ -92,19 +112,24 @@ export function RecentReports() {
                   onChange={() => toggle(r.id)}
                   className="h-4 w-4 shrink-0 accent-[var(--accent)] pointer-coarse:h-6 pointer-coarse:w-6"
                 />
-                <label htmlFor={`cmp-${r.id}`} className="sr-only">Select {r.fileName} to compare</label>
+                <label htmlFor={`cmp-${r.id}`} className="sr-only">{t("select", { name: r.fileName })}</label>
 
                 <div className="min-w-0 flex-1">
                   <Link href={`/report/${encodeURIComponent(r.id)}`} className="block truncate font-medium text-fg hover:underline">
                     {r.fileName}
                   </Link>
                   <div className="flex flex-wrap items-center gap-x-3 text-xs text-fg-muted">
-                    <span>{flight ? `Flown ${fmtDate(flight)}` : `Uploaded ${fmtDate(new Date(r.uploadedAt))}`}</span>
+                    <span>{flight ? t("flown", { date: fmtDate(flight) }) : t("uploaded", { date: fmtDate(new Date(r.uploadedAt)) })}</span>
                     {r.vehicle && <span>{r.vehicle}</span>}
                     {stale && (
                       <span className="flex items-center gap-1">
-                        <Clock aria-hidden className="h-3.5 w-3.5" /> probably expired
+                        <Clock aria-hidden className="h-3.5 w-3.5" /> {t("expired")}
                       </span>
+                    )}
+                    {r.contributionId && (
+                      <button type="button" onClick={() => withdraw(r)} className="underline underline-offset-4 hover:text-fg">
+                        {t("withdraw")}
+                      </button>
                     )}
                     {r.airframeLabel && (
                       <Link href={`/airframe/${encodeURIComponent(r.airframeLabel)}`} className="flex items-center gap-1">
@@ -116,7 +141,7 @@ export function RecentReports() {
                 </div>
 
                 {r.grade === "-" ? (
-                  <span className="shrink-0 rounded-sm border px-1.5 py-px text-xs text-fg-muted">Not assessed</span>
+                  <span className="shrink-0 rounded-sm border px-1.5 py-px text-xs text-fg-muted">{t("notAssessed")}</span>
                 ) : r.grade && r.score != null ? (
                   <span className={`num shrink-0 rounded-sm border px-1.5 py-px text-xs font-semibold ${TONE_CLASSES[gradeTone(r.grade)]}`}>
                     {r.grade} · {fmtScore(r.score)}
@@ -126,7 +151,7 @@ export function RecentReports() {
                   type="button"
                   onClick={() => remove(r.id)}
                   className="btn shrink-0 border-transparent bg-transparent px-2 text-fg-muted"
-                  aria-label={`Remove ${r.fileName} from this list`}
+                  aria-label={t("remove", { name: r.fileName })}
                 >
                   <X aria-hidden className="h-4 w-4" />
                 </button>

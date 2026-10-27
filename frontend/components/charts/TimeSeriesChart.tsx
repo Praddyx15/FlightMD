@@ -4,7 +4,8 @@ import { useMemo } from "react";
 import {
   CartesianGrid, Line, LineChart, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
-import type { TimeChartSpec } from "@/lib/chartData";
+import { useTranslations } from "next-intl";
+import type { Msg, TimeChartSpec } from "@/lib/chartData";
 import { fmtClock, fmtNum } from "@/lib/format";
 import { TONE_FILL_VAR, TONE_VAR, type Tone } from "@/lib/utils";
 import { AXIS_TICK, GRID_STROKE, TOOLTIP_STYLE, seriesColour, seriesDash } from "./chartTheme";
@@ -37,6 +38,9 @@ function range(values: (number | null)[]): [number, number] | null {
 }
 
 export function TimeSeriesChart({ spec, windows = [], activeId, armed, height = 200 }: Props) {
+  const t = useTranslations("charts");
+  const tr = (m: Msg, ns: "titles" | "series" | "refs") => t(`${ns}.${m.key}`, m.values);
+  const title = tr(spec.title, "titles");
   const rows = useMemo(
     () =>
       spec.t.map((t, i) => {
@@ -56,13 +60,13 @@ export function TimeSeriesChart({ spec, windows = [], activeId, armed, height = 
     .map((s) => {
       const r = range(s.values);
       const u = unitOf(s.axis);
-      return r ? `${s.label} ${fmtNum(r[0], 2)} to ${fmtNum(r[1], 2, u)}` : null;
+      return r ? t("seriesRange", { label: tr(s.label, "series"), lo: fmtNum(r[0], 2), hi: fmtNum(r[1], 2, u) }) : null;
     })
     .filter(Boolean)
     .join(" · ");
 
   return (
-    <figure aria-label={`${spec.title}, ${fmtClock(t0)} to ${fmtClock(t1)}. ${summary}`}>
+    <figure aria-label={t("timeAria", { title, from: fmtClock(t0), to: fmtClock(t1), summary })}>
       <div style={{ height }}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={rows} margin={{ top: 8, right: hasRight ? 0 : 12, left: 0, bottom: 0 }} accessibilityLayer>
@@ -81,8 +85,8 @@ export function TimeSeriesChart({ spec, windows = [], activeId, armed, height = 
               <YAxis yAxisId="right" orientation="right" tick={AXIS_TICK} stroke={GRID_STROKE} width={40} tickFormatter={(v: number) => fmtNum(v, 2)} />
             )}
 
-            {armed?.map(([s, e], i) => (
-              <ReferenceArea key={`armed-${i}`} yAxisId="left" x1={Math.max(s, t0)} x2={Math.min(e, t1)} fill="var(--text-muted)" fillOpacity={0.06} ifOverflow="hidden" />
+            {armed?.map(([s, e]) => (
+              <ReferenceArea key={`armed-${s}-${e}`} yAxisId="left" x1={Math.max(s, t0)} x2={Math.min(e, t1)} fill="var(--text-muted)" fillOpacity={0.06} ifOverflow="hidden" />
             ))}
 
             {windows.map((w) => {
@@ -114,20 +118,20 @@ export function TimeSeriesChart({ spec, windows = [], activeId, armed, height = 
 
             {spec.refLines?.map((r) => (
               <ReferenceLine
-                key={r.label}
+                key={r.label.key}
                 yAxisId={r.axis ?? "left"}
                 y={r.y}
                 stroke="var(--text-muted)"
                 strokeDasharray="3 3"
-                label={{ value: r.label, fill: "var(--text-muted)", fontSize: 11, position: "insideTopRight" }}
+                label={{ value: tr(r.label, "refs"), fill: "var(--text-muted)", fontSize: 11, position: "insideTopRight" }}
               />
             ))}
 
             <Tooltip
               contentStyle={TOOLTIP_STYLE}
               labelFormatter={(v) => `t = ${fmtClock(Number(v), 1)}`}
-              formatter={(v, name) => {
-                const s = spec.series.find((x) => x.label === name);
+              formatter={(v, name, item) => {
+                const s = spec.series.find((x) => x.key === item.dataKey);
                 return [fmtNum(Number(v), 2, unitOf(s?.axis)), String(name)];
               }}
             />
@@ -138,7 +142,7 @@ export function TimeSeriesChart({ spec, windows = [], activeId, armed, height = 
                 yAxisId={s.axis ?? "left"}
                 type={s.step ? "stepAfter" : "linear"}
                 dataKey={s.key}
-                name={s.label}
+                name={tr(s.label, "series")}
                 stroke={seriesColour(i)}
                 strokeDasharray={seriesDash(i)}
                 strokeWidth={1.5}
@@ -157,11 +161,13 @@ export function TimeSeriesChart({ spec, windows = [], activeId, armed, height = 
             <svg width="20" height="6" aria-hidden>
               <line x1="0" y1="3" x2="20" y2="3" stroke={seriesColour(i)} strokeWidth="2" strokeDasharray={seriesDash(i)} />
             </svg>
-            {s.label}
-            {unitOf(s.axis) ? ` (${unitOf(s.axis)}${hasRight ? (s.axis === "right" ? ", right" : ", left") : ""})` : ""}
+            {tr(s.label, "series")}
+            {unitOf(s.axis)
+              ? ` (${hasRight ? t(s.axis === "right" ? "unitRight" : "unitLeft", { unit: unitOf(s.axis) ?? "" }) : unitOf(s.axis)})`
+              : ""}
           </span>
         ))}
-        {armed && armed.length > 0 && <span>shaded grey: armed</span>}
+        {armed && armed.length > 0 && <span>{t("armedShaded")}</span>}
       </figcaption>
     </figure>
   );

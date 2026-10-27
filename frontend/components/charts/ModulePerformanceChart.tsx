@@ -1,4 +1,5 @@
 import { MinusCircle } from "lucide-react";
+import { useTranslations } from "next-intl";
 import type { AnalyserResult } from "@/lib/types";
 import { fmtScore } from "@/lib/format";
 import { TONE_VAR, isAssessed, scoreTone } from "@/lib/utils";
@@ -7,6 +8,7 @@ import { TONE_ICON } from "@/components/shared/SeverityBadge";
 // Plain HTML bars: readable by screen readers, prints cleanly, and a module that was not
 // assessed shows as such instead of a full bar.
 export function ModulePerformanceChart({ analyserResults }: { analyserResults: AnalyserResult[] }) {
+  const t = useTranslations("score");
   if (analyserResults.length === 0) return null;
 
   const assessed = analyserResults.filter(isAssessed).sort((a, b) => a.health_score - b.health_score);
@@ -36,7 +38,7 @@ export function ModulePerformanceChart({ analyserResults }: { analyserResults: A
           <span className="truncate">{r.display_name}</span>
           <span className="flex items-center gap-1">
             <MinusCircle aria-hidden className="h-3.5 w-3.5 shrink-0" />
-            Not assessed{r.skip_reason ? `: ${r.skip_reason}` : ""}
+            {r.skip_reason ? t("notAssessedBecause", { reason: r.skip_reason }) : t("notAssessed")}
           </span>
         </li>
       ))}

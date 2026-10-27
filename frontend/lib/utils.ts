@@ -60,13 +60,6 @@ export const SEVERITY_ORDER: Record<Severity, number> = {
   good: 3,
 };
 
-export const SEVERITY_LABELS: Record<Severity, string> = {
-  critical: "Critical",
-  warning: "Warning",
-  info: "Info",
-  good: "Good",
-};
-
 export function scoreTone(score: number): Tone {
   if (score >= 80) return "ok";
   if (score >= 50) return "caution";

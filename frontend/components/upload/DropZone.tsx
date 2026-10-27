@@ -3,6 +3,7 @@
 import { useCallback } from "react";
 import { useDropzone, type FileRejection } from "react-dropzone";
 import { Upload } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -12,17 +13,22 @@ interface Props {
 
 // same default as the hosted API; override per deploy with NEXT_PUBLIC_MAX_FILE_SIZE_MB
 export const MAX_FILE_SIZE_MB = Number(process.env.NEXT_PUBLIC_MAX_FILE_SIZE_MB) || 50;
-export const LOG_EXTENSIONS = [".ulg", ".ulog", ".bin", ".tlog"];
+// .gz/.zip hold one log; the API unpacks them (with its own size cap)
+export const LOG_EXTENSIONS = [".ulg", ".ulog", ".bin", ".log", ".tlog", ".bbl", ".bfl", ".txt", ".dat", ".gz", ".zip"];
 
-function rejectionText(r: FileRejection): string {
-  const code = r.errors[0]?.code;
-  if (code === "file-too-large") return `${r.file.name} is larger than ${MAX_FILE_SIZE_MB} MB.`;
-  if (code === "file-invalid-type") return `${r.file.name} is not a .ulg, .bin or .tlog log.`;
-  if (code === "too-many-files") return "Drop one log at a time.";
-  return r.errors[0]?.message ?? "File rejected.";
-}
+const CHIPS = ["px4", "ardupilot", "mavlink", "betaflight", "dji", "compressed"] as const;
 
 export function DropZone({ onFile, disabled }: Props) {
+  const t = useTranslations("dropzone");
+
+  const rejectionText = (r: FileRejection) => {
+    const code = r.errors[0]?.code;
+    if (code === "file-too-large") return t("tooLarge", { name: r.file.name, mb: MAX_FILE_SIZE_MB });
+    if (code === "file-invalid-type") return t("invalidType", { name: r.file.name });
+    if (code === "too-many-files") return t("tooMany");
+    return r.errors[0]?.message ?? t("rejected");
+  };
+
   const onDrop = useCallback(
     (accepted: File[]) => {
       if (accepted.length > 0) onFile(accepted[0]);
@@ -48,14 +54,14 @@ export function DropZone({ onFile, disabled }: Props) {
           disabled && "cursor-not-allowed opacity-50"
         )}
       >
-        <input {...getInputProps()} aria-label="Flight log file" />
+        <input {...getInputProps()} aria-label={t("inputLabel")} />
         <Upload aria-hidden className="mb-3 h-6 w-6 text-accent" />
-        <p className="font-medium">{isDragActive ? "Drop the log here" : "Drop a flight log here, or click to choose one"}</p>
+        <p className="font-medium">{isDragActive ? t("dropHere") : t("prompt")}</p>
         <ul className="mt-3 flex flex-wrap justify-center gap-1.5 text-2xs text-fg-muted">
-          <li className="rounded-sm border px-1.5 py-px">PX4 .ulg</li>
-          <li className="rounded-sm border px-1.5 py-px">ArduPilot .bin</li>
-          <li className="rounded-sm border px-1.5 py-px">MAVLink .tlog</li>
-          <li className="num rounded-sm border px-1.5 py-px">max {MAX_FILE_SIZE_MB} MB</li>
+          {CHIPS.map((c) => (
+            <li key={c} className="rounded-sm border px-1.5 py-px">{t(`chips.${c}`)}</li>
+          ))}
+          <li className="num rounded-sm border px-1.5 py-px">{t("maxSize", { mb: MAX_FILE_SIZE_MB })}</li>
         </ul>
       </div>
 

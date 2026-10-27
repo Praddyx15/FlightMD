@@ -1,0 +1,42 @@
+{
+  "root": true,
+  "extends": [
+    "next/core-web-vitals",
+    "plugin:jsx-a11y/recommended",
+    "plugin:tailwindcss/recommended"
+  ],
+  "parser": "@typescript-eslint/parser",
+  "plugins": ["@typescript-eslint", "tailwindcss"],
+  "settings": {
+    "tailwindcss": {
+      "config": "tailwind.config.ts",
+      "callees": ["cn", "clsx"]
+    }
+  },
+  "rules": {
+    "@typescript-eslint/no-explicit-any": "error",
+    "react/no-array-index-key": "warn",
+    "tailwindcss/no-custom-classname": [
+      "error",
+      {
+        "whitelist": [
+          "panel",
+          "label",
+          "btn",
+          "btn-primary",
+          "input",
+          "num",
+          "skip-link",
+          "no-print",
+          "print-only",
+          "print-expand",
+          "print-avoid-break",
+          "light"
+        ]
+      }
+    ],
+    "tailwindcss/classnames-order": "off",
+    "tailwindcss/enforces-shorthand": "off"
+  },
+  "ignorePatterns": ["app/tokens.css", "scripts/", "playwright-report/", "test-results/"]
+}

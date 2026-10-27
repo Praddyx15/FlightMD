@@ -1,4 +1,4 @@
-// Mirrors flightmd_core/models (schema 1.6). Fields added after 1.5 are optional so
+// Mirrors flightmd_core/models (schema 1.7). Fields added after 1.5 are optional so
 // older stored reports still render.
 
 export type Severity = "critical" | "warning" | "info" | "good";
@@ -12,6 +12,7 @@ export type Category =
   | "parameters"
   | "motors"
   | "ascent_profile"
+  | "power"
   | "system";
 
 export interface ParamRecommendation {
@@ -39,6 +40,7 @@ export interface Finding {
   t_end_s?: number | null;
   chart_data: Record<string, unknown> | null;
   param_changes: ParamRecommendation[];
+  params?: string[]; // 1.7: parameter names the recommendation touches
 }
 
 export interface AnalyserResult {
@@ -81,6 +83,11 @@ export interface FlightMetadata {
   gps_path_hdop?: (number | null)[] | null;
   parse_warnings?: string[] | null;
   armed_windows?: [number, number][] | null; // log-relative seconds
+  // 1.7
+  gps_path_t_s?: number[] | null; // same order as gps_path
+  source_format?: string | null; // detector id, e.g. "px4_ulog"
+  log_sha256?: string | null;
+  planning_brief_sha256?: string | null; // AeroAtlas brief the flight was planned with
 }
 
 export interface FlightMDReport {
@@ -98,6 +105,7 @@ export interface FlightMDReport {
   processing_time_ms: number;
   file_name: string;
   file_size_bytes: number;
+  generated_at?: string | null; // 1.7, ISO
 }
 
 export type JobStatus = "processing" | "complete" | "failed";
@@ -107,13 +115,16 @@ export interface StatusResponse {
   progress: number;
   message: string;
   error?: string;
+  eta_seconds?: number | null;
 }
 
 export interface AnalyseResponse {
   report_id: string;
-  status: "processing";
+  status: "processing" | "complete";
   estimated_seconds: number;
   airframe_token?: string;
+  deduplicated?: boolean; // same bytes as an earlier upload: report_id is that one
+  contribution_id?: string; // with contribute_to_dataset; DELETE /dataset/{id} withdraws it
 }
 
 export interface TrendFlight {
@@ -197,4 +208,38 @@ export interface AirframeConfigResponse {
   maintenance_due: boolean;
   flight_count: number;
   airframe_token?: string;
+}
+
+// tune, fly, verify: parameter changes marked as applied on an airframe
+export interface AppliedParam {
+  name: string;
+  from_value: number;
+  to_value: number;
+}
+
+export type VerifyStatus = "pending" | "improved" | "unchanged" | "worse" | "mixed";
+
+export interface ChangeVerify {
+  status: VerifyStatus;
+  next_report_id: string | null;
+  findings_resolved: string[];
+  findings_new: string[];
+  metric_deltas: Record<string, number | null>;
+}
+
+export interface ChangeRecord {
+  id: string;
+  report_id: string;
+  changes: AppliedParam[];
+  applied_by: "user" | "uaop";
+  note?: string | null;
+  created_at: string | number;
+  verify: ChangeVerify;
+}
+
+export interface NewChangeRecord {
+  report_id: string;
+  changes: AppliedParam[];
+  applied_by: "user" | "uaop";
+  note?: string;
 }

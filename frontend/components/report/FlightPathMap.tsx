@@ -13,6 +13,10 @@ interface Props {
   colorMode: PathColorMode;
   windSpeedPath?: (number | null)[] | null;
   signalQualityPath?: (number | null)[] | null;
+  // log-relative seconds per gps_path point (schema 1.7), for highlighting a finding
+  times?: number[] | null;
+  highlight?: { start: number; end: number | null } | null;
+  labels: { launch: string; land: string };
   className?: string;
 }
 
@@ -46,6 +50,13 @@ const landIcon = L.divIcon({
   iconAnchor: [6, 6],
 });
 
+const spotIcon = L.divIcon({
+  className: "",
+  html: '<div style="width:16px;height:16px;border-radius:9999px;border:3px solid var(--accent);background:transparent"></div>',
+  iconSize: [16, 16],
+  iconAnchor: [8, 8],
+});
+
 function arrowIcon(rotationDeg: number) {
   return L.divIcon({
     className: "",
@@ -63,7 +74,9 @@ function FitBounds({ positions }: { positions: [number, number][] }) {
   return null;
 }
 
-export function FlightPathMap({ gpsPath, colorMode, windSpeedPath, signalQualityPath, className }: Props) {
+export function FlightPathMap({
+  gpsPath, colorMode, windSpeedPath, signalQualityPath, times, highlight, labels, className,
+}: Props) {
   // <= 1000 points; the values arrays are indexed the same way as gpsPath
   const idx = useMemo(() => sampleIndices(gpsPath.length), [gpsPath]);
   const positions = useMemo<[number, number][]>(() => idx.map((i) => [gpsPath[i][0], gpsPath[i][1]]), [idx, gpsPath]);
@@ -78,22 +91,37 @@ export function FlightPathMap({ gpsPath, colorMode, windSpeedPath, signalQuality
       const v = t[i];
       return v === null || v === undefined ? -1 : Math.min(BINS - 1, Math.floor(v * BINS));
     };
-    const out: { bin: number; pos: [number, number][] }[] = [];
+    const out: { bin: number; from: number; pos: [number, number][] }[] = [];
     idx.forEach((src, k) => {
       const bin = binOf(src);
       const last = out[out.length - 1];
       if (last && last.bin === bin) last.pos.push(positions[k]);
-      else out.push({ bin, pos: last ? [last.pos[last.pos.length - 1], positions[k]] : [positions[k]] });
+      else out.push({ bin, from: k, pos: last ? [last.pos[last.pos.length - 1], positions[k]] : [positions[k]] });
     });
     return out;
   }, [colorMode, windSpeedPath, signalQualityPath, idx, positions]);
 
+  // the stretch of path flown during the active finding; a single spot for an instant one
+  const marked = useMemo(() => {
+    if (!highlight || !times || times.length !== gpsPath.length) return null;
+    const { start, end } = highlight;
+    if (end !== null && end > start) {
+      const pos = positions.filter((_, k) => times[idx[k]] >= start && times[idx[k]] <= end);
+      if (pos.length >= 2) return { line: pos, spot: null };
+    }
+    let best = 0;
+    idx.forEach((src, k) => {
+      if (Math.abs(times[src] - start) < Math.abs(times[idx[best]] - start)) best = k;
+    });
+    return { line: null, spot: positions[best] };
+  }, [highlight, times, gpsPath.length, idx, positions]);
+
   const arrows = useMemo(() => {
     if (positions.length < 2) return [];
     const step = Math.max(1, Math.floor(positions.length / 8));
-    const pts: { pos: [number, number]; rotation: number }[] = [];
+    const pts: { at: number; pos: [number, number]; rotation: number }[] = [];
     for (let i = step; i < positions.length - 1; i += step) {
-      pts.push({ pos: positions[i], rotation: bearingDeg(positions[i - 1], positions[i]) });
+      pts.push({ at: i, pos: positions[i], rotation: bearingDeg(positions[i - 1], positions[i]) });
     }
     return pts;
   }, [positions]);
@@ -107,9 +135,9 @@ export function FlightPathMap({ gpsPath, colorMode, windSpeedPath, signalQuality
         <FitBounds positions={positions} />
 
         {runs ? (
-          runs.map((r, i) => (
+          runs.map((r) => (
             <Polyline
-              key={i}
+              key={r.from}
               positions={r.pos}
               pathOptions={{ color: r.bin < 0 ? "rgb(115,120,128)" : rgbCss(rampColour((r.bin + 0.5) / BINS)), weight: 4 }}
             />
@@ -118,11 +146,14 @@ export function FlightPathMap({ gpsPath, colorMode, windSpeedPath, signalQuality
           <Polyline positions={positions} pathOptions={{ color: "var(--series-1)", weight: 4 }} />
         )}
 
-        {arrows.map((a, i) => (
-          <Marker key={i} position={a.pos} icon={arrowIcon(a.rotation)} interactive={false} keyboard={false} />
+        {marked?.line && <Polyline positions={marked.line} pathOptions={{ color: "var(--accent)", weight: 8, opacity: 0.55 }} />}
+        {marked?.spot && <Marker position={marked.spot} icon={spotIcon} interactive={false} keyboard={false} />}
+
+        {arrows.map((a) => (
+          <Marker key={a.at} position={a.pos} icon={arrowIcon(a.rotation)} interactive={false} keyboard={false} />
         ))}
-        <Marker position={positions[0]} icon={launchIcon} title="Launch" />
-        <Marker position={positions[positions.length - 1]} icon={landIcon} title="Land / log end" />
+        <Marker position={positions[0]} icon={launchIcon} title={labels.launch} />
+        <Marker position={positions[positions.length - 1]} icon={landIcon} title={labels.land} />
       </MapContainer>
     </div>
   );
