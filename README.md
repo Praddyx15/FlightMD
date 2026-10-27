@@ -49,6 +49,11 @@ but not supported: recent aircraft encrypt them and there's no openly licensed d
 - Side-by-side comparison of two flights.
 - Dark "ops" and light "field" themes, and metric, imperial or aviation units.
 
+## Walkthrough
+
+[`docs/WALKTHROUGH.md`](docs/WALKTHROUGH.md) goes through a report from upload to verified fix. The narrated
+video and the screenshots are rendered from the running app by [`tools/walkthrough`](tools/walkthrough/README.md).
+
 ## Run it
 
 Python 3.11–3.13 and Node 20+.
