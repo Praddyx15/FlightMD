@@ -78,3 +78,9 @@ Flight Review shows for the same flight. The EKF analyser is intentionally
 not wired up for ArduPilot/MAVLink yet (see `ardupilot_parser.py` and
 `mavlink_telemetry_parser.py` docstrings) — that bit-flag mapping needs
 real-log verification before it's safe to add.
+
+## Other formats
+
+`sample_betaflight.bbl` and `sample_dji_v10.txt` are synthetic too, written by the fixture writers
+in `tests/blackbox_writer.py` and `tests/dji_writer.py`. They exercise the decoders, not the analysers'
+thresholds.

@@ -2,7 +2,10 @@ import struct
 
 import pytest
 
+import blackbox_writer as bw
+import dji_writer as dw
 from flightmd_core.services.format_detector import (
+    PARSERS,
     detect_format,
     detect_format_from_header,
     UnsupportedFormatError,
@@ -129,3 +132,86 @@ def test_detect_format_on_disk(tmp_path):
     bad.write_bytes(tlog_record()[:8] + b"\x00" * 100)
     with pytest.raises(UnsupportedFormatError):
         detect_format(str(bad))
+
+
+TEXT_LOG = (
+    b"FMT, 128, 89, FMT, BBnNZ, Type,Length,Name,Format,Columns\n"
+    b"FMT, 129, 45, IMU, QBffffff, TimeUS,I,GyrX,GyrY,GyrZ,AccX,AccY,AccZ\n"
+    b"IMU, 1000000, 0, 0.01, 0.02, 0.03, 0.1, 0.2, -9.8\n"
+)
+
+
+@pytest.mark.parametrize("prefix", [b"", b"\r\n", b"\xef\xbb\xbf"])
+def test_text_dataflash_detected(prefix):
+    assert detect_format_from_header(prefix + TEXT_LOG, "export.log", complete=True) == "ardupilot_log"
+
+
+def test_text_dataflash_detected_regardless_of_extension():
+    assert detect_format_from_header(TEXT_LOG, "flight.txt", complete=True) == "ardupilot_log"
+
+
+def test_text_mentioning_fmt_later_is_not_a_log():
+    with pytest.raises(UnsupportedFormatError, match="text-format"):
+        detect_format_from_header(b"notes\n" + TEXT_LOG, "export.log", complete=True)
+
+
+def test_blackbox_detected():
+    head = bw.BlackboxWriter().header().bytes()
+    assert detect_format_from_header(head[:4096], "btfl_001.bbl") == "betaflight_bbl"
+    # an SD card log can have other data in front of the first header
+    assert detect_format_from_header(b"\x00\xff" * 50 + head[:3000], "LOG00007.TXT") == "betaflight_bbl"
+
+
+@pytest.mark.parametrize("version", [3, 6, 10, 12])
+def test_dji_txt_detected(version):
+    recs = [dw.record(dw.OSD, dw.osd(47.0, 8.0, 1.0), version, seed=k)[0] for k in range(5)]
+    data = dw.build(recs, version)
+    assert detect_format_from_header(data[:4096], "DJIFlightRecord_2026-05-01.txt") == "dji_txt"
+    assert detect_format_from_header(data, "renamed.bin", complete=True) == "dji_txt"
+
+
+def test_dji_txt_v13_detected():
+    recs = [dw.key_storage(dw.BASE_FEATURE, b"k" * 32, 13)]
+    recs += [dw.record(dw.CUSTOM, dw.custom(1_780_000_000_000), 13)[0] for _ in range(3)]
+    data = dw.build(recs, 13)
+    assert detect_format_from_header(data, "DJIFlightRecord.txt", complete=True) == "dji_txt"
+
+
+def test_short_dji_header_accepted_provisionally_only_as_txt():
+    recs = [dw.record(dw.OSD, dw.osd(47.0, 8.0, 1.0), 10)[0] for _ in range(5)]
+    head = dw.build(recs, 10)[:120]
+    assert detect_format_from_header(head, "DJIFlightRecord.txt") == "dji_txt"
+    with pytest.raises(UnsupportedFormatError):
+        detect_format_from_header(head, "flight.bin")
+
+
+@pytest.mark.parametrize("head", [
+    b"\x00" * 16 + b"BUILD" + b"\x00" * 200,
+    b"LOGH" + b"\x01" * 200,
+])
+def test_dji_dat_recognised_and_refused(head):
+    with pytest.raises(UnsupportedFormatError, match=r"\.DAT") as e:
+        detect_format_from_header(head, "FLY001.DAT")
+    assert e.value.format_id == "dji_dat"
+
+
+def test_unknown_format_has_no_format_id():
+    with pytest.raises(UnsupportedFormatError) as e:
+        detect_format_from_header(b"random bytes", "flight.xyz")
+    assert e.value.format_id is None
+
+
+def test_parsers_cover_every_format():
+    ids = {"px4_ulog", "ardupilot_bin", "ardupilot_log", "mavlink_tlog", "betaflight_bbl", "dji_txt", "dji_dat"}
+    assert set(PARSERS) == ids
+    assert all(callable(getattr(cls, "parse", None)) for cls in PARSERS.values())
+
+
+def test_detect_new_formats_on_disk(tmp_path):
+    bbl = tmp_path / "a.bbl"
+    bbl.write_bytes(bw.BlackboxWriter().header().bytes())
+    assert detect_format(str(bbl)) == "betaflight_bbl"
+
+    txt = tmp_path / "b.log"
+    txt.write_bytes(TEXT_LOG)
+    assert detect_format(str(txt)) == "ardupilot_log"
