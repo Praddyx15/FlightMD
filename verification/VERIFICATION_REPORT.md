@@ -1,5 +1,10 @@
 # FlightMD Verification & Validation Report
 
+> Run in July 2026 against the engine as it was then. The October 2026 changes (flight-phase
+> gating, the PX4 EKF bit layout, battery internal resistance, windowed oscillation spectra,
+> fixes for tlog GPS and ArduPilot ESC parsing) change many of the per-log findings below.
+> The method still stands; the numbers need a re-run.
+
 **Dataset:** 50 real flight logs, all publicly shared by real PX4 users on [PX4's official Flight Review database](https://review.px4.io/) for community review. Not synthetic test fixtures. Not curated for a favorable outcome — selected by vehicle type and file size only, before any of them were analysed.
 
 ## Methodology
