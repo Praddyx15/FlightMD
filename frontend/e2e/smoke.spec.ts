@@ -23,7 +23,7 @@ test("upload a log, read the report, copy the parameter changes", async ({ page 
   await expect(params.getByRole("button", { name: "Copied" })).toBeVisible();
 
   const text = await page.evaluate(() => navigator.clipboard.readText());
-  const lines = text.trim().split("\n");
+  const lines = text.replace(/\r\n/g, "\n").trim().split("\n");
   expect(lines[0]).toBe("# FlightMD suggested changes");
   expect(lines.length).toBeGreaterThan(1);
   for (const line of lines.slice(1)) expect(line).toMatch(/^[A-Z0-9_]+,-?\d+(\.\d+)?$/);
