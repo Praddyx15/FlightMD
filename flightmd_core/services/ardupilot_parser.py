@@ -195,7 +195,7 @@ def _row_getter(msg, inst_field, fields) -> Callable:
     take = operator.itemgetter(*idx)
 
     if len(idx) == len(names) and len(idx) > 1 and all(v == 1.0 for v in mul + div):
-        return take  # IMU and friends: plain floats, nothing to fill in
+        return lambda m: take(m._elements)  # IMU and friends: plain floats, nothing to fill in
 
     scale_mul, scale_div = np.array(mul), np.array(div)
     pos = [k for k, n in enumerate(names) if n]
