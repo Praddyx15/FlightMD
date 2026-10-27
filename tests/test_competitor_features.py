@@ -1,4 +1,3 @@
-import pytest
 from flightmd_core.services.weather_lookup import fetch_weather
 from flightmd_core.models.findings import FlightMDReport
 from flightmd_core.models.metadata import FlightMetadata

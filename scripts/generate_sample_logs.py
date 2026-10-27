@@ -1,23 +1,13 @@
 """
-Generates small, spec-valid binary flight logs for all three formats
-FlightMD supports — PX4 ULog (.ulg), ArduPilot dataflash (.bin), and
-MAVLink telemetry (.tlog) — using each format's own real binary framing,
-not a mock. This is what lets tests exercise the actual pyulog / DFReader
-/ pymavlink parsing paths end-to-end, rather than only the internal
-field-mapping logic (which the existing mocked unit tests already cover).
+Writes the small sample logs in tests/sample_logs: one .ulg, .bin and .tlog per
+profile, each in the format's real binary framing so tests go through the real
+pyulog / DFReader / pymavlink code.
 
-Two synthetic flight profiles per format:
-  - "clean":  near-zero oscillation, healthy battery, stable GPS
-  - "flawed": sustained ~1.1Hz roll/pitch oscillation, high battery sag,
-              a mid-flight satellite drop — chosen to mirror the kind of
-              real tuning issue a genuine flight log turned up during
-              manual testing of this project, so the sample data exercises
-              the same finding types real drones actually trigger.
+  clean   near-zero oscillation, healthy battery, steady GPS
+  flawed  ~1.1 Hz roll/pitch oscillation, battery sag, satellites drop mid-flight
+          (the kind of tuning problem a real log showed during testing)
 
-Deterministic (fixed random seed) — nothing here depends on real flight
-data, so it's safe to commit and safe to regenerate.
-
-Run: python scripts/generate_sample_logs.py
+Fixed seed, no real flight data. Run: python scripts/generate_sample_logs.py
 """
 
 import os
@@ -87,12 +77,9 @@ SAMPLE_PARAMS = {
 }
 
 
-# ── PX4 ULog (.ulg) ───────────────────────────────────────────────────────────
-# Format reverse-engineered from pyulog's own writer (pyulog.core.ULog
-# _write_file_header / _write_format_messages / _write_data_section) rather
-# than guessed — header is 7 magic bytes + version + 8-byte start timestamp;
-# each message is a 2-byte little-endian payload length + 1-byte type char
-# (F=format, A=add-logged-message subscription, P=parameter, D=data).
+# ULog layout taken from pyulog's own writer (_write_file_header etc.): 7 magic bytes,
+# version, 8-byte start time, then messages of <u16 length><type char><payload>
+# (F format, A subscription, P parameter, D data).
 
 def write_ulog(path: str, profile: dict) -> None:
     HEADER = b"ULog\x01\x125"
@@ -101,6 +88,7 @@ def write_ulog(path: str, profile: dict) -> None:
     )
     start_us = int(time.time() * 1e6)
 
+    # todo: log a vehicle_status too so the .ulg samples carry arming state like the tlog
     topics = {
         "vehicle_angular_velocity": (
             "uint64_t timestamp;float rollspeed;float pitchspeed;float yawspeed;",
@@ -141,10 +129,7 @@ def write_ulog(path: str, profile: dict) -> None:
             data = f"{name}:{fmt_fields}".encode("utf-8")
             f.write(struct.pack("<HB", len(data), MSG_FORMAT) + data)
 
-        # Parameter (P) messages must be written before any
-        # AddLoggedMessage (A) — pyulog's reader treats the first A message
-        # as the end of the "definitions" section and stops looking for
-        # parameters/formats after that point.
+        # params before the first A message: pyulog ends the definitons section there
         for pname, pval in SAMPLE_PARAMS.items():
             key = f"float {pname}".encode("utf-8")
             data = struct.pack("<B", len(key)) + key + struct.pack("<f", float(pval))
@@ -208,11 +193,8 @@ def write_ulog(path: str, profile: dict) -> None:
             f.write(buf)
 
 
-# ── ArduPilot dataflash (.bin) ────────────────────────────────────────────────
-# Format reverse-engineered from pymavlink.DFReader (DFReader_binary,
-# DFFormat, FORMAT_TO_STRUCT) — each message is 0xA3 0x95 <type_id> followed
-# by a little-endian struct body; a FMT message (type 0x80) defines every
-# other message type's field layout before it's used.
+# Dataflash layout as pymavlink.DFReader reads it: 0xA3 0x95 <type id> + little-endian
+# struct body, and a FMT message (type 0x80) describing each type before it's used.
 
 def write_ardupilot_bin(path: str, profile: dict) -> None:
     HEAD1, HEAD2, FMT_TYPE = 0xA3, 0x95, 0x80
@@ -229,11 +211,8 @@ def write_ardupilot_bin(path: str, profile: dict) -> None:
     message_types = {
         0x01: ("IMU", "Qffffff", "TimeUS,GyrX,GyrY,GyrZ,AccX,AccY,AccZ", "Qffffff"),
         0x02: ("BAT", "Qffff", "TimeUS,Volt,Curr,CurrTot,Temp", "Qffff"),
-        # Lat/Lng use ArduPilot's 'L' type code (not generic 'i') so
-        # DFReader applies its built-in 1e-7 degE7->degrees scaling when
-        # reading the field back — matching how real dataflash logs encode
-        # GPS.Lat/GPS.Lng. The struct-pack format below is unaffected: the
-        # wire layout is still a plain 4-byte int either way.
+        # 'L' (not 'i') for Lat/Lng so DFReader scales degE7 to degrees like a real log;
+        # on the wire it's the same 4-byte int
         0x03: ("GPS", "QBLLffB", "TimeUS,Status,Lat,Lng,Alt,HDop,NSats", "QBiiffB"),
         0x04: ("MSG", "QZ", "TimeUS,Message", "Q64s"),
         0x05: ("PARM", "QNf", "TimeUS,Name,Value", "Q16sf"),
@@ -280,20 +259,15 @@ def write_ardupilot_bin(path: str, profile: dict) -> None:
                     + struct.pack(
                         "<QBiiffB", ts, 3,
                         int(profile["lat"][i] * 1e7), int(profile["lon"][i] * 1e7),
-                        # Raw metres, not mm — ardupilot_parser.py multiplies GPS.Alt
-                        # by 1000 itself (matching real ArduPilot dataflash logs,
-                        # where Alt is stored in metres). Pre-scaling here double-
-                        # counts that conversion.
+                        # metres, as in real logs; the parser does the mm conversion
                         float(profile["alt_m"][i]), float(profile["hdop"][i]),
                         int(profile["sats"][i]),
                     )
                 )
 
 
-# ── MAVLink telemetry (.tlog) ─────────────────────────────────────────────────
-# Real MAVLink packets (packed via pymavlink's own encoder — not a hand-rolled
-# frame) prefixed with the standard 8-byte big-endian microsecond timestamp,
-# matching mavutil.mavlogfile's own write format exactly.
+# tlog = pymavlink-packed MAVLink frames, each after an 8-byte big-endian usec
+# timestamp, same as mavutil.mavlogfile writes them.
 
 def write_tlog(path: str, profile: dict) -> None:
     from pymavlink.dialects.v20 import common as dialect
@@ -312,8 +286,9 @@ def write_tlog(path: str, profile: dict) -> None:
             t_ms = int(profile["t"][i] * 1000)
 
             if i % 20 == 0:
+                # base_mode 209 = custom mode + stabilize + manual input + armed
                 hb = dialect.MAVLink_heartbeat_message(
-                    type=2, autopilot=3, base_mode=81, custom_mode=0,
+                    type=2, autopilot=3, base_mode=209, custom_mode=0,
                     system_status=4, mavlink_version=3,
                 )
                 f.write(frame(ts, hb))

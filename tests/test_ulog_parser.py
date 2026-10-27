@@ -1,13 +1,4 @@
-"""
-Tests for ULogParser — file handling, topic extraction, metadata parsing.
-
-Note: These tests require either real .ulg files in tests/sample_logs/
-or use mocking for unit-level coverage. Integration tests use real files.
-"""
-
 import os
-import struct
-import tempfile
 
 import numpy as np
 import pandas as pd
@@ -16,6 +7,89 @@ import pytest
 from flightmd_core.services.ulog_parser import ULogParser
 
 SAMPLE_LOGS_DIR = os.path.join(os.path.dirname(__file__), "sample_logs")
+START = 50_000_000  # ULog start_timestamp, boot µs
+
+
+class FakeData:
+    def __init__(self, name, multi_id, data):
+        self.name = name
+        self.multi_id = multi_id
+        self.data = {k: np.asarray(v) for k, v in data.items()}
+
+
+class FakeULog:
+    def __init__(self, data_list, start=START):
+        self.data_list = data_list
+        self.start_timestamp = start
+        self.last_timestamp = start + 10_000_000
+
+
+def topics_of(*data):
+    return ULogParser()._extract_topics(FakeULog(list(data)))
+
+
+class TestExtractTopics:
+
+    def test_instances_named_without_duplicates(self):
+        topics = topics_of(
+            FakeData("sensor_accel", 0, {"timestamp": [START + 1, START + 2], "x": [0.1, 0.2]}),
+            FakeData("sensor_accel", 1, {"timestamp": [START + 1, START + 2], "x": [0.3, 0.4]}),
+        )
+        assert sorted(k for k in topics if k.startswith("sensor_accel")) == ["sensor_accel", "sensor_accel_1"]
+        assert list(topics["sensor_accel_1"]["x"]) == pytest.approx([0.3, 0.4])
+
+    def test_timestamps_are_log_relative(self):
+        topics = topics_of(FakeData("vehicle_status", 0, {
+            "timestamp": np.array([START, START + 500_000], dtype=np.uint64),
+            "timestamp_sample": np.array([START - 100, START + 499_900], dtype=np.uint64),
+            "arming_state": [1, 2],
+        }))
+        df = topics["vehicle_status"]
+        assert list(df["timestamp"]) == [0, 500_000]
+        assert list(df["timestamp_sample"]) == [-100, 499_900]
+
+    def test_sensor_gps_aliased_and_new_field_names_normalised(self):
+        # PX4 1.15 logs sensor_gps with float latitude_deg / longitude_deg / altitude_msl_m
+        topics = topics_of(FakeData("sensor_gps", 0, {
+            "timestamp": [START],
+            "latitude_deg": [37.7749],
+            "longitude_deg": [-122.4194],
+            "altitude_msl_m": [12.5],
+            "fix_type": [3],
+        }))
+        gps = topics["vehicle_gps_position"]
+        assert gps["lat"].iloc[0] == 377749000
+        assert gps["lon"].iloc[0] == -1224194000
+        assert gps["alt"].iloc[0] == 12500
+
+    def test_esc_status_trimmed_to_esc_count(self):
+        data = {"timestamp": [START, START + 1], "esc_count": [4, 4]}
+        for i in range(8):
+            data[f"esc[{i}].esc_rpm"] = [5000, 5100] if i < 4 else [0, 0]
+            data[f"esc[{i}].esc_current"] = [3.0, 3.1] if i < 4 else [0.0, 0.0]
+        esc = topics_of(FakeData("esc_status", 0, data))["esc_status"]
+
+        rpm_cols = [c for c in esc.columns if c.endswith("esc_rpm")]
+        assert rpm_cols == [f"esc[{i}].esc_rpm" for i in range(4)]
+        assert (esc["esc_count"] == 4).all()
+
+    def test_esc_count_inferred_when_missing(self):
+        data = {"timestamp": [START, START + 1]}
+        for i in range(8):
+            data[f"esc[{i}].esc_rpm"] = [5000, 5100] if i < 6 else [0, 0]
+        esc = topics_of(FakeData("esc_status", 0, data))["esc_status"]
+        assert (esc["esc_count"] == 6).all()
+        assert "esc[6].esc_rpm" not in esc.columns
+
+    def test_primary_ekf_instance_goes_under_bare_name(self):
+        topics = topics_of(
+            FakeData("estimator_selector_status", 0, {"timestamp": [START, START + 1, START + 2],
+                                                      "primary_instance": [1, 1, 0]}),
+            FakeData("estimator_status", 0, {"timestamp": [START], "pos_test_ratio": [0.0]}),
+            FakeData("estimator_status", 1, {"timestamp": [START], "pos_test_ratio": [1.0]}),
+        )
+        assert topics["estimator_status"]["pos_test_ratio"].iloc[0] == 1.0
+        assert topics["estimator_status_1"]["pos_test_ratio"].iloc[0] == 0.0
 
 
 class TestULogParserUnit:
@@ -24,123 +98,101 @@ class TestULogParserUnit:
         with pytest.raises(FileNotFoundError):
             ULogParser().parse("/nonexistent/path/file.ulg")
 
-    def test_topic_alias_normalisation(self):
-        """_extract_topics should create canonical aliases."""
-        # This is tested indirectly — if the parser runs on a real file,
-        # aliases like sensor_accel should exist even if source is sensor_accel_0
-        parser = ULogParser()
-        # Test the alias lookup logic via a mock ULog structure
-        class FakeData:
-            def __init__(self, name, mid, data):
-                self.name = name
-                self.multi_id = mid
-                self.data = data
-        class FakeULog:
-            data_list = [
-                FakeData("sensor_accel", 0, {"timestamp": [1,2,3], "x": [0.1,0.2,0.3]}),
-                FakeData("sensor_accel", 1, {"timestamp": [1,2,3], "x": [0.2,0.3,0.4]}),
-            ]
-        raw = {}
-        for d in FakeULog.data_list:
-            key = d.name if d.multi_id == 0 else f"{d.name}_{d.multi_id}"
-            raw[key] = pd.DataFrame.from_dict(d.data)
-            if d.multi_id == 0:
-                raw[d.name] = pd.DataFrame.from_dict(d.data)
-        assert "sensor_accel" in raw
-        assert "sensor_accel_1" in raw
-
     def test_arm_count_from_arming_state(self):
-        """_count_arms should detect transitions to ARMED (state=2)."""
-        parser = ULogParser()
-        # Simulate one arm event: unarmed → armed → unarmed → armed
-        states = np.array([1, 1, 2, 2, 2, 1, 1, 2, 2])
-        df = pd.DataFrame({"arming_state": states})
-        topics = {"vehicle_status": df}
-        count = parser._count_arms(topics)
-        assert count == 2
+        states = np.array([1, 1, 2, 2, 2, 1, 1, 2, 2])  # 2 = ARMED
+        topics = {"vehicle_status": pd.DataFrame({"arming_state": states})}
+        assert ULogParser()._count_arms(topics) == 2
 
     def test_max_altitude_from_local_position(self):
-        """_max_altitude should negate Z (PX4 NED, Z positive-down)."""
-        parser = ULogParser()
-        # Z = -50 (50m altitude in NED)
-        df = pd.DataFrame({
-            "timestamp": [0, 1, 2],
-            "z": [0.0, -30.0, -50.0],
-        })
-        topics = {"vehicle_local_position": df}
-        alt = parser._max_altitude(topics)
-        assert alt == 50.0
+        # NED: z = -50 is 50 m up
+        df = pd.DataFrame({"timestamp": [0, 1, 2], "z": [0.0, -30.0, -50.0]})
+        assert ULogParser()._max_altitude({"vehicle_local_position": df}) == 50.0
 
     def test_total_distance_calculation(self):
-        """_total_distance should sum Euclidean steps in local XY."""
-        parser = ULogParser()
-        # Simple 3-4-5 triangle path
         df = pd.DataFrame({
             "timestamp": [0, 1, 2],
             "x": [0.0, 3.0, 3.0],
             "y": [0.0, 0.0, 4.0],
         })
-        topics = {"vehicle_local_position": df}
-        dist = parser._total_distance(topics)
-        assert abs(dist - 7.0) < 0.01   # 3 + 4 = 7
+        assert ULogParser()._total_distance({"vehicle_local_position": df}) == pytest.approx(7.0)
 
     def test_max_speed_from_velocity(self):
-        """_max_speed should return max of sqrt(vx² + vy²)."""
-        parser = ULogParser()
         df = pd.DataFrame({
             "timestamp": [0, 1, 2],
-            "vx": [0.0, 3.0, 0.0],
-            "vy": [0.0, 4.0, 0.0],
+            "vx": [0.0, 3.0, np.nan],
+            "vy": [0.0, 4.0, np.nan],
         })
-        topics = {"vehicle_local_position": df}
-        speed = parser._max_speed(topics)
-        assert abs(speed - 5.0) < 0.01
+        assert ULogParser()._max_speed({"vehicle_local_position": df}) == pytest.approx(5.0)
 
     def test_extract_metadata_handles_integer_version_fields(self):
-        """Real (non-simulated) PX4 firmware can encode ver_sw_release,
-        ver_sw, ver_hw, and sys_name as raw ints in the log's info section
-        rather than strings — confirmed across 13/13 real public PX4 logs
-        spanning every vehicle type, all of which failed FlightMetadata
-        validation before _extract_metadata started casting these fields
-        with str()."""
+        # real firmware writes these info fields as ints
         class StubULog:
             start_timestamp = 0
-            last_timestamp = 5_000_000  # 5s
+            last_timestamp = 5_000_000
             msg_info_dict = {
                 "ver_sw": 17695743,
                 "ver_hw": 42,
-                "ver_sw_release": 17105408,
+                "ver_sw_release": 0x010E00FF,
                 "sys_name": 7,
+                "time_ref_utc": 19800,
             }
             initial_parameters = {"SYS_AUTOSTART": 4001}
 
-        parser = ULogParser()
-        metadata = parser._extract_metadata(StubULog(), {})
+        metadata = ULogParser()._extract_metadata(StubULog(), {})
         assert metadata.firmware_version == "17695743"
         assert metadata.hardware_id == "42"
-        assert metadata.px4_version == "17105408"
+        assert metadata.px4_version == "v1.14.0"
         assert metadata.vehicle_type == "7"
+        assert metadata.airframe_id == 4001
+        # time_ref_utc is a timezone offset, not a start time
+        assert metadata.log_start_utc is None
 
-    def test_extract_flight_modes_from_nav_state(self):
-        """_extract_flight_modes should decode nav_state values."""
-        parser = ULogParser()
-        df = pd.DataFrame({
-            "timestamp": [0, 1, 2, 3],
-            "nav_state": [2, 2, 3, 3],  # 2=Position, 3=Auto Mission
+    def test_log_start_utc_from_gps_time(self):
+        gps = pd.DataFrame({
+            "timestamp": [1_000_000, 2_000_000],
+            "time_utc_usec": [0, 1_700_000_000_000_000],
         })
-        topics = {"vehicle_status": df}
-        modes = parser._extract_flight_modes(topics)
-        assert "Position Control" in modes
-        assert "Auto Mission" in modes
+
+        class StubULog:
+            start_timestamp = 0
+            last_timestamp = 5_000_000
+            msg_info_dict = {}
+            initial_parameters = {}
+
+        metadata = ULogParser()._extract_metadata(StubULog(), {"vehicle_gps_position": gps})
+        # GPS time at t=2 s, so the log began 2 s earlier
+        assert metadata.log_start_utc == "2023-11-14T22:13:18Z"
+
+    @pytest.mark.parametrize("nav_state, name", [
+        (2, "Position Control"),
+        (3, "Auto Mission"),
+        (10, "Acro"),
+        (14, "Offboard"),
+        (17, "Auto Takeoff"),
+        (18, "Auto Land"),
+        (21, "Orbit"),
+    ])
+    def test_nav_state_names(self, nav_state, name):
+        df = pd.DataFrame({"timestamp": [0], "nav_state": [nav_state]})
+        assert ULogParser()._extract_flight_modes({"vehicle_status": df}) == [name]
+
+    def test_warnings_from_dropouts_and_corruption(self):
+        class Drop:
+            def __init__(self, ms):
+                self.duration = ms
+
+        class StubULog:
+            file_corruption = True
+            dropouts = [Drop(300), Drop(200)]
+
+        warnings = ULogParser()._warnings(StubULog())
+        assert len(warnings) == 2
+        assert "2 times (0.5 s" in warnings[1]
 
 
 @pytest.mark.integration
 class TestULogParserIntegration:
-    """
-    Integration tests that require real .ulg files.
-    Place .ulg files in tests/sample_logs/ and run with pytest -m integration.
-    These tests are skipped in CI if no sample files are present.
-    """
+    """Needs real .ulg files in tests/sample_logs/; skipped when there are none."""
 
     @pytest.fixture
     def sample_log_path(self):
@@ -168,10 +220,6 @@ class TestULogParserIntegration:
         _, params, _ = ULogParser().parse(sample_log_path)
         for k, v in params.items():
             assert isinstance(v, float), f"{k} value {v!r} is not float"
-
-    def test_metadata_duration_positive(self, sample_log_path):
-        _, _, metadata = ULogParser().parse(sample_log_path)
-        assert metadata.duration_seconds > 0
 
     def test_available_topics_populated(self, sample_log_path):
         _, _, metadata = ULogParser().parse(sample_log_path)

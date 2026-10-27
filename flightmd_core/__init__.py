@@ -1,25 +1,12 @@
 """
-flightmd_core — multi-format drone flight log analysis engine (PX4 ULog,
-ArduPilot dataflash, MAVLink telemetry logs).
+FlightMD core: flight log analysis for PX4 ULog, ArduPilot dataflash and MAVLink
+telemetry logs. The diagnostics are a deterministic rule engine and need no network or
+API key; an optional AI enhancer can polish the executive summary.
 
-Public API:
-    run_analysis(...)  → FlightMDReport
-    FlightMDReport     — the report data model
-    FlightMetadata     — flight metadata model
-    Finding            — individual finding
-    Severity / Category — enums
+    from flightmd_core import run_analysis
+    report = await run_analysis(ulog_path="flight.ulg", file_name="flight.ulg", file_size=1234567)
 
-All diagnostics are produced by a deterministic rule engine — no network
-access or API key is required. An optional AI enhancer can be passed in to
-polish the executive summary; the platform is fully functional without it.
-
-Usage:
-    from flightmd_core import run_analysis, FlightMDReport
-    report = await run_analysis(
-        ulog_path="flight.ulg",
-        file_name="flight.ulg",
-        file_size=1234567,
-    )
+or from a shell: python -m flightmd_core flight.ulg --json report.json
 """
 
 from flightmd_core.orchestrator import run_analysis

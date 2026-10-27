@@ -93,3 +93,14 @@ class TestKML:
         root = ET.fromstring(kml_bytes)
         coords_el = root.find(".//{http://www.opengis.net/kml/2.2}coordinates")
         assert not coords_el.text
+
+
+def test_nan_altitude_is_left_out():
+    path = [[37.7749, -122.4194, float("nan")], [37.7750, -122.4195, 15.0]]
+    root = ET.fromstring(generate_gpx(make_report(path)))
+    eles = root.findall(".//{http://www.topografix.com/GPX/1/1}ele")
+    assert [e.text for e in eles] == ["15.00"]
+
+    kml = ET.fromstring(generate_kml(make_report(path)))
+    coords = kml.find(".//{http://www.opengis.net/kml/2.2}coordinates").text
+    assert "nan" not in coords
