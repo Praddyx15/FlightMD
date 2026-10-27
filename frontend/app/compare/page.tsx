@@ -1,263 +1,273 @@
 "use client";
 
+import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import { getDiff } from "@/lib/api";
-import type { DiffResponse } from "@/lib/types";
-import { scoreColour, SEVERITY_COLOURS } from "@/lib/utils";
-import { MODULE_LABELS, humaniseMetricKey } from "@/lib/metricLabels";
-import { ArrowRight, CheckCircle2, AlertTriangle, Minus } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, CheckCircle2, Minus } from "lucide-react";
+import { getDiff, getReport } from "@/lib/api";
+import type { DiffFlightSummary, DiffResponse, FlightMDReport } from "@/lib/types";
+import { MODULE_LABELS, formatMetric, humaniseMetricKey } from "@/lib/metricLabels";
+import { DASH, fmtDate, fmtNum, fmtScore, parseIsoDate } from "@/lib/format";
+import { SEVERITY_LABELS, TONE_CLASSES, scoreColour } from "@/lib/utils";
+import { SeverityIcon } from "@/components/shared/SeverityBadge";
+import { guessAutopilot } from "@/lib/paramFile";
 
-function DeltaBadge({ delta, higherIsBetter = true }: { delta: number | null; higherIsBetter?: boolean }) {
-  if (delta === null) {
-    return <span className="text-white/20 text-xs font-mono">n/a</span>;
-  }
-  if (Math.abs(delta) < 0.005) {
+function DeltaBadge({ delta }: { delta: number | null }) {
+  if (delta === null) return <span className="text-xs text-fg-muted">{DASH}</span>;
+  if (Math.abs(delta) < 0.5) {
     return (
-      <span className="flex items-center gap-1 text-white/30 text-xs font-mono">
-        <Minus className="w-3 h-3" /> 0
+      <span className="num inline-flex items-center gap-1 text-xs text-fg-muted">
+        <Minus aria-hidden className="h-3 w-3" /> no change
       </span>
     );
   }
-  const improved = higherIsBetter ? delta > 0 : delta < 0;
-  const colour = improved ? "#0DD97C" : "#FF7A2F";
+  const better = delta > 0;
+  const Icon = better ? ArrowUp : ArrowDown;
   return (
-    <span className="flex items-center gap-1 text-xs font-mono font-semibold" style={{ color: colour }}>
-      {delta > 0 ? "+" : ""}
-      {delta.toFixed(delta < 1 && delta > -1 ? 3 : 1)}
+    <span className={`num inline-flex items-center gap-1 text-xs font-semibold ${better ? "text-ok" : "text-caution"}`}>
+      <Icon aria-hidden className="h-3 w-3" />
+      {better ? "+" : "−"}
+      {fmtNum(Math.abs(delta), 0)} {better ? "better" : "worse"}
     </span>
   );
 }
 
 export default function ComparePage() {
   return (
-    <Suspense
-      fallback={
-        <div className="max-w-xl mx-auto px-4 py-24 text-center">
-          <div className="text-5xl mb-6 animate-pulse">⚖️</div>
-          <p className="text-white/40 text-sm">Loading…</p>
-        </div>
-      }
-    >
+    <Suspense fallback={<p className="px-4 py-20 text-center text-sm text-fg-muted">Loading…</p>}>
       <ComparePageContent />
     </Suspense>
   );
 }
 
+type Side = FlightMDReport | null;
+
 function ComparePageContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const a = searchParams.get("a");
   const b = searchParams.get("b");
 
   const [data, setData] = useState<DiffResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [reports, setReports] = useState<[Side, Side]>([null, null]);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!a || !b) {
-      setError("Two report IDs are required — pass ?a=...&b=... in the URL.");
+      setError("Two report ids are needed: /compare?a=…&b=…");
       setLoading(false);
       return;
     }
-    async function load() {
-      try {
-        const diff = await getDiff(a!, b!);
-        setData(diff);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load comparison.");
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, [a, b]);
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
 
-  if (loading) {
-    return (
-      <div className="max-w-xl mx-auto px-4 py-24 text-center">
-        <div className="text-5xl mb-6 animate-pulse">⚖️</div>
-        <p className="text-white/40 text-sm">Comparing flights…</p>
-      </div>
-    );
-  }
+    (async () => {
+      // the full reports are only for dates and vehicle; the comparison works without them
+      const [diff, ra, rb] = await Promise.allSettled([getDiff(a, b), getReport(a), getReport(b)]);
+      if (cancelled) return;
+      // console.log(diff.status, ra.status, rb.status);
+      const repA = ra.status === "fulfilled" ? ra.value : null;
+      const repB = rb.status === "fulfilled" ? rb.value : null;
+
+      const da = parseIsoDate(repA?.metadata.log_start_utc);
+      const db = parseIsoDate(repB?.metadata.log_start_utc);
+      if (da && db && da > db) {
+        // "before" must be the earlier flight, not the first one ticked
+        router.replace(`/compare?a=${encodeURIComponent(b)}&b=${encodeURIComponent(a)}`);
+        return;
+      }
+
+      if (diff.status === "rejected") {
+        setError(diff.reason instanceof Error ? diff.reason.message : "Could not compare these flights.");
+      } else {
+        setData(diff.value);
+        setReports([repA, repB]);
+      }
+      setLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [a, b, router]);
+
+  if (loading) return <p className="px-4 py-20 text-center text-sm text-fg-muted" role="status">Comparing flights…</p>;
 
   if (error || !data) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-20 text-center">
-        <div className="text-red-400 text-xl mb-3">⚠️ Could Not Compare</div>
-        <p className="text-white/50">{error}</p>
-        <a href="/" className="mt-6 inline-block text-sm underline" style={{ color: "#B89642" }}>
-          ← Back home
-        </a>
+      <div className="mx-auto max-w-xl px-4 py-20 text-center" role="alert">
+        <h1 className="mb-2 flex items-center justify-center gap-2 text-value font-semibold">
+          <AlertTriangle aria-hidden className="h-5 w-5 text-caution" />
+          Could not compare
+        </h1>
+        <p className="text-sm text-fg-muted">{error}</p>
+        <Link href="/" className="btn mt-6">Home</Link>
       </div>
     );
   }
 
+  const [repA, repB] = reports;
+  const datesKnown = !!parseIsoDate(repA?.metadata.log_start_utc) && !!parseIsoDate(repB?.metadata.log_start_utc);
+  const apA = repA ? guessAutopilot(repA) : null;
+  const apB = repB ? guessAutopilot(repB) : null;
+  const mismatch =
+    (apA && apB && apA !== apB) ||
+    (repA?.metadata.vehicle_type && repB?.metadata.vehicle_type && repA.metadata.vehicle_type !== repB.metadata.vehicle_type);
+
   const moduleRows = Object.entries(data.module_score_deltas);
   const metricRows = Object.entries(data.key_metric_deltas);
+  const first = datesKnown ? "Earlier" : "Flight A";
+  const second = datesKnown ? "Later" : "Flight B";
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8 space-y-8">
-      <h1 className="text-2xl font-bold text-slate-100">Flight Comparison</h1>
+    <div className="mx-auto max-w-4xl space-y-8 px-4 py-8">
+      <h1 className="text-value font-semibold">Flight comparison</h1>
 
-      {/* Header: A vs B */}
-      <div className="grid grid-cols-[1fr,auto,1fr] items-center gap-4">
-        <FlightCard flight={data.a} />
+      {mismatch && (
+        <p role="note" className={`flex items-start gap-2 rounded border p-3 text-sm ${TONE_CLASSES.caution}`}>
+          <AlertTriangle aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
+          These flights are from different vehicles or autopilots, so the module scores are not directly comparable.
+        </p>
+      )}
+      {!datesKnown && (
+        <p className="text-xs text-fg-muted">
+          The flight date is missing from at least one log, so A and B are in the order you picked them.
+        </p>
+      )}
+
+      <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-[1fr_auto_1fr]">
+        <FlightCard flight={data.a} report={repA} heading={first} />
         <div className="flex flex-col items-center gap-1">
-          <ArrowRight className="w-6 h-6 text-white/30" />
+          <ArrowRight aria-hidden className="hidden h-5 w-5 text-fg-muted sm:block" />
           <DeltaBadge delta={data.overall_score_delta} />
         </div>
-        <FlightCard flight={data.b} />
+        <FlightCard flight={data.b} report={repB} heading={second} />
       </div>
 
-      {/* Module score deltas */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-800">
-          <h3 className="font-semibold text-slate-100">Module Health Score Changes</h3>
-        </div>
+      <section aria-labelledby="mod-h" className="panel overflow-x-auto">
+        <h2 id="mod-h" className="border-b px-4 py-3 text-sm font-semibold">Module scores</h2>
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-xs text-white/40 uppercase tracking-wide">
-              <th className="text-left px-6 py-2">Module</th>
-              <th className="text-right px-4 py-2">Before</th>
-              <th className="text-right px-4 py-2">After</th>
-              <th className="text-right px-6 py-2">Δ</th>
+            <tr className="text-left">
+              <th scope="col" className="label px-4 py-2">Module</th>
+              <th scope="col" className="label px-3 py-2 text-right">{first}</th>
+              <th scope="col" className="label px-3 py-2 text-right">{second}</th>
+              <th scope="col" className="label px-4 py-2 text-right">Change</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800">
+          <tbody>
             {moduleRows.map(([mod, d]) => (
-              <tr key={mod}>
-                <td className="px-6 py-2.5 text-slate-200">{MODULE_LABELS[mod] ?? mod}</td>
-                <td className="px-4 py-2.5 text-right font-mono text-white/60">
-                  {d.a !== null ? d.a.toFixed(0) : "—"}
-                </td>
-                <td className="px-4 py-2.5 text-right font-mono text-white/60">
-                  {d.b !== null ? d.b.toFixed(0) : "—"}
-                </td>
-                <td className="px-6 py-2.5 text-right"><DeltaBadge delta={d.delta} /></td>
+              <tr key={mod} className="border-t">
+                <td className="px-4 py-2">{MODULE_LABELS[mod] ?? mod}</td>
+                <td className="num px-3 py-2 text-right text-fg-muted">{d.a === null ? "not assessed" : fmtNum(d.a, 0)}</td>
+                <td className="num px-3 py-2 text-right text-fg-muted">{d.b === null ? "not assessed" : fmtNum(d.b, 0)}</td>
+                <td className="px-4 py-2 text-right"><DeltaBadge delta={d.delta} /></td>
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
+      </section>
 
-      {/* Key metric deltas */}
       {metricRows.length > 0 && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-800">
-            <h3 className="font-semibold text-slate-100">Raw Metric Changes</h3>
-          </div>
+        <section aria-labelledby="met-h" className="panel overflow-x-auto">
+          <h2 id="met-h" className="border-b px-4 py-3 text-sm font-semibold">Raw metrics</h2>
+          <p className="px-4 pt-2 text-xs text-fg-muted">Higher is not always better here (HDOP, vibration), so changes are shown without colour.</p>
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-xs text-white/40 uppercase tracking-wide">
-                <th className="text-left px-6 py-2">Metric</th>
-                <th className="text-right px-4 py-2">Before</th>
-                <th className="text-right px-4 py-2">After</th>
-                <th className="text-right px-6 py-2">Δ</th>
+              <tr className="text-left">
+                <th scope="col" className="label px-4 py-2">Metric</th>
+                <th scope="col" className="label px-3 py-2 text-right">{first}</th>
+                <th scope="col" className="label px-3 py-2 text-right">{second}</th>
+                <th scope="col" className="label px-4 py-2 text-right">Change</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800">
-              {metricRows.map(([key, d]) => {
-                const { label, unit } = humaniseMetricKey(key);
-                return (
-                  <tr key={key}>
-                    <td className="px-6 py-2.5 text-slate-200">{label}</td>
-                    <td className="px-4 py-2.5 text-right font-mono text-white/60">
-                      {d.a !== null ? `${d.a.toFixed(3)}${unit}` : "—"}
-                    </td>
-                    <td className="px-4 py-2.5 text-right font-mono text-white/60">
-                      {d.b !== null ? `${d.b.toFixed(3)}${unit}` : "—"}
-                    </td>
-                    {/* Higher isn't always better for raw metrics (e.g. lower
-                        oscillation Hz amplitude / HDOP is better) — shown
-                        neutrally as a plain delta rather than colour-coded. */}
-                    <td className="px-6 py-2.5 text-right font-mono text-white/50 text-xs">
-                      {d.delta !== null ? `${d.delta > 0 ? "+" : ""}${d.delta.toFixed(3)}` : "n/a"}
-                    </td>
-                  </tr>
-                );
-              })}
+            <tbody>
+              {metricRows.map(([key, d]) => (
+                <tr key={key} className="border-t">
+                  <td className="px-4 py-2">{humaniseMetricKey(key).label}</td>
+                  <td className="num px-3 py-2 text-right text-fg-muted">{formatMetric(key, d.a)}</td>
+                  <td className="num px-3 py-2 text-right text-fg-muted">{formatMetric(key, d.b)}</td>
+                  <td className="num px-4 py-2 text-right text-xs">
+                    {d.delta === null ? DASH : `${d.delta > 0 ? "+" : d.delta < 0 ? "−" : ""}${formatMetric(key, Math.abs(d.delta))}`}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
-        </div>
+        </section>
       )}
 
-      {/* Findings diff */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
-          <h3 className="font-semibold text-slate-100 mb-3 flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            Resolved ({data.findings_diff.resolved.length})
-          </h3>
-          {data.findings_diff.resolved.length === 0 ? (
-            <p className="text-xs text-white/30">No findings from the first flight went away.</p>
-          ) : (
-            <ul className="space-y-1.5 text-sm text-white/70">
-              {data.findings_diff.resolved.map((title) => (
-                <li key={title} className="flex items-start gap-2">
-                  <span className="text-emerald-400 mt-0.5">✓</span> {title}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
-          <h3 className="font-semibold text-slate-100 mb-3 flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-orange-400" />
-            New ({data.findings_diff.new.length})
-          </h3>
-          {data.findings_diff.new.length === 0 ? (
-            <p className="text-xs text-white/30">No new findings appeared in the second flight.</p>
-          ) : (
-            <ul className="space-y-1.5 text-sm text-white/70">
-              {data.findings_diff.new.map((title) => (
-                <li key={title} className="flex items-start gap-2">
-                  <span className="text-orange-400 mt-0.5">!</span> {title}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <FindingDiff
+          title="Resolved"
+          icon={<CheckCircle2 aria-hidden className="h-4 w-4 text-ok" />}
+          items={data.findings_diff.resolved}
+          empty={`No finding from the ${first.toLowerCase()} flight went away.`}
+        />
+        <FindingDiff
+          title="New"
+          icon={<AlertTriangle aria-hidden className="h-4 w-4 text-caution" />}
+          items={data.findings_diff.new}
+          empty={`No new findings in the ${second.toLowerCase()} flight.`}
+        />
       </div>
 
       {data.findings_diff.persisting_categories.length > 0 && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
-          <h3 className="font-semibold text-slate-100 mb-3">Persisting Issue Categories</h3>
-          <div className="flex flex-wrap gap-2">
+        <section aria-labelledby="persist-h" className="panel p-4">
+          <h2 id="persist-h" className="mb-2 text-sm font-semibold">Still present</h2>
+          <ul className="flex flex-wrap gap-2">
             {data.findings_diff.persisting_categories.map((p) => (
-              <span
-                key={p.category}
-                className="px-2.5 py-1 rounded-lg border text-xs font-mono"
-                style={{
-                  color: SEVERITY_COLOURS[p.severity_b],
-                  borderColor: `${SEVERITY_COLOURS[p.severity_b]}40`,
-                  background: `${SEVERITY_COLOURS[p.severity_b]}15`,
-                }}
-              >
-                {p.category} ({p.severity_a} → {p.severity_b})
-              </span>
+              <li key={p.category} className="flex items-center gap-1.5 rounded border px-2 py-1 text-xs">
+                {MODULE_LABELS[p.category] ?? p.category}:
+                <SeverityIcon severity={p.severity_a} className="h-3.5 w-3.5" /> {SEVERITY_LABELS[p.severity_a]}
+                <ArrowRight aria-label="to" className="h-3 w-3" />
+                <SeverityIcon severity={p.severity_b} className="h-3.5 w-3.5" /> {SEVERITY_LABELS[p.severity_b]}
+              </li>
             ))}
-          </div>
-        </div>
+          </ul>
+        </section>
       )}
     </div>
   );
 }
 
-function FlightCard({ flight }: { flight: DiffResponse["a"] }) {
+function FindingDiff({ title, icon, items, empty }: { title: string; icon: React.ReactNode; items: string[]; empty: string }) {
   return (
-    <a
-      href={`/report/${flight.report_id}`}
-      className="block bg-slate-900 border border-slate-800 rounded-2xl p-5 hover:border-slate-700 transition-colors"
-    >
-      <div className="text-sm font-semibold text-slate-200 truncate mb-2">{flight.file_name}</div>
-      <div className="flex items-center gap-2">
-        <span className="text-3xl font-bold" style={{ color: scoreColour(flight.overall_score) }}>
-          {flight.overall_score}
-        </span>
-        <span className="text-xs text-white/40">/ 100</span>
+    <section className="panel p-4">
+      <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold">
+        {icon}
+        {title} <span className="num font-normal text-fg-muted">({items.length})</span>
+      </h2>
+      {items.length === 0 ? (
+        <p className="text-xs text-fg-muted">{empty}</p>
+      ) : (
+        <ul className="list-disc space-y-1 pl-5 text-sm">
+          {items.map((t, i) => <li key={`${t}-${i}`}>{t}</li>)}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function FlightCard({ flight, report, heading }: { flight: DiffFlightSummary; report: Side; heading: string }) {
+  const flown = parseIsoDate(report?.metadata.log_start_utc);
+  const vehicle = [report?.metadata.vehicle_type, report?.metadata.firmware_version].filter(Boolean).join(" · ");
+  return (
+    <Link href={`/report/${encodeURIComponent(flight.report_id)}`} className="panel block p-4 text-fg no-underline hover:border-fg-subtle">
+      <div className="label mb-1">{heading}</div>
+      <div className="truncate text-sm font-semibold">{flight.file_name}</div>
+      <div className="mt-2 num text-value font-semibold" style={{ color: scoreColour(flight.overall_score) }}>
+        {fmtScore(flight.overall_score)}
       </div>
-      <div className="text-xs text-white/40 mt-1">{flight.score_label} · Grade {flight.letter_grade}</div>
-    </a>
+      <div className="text-xs text-fg-muted">
+        {flight.score_label} · Grade {flight.letter_grade}
+      </div>
+      <div className="mt-1 text-xs text-fg-muted">
+        {flown ? `Flown ${fmtDate(flown)}` : "Flight date unknown"}
+        {vehicle ? ` · ${vehicle}` : ""}
+      </div>
+    </Link>
   );
 }

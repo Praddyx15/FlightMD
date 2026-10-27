@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { pdfExportUrl, jsonExportUrl, gpxExportUrl, kmlExportUrl } from "@/lib/api";
-import { copyToClipboard } from "@/lib/utils";
+import { Download, FileJson, FileText, Globe, Route, type LucideIcon } from "lucide-react";
+import { downloadFile, gpxExportUrl, jsonExportUrl, kmlExportUrl, pdfExportUrl } from "@/lib/api";
 
 interface Props {
   reportId: string;
@@ -11,82 +11,47 @@ interface Props {
 }
 
 export function ExportBar({ reportId, fileName, hasGpsPath }: Props) {
-  const [copiedShare, setCopiedShare] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const base = fileName.replace(/\.[^.]+$/, "") || `flightmd_${reportId.slice(0, 8)}`;
 
-  async function handleShare() {
-    await copyToClipboard(window.location.href);
-    setCopiedShare(true);
-    setTimeout(() => setCopiedShare(false), 2000);
+  const items: { key: string; label: string; hint: string; url: string; file: string; Icon: LucideIcon }[] = [
+    { key: "pdf", label: "PDF", hint: "printable record", url: pdfExportUrl(reportId), file: `${base}_flightmd.pdf`, Icon: FileText },
+    { key: "json", label: "JSON", hint: "raw report", url: jsonExportUrl(reportId), file: `${base}_flightmd.json`, Icon: FileJson },
+  ];
+  if (hasGpsPath) {
+    items.push(
+      { key: "gpx", label: "GPX", hint: "flight path", url: gpxExportUrl(reportId), file: `${base}.gpx`, Icon: Route },
+      { key: "kml", label: "KML", hint: "Google Earth", url: kmlExportUrl(reportId), file: `${base}.kml`, Icon: Globe }
+    );
+  }
+
+  async function get(key: string, url: string, file: string) {
+    setBusy(key);
+    setError(null);
+    try {
+      await downloadFile(url, file);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Download failed.");
+    } finally {
+      setBusy(null);
+    }
   }
 
   return (
-    <section>
-      <h2 className="text-lg font-bold text-white/80 mb-4">Export</h2>
-      <div
-        className="rounded-2xl border border-border bg-card/85 p-4 flex flex-wrap gap-3 shadow-md backdrop-blur-md"
-      >
-        {/* PDF */}
-        <a
-          href={pdfExportUrl(reportId)}
-          download={`flightmd_report_${reportId.slice(0, 8)}.pdf`}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all hover:opacity-90 hover:scale-[1.01]"
-          style={{ background: "var(--bg-elevated)", color: "var(--text-primary)", border: "1px solid var(--border)" }}
-        >
-          📄 Download PDF
-          <span className="text-xs opacity-50">printable record</span>
-        </a>
-
-        {/* JSON */}
-        <a
-          href={jsonExportUrl(reportId)}
-          download={`flightmd_report_${reportId.slice(0, 8)}.json`}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all hover:opacity-90 hover:scale-[1.01]"
-          style={{ background: "var(--bg-elevated)", color: "var(--text-primary)", border: "1px solid var(--border)" }}
-        >
-          📊 Download JSON
-          <span className="text-xs opacity-50">raw data</span>
-        </a>
-
-        {/* GPX */}
-        {hasGpsPath && (
-          <a
-            href={gpxExportUrl(reportId)}
-            download={`flightmd_track_${reportId.slice(0, 8)}.gpx`}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all hover:opacity-90 hover:scale-[1.01]"
-            style={{ background: "var(--bg-elevated)", color: "var(--text-primary)", border: "1px solid var(--border)" }}
-          >
-            🛰️ Download GPX
-            <span className="text-xs opacity-50">flight path</span>
-          </a>
-        )}
-
-        {/* KML */}
-        {hasGpsPath && (
-          <a
-            href={kmlExportUrl(reportId)}
-            download={`flightmd_track_${reportId.slice(0, 8)}.kml`}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all hover:opacity-90 hover:scale-[1.01]"
-            style={{ background: "var(--bg-elevated)", color: "var(--text-primary)", border: "1px solid var(--border)" }}
-          >
-            🌍 Download KML
-            <span className="text-xs opacity-50">Google Earth</span>
-          </a>
-        )}
-
-        {/* Share */}
-        <button
-          onClick={handleShare}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all hover:scale-[1.01]"
-          style={{
-            background: copiedShare ? "rgba(13,217,124,0.15)" : "var(--bg-elevated)",
-            color: copiedShare ? "#0DD97C" : "var(--text-primary)",
-            border: `1px solid ${copiedShare ? "#0DD97C55" : "var(--border)"}`,
-          }}
-        >
-          {copiedShare ? "✓ Link copied!" : "🔗 Share Report"}
-          {!copiedShare && <span className="text-xs opacity-50">expires in 1h</span>}
-        </button>
+    <section aria-labelledby="export-h" className="no-print space-y-3">
+      <h2 id="export-h" className="text-base font-semibold">Export</h2>
+      <div className="flex flex-wrap gap-2">
+        {items.map(({ key, label, hint, url, file, Icon }) => (
+          <button key={key} type="button" onClick={() => get(key, url, file)} disabled={busy !== null} className="btn">
+            {busy === key ? <Download aria-hidden className="h-4 w-4 animate-pulse" /> : <Icon aria-hidden className="h-4 w-4" />}
+            {label}
+            <span className="text-xs text-fg-muted">{hint}</span>
+          </button>
+        ))}
       </div>
+      {error && <p role="alert" className="text-xs text-critical">{error}</p>}
+      <p className="text-xs text-fg-muted">The link to this page works for 1 hour unless the flight was tagged with an airframe label.</p>
     </section>
   );
 }

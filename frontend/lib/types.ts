@@ -1,5 +1,5 @@
-// FlightMD TypeScript types — mirrors flightmd_core Pydantic models exactly.
-// schema_version: "1.0"
+// Mirrors flightmd_core/models (schema 1.6). Fields added after 1.5 are optional so
+// older stored reports still render.
 
 export type Severity = "critical" | "warning" | "info" | "good";
 
@@ -31,9 +31,12 @@ export interface Finding {
   technical_summary: string;
   plain_english: string;
   recommendation: string;
-  confidence: number;
+  confidence: number; // 0-1
+  confidence_level?: "high" | "medium" | "low" | null;
   timestamp_start_ms: number | null;
   timestamp_end_ms: number | null;
+  t_start_s?: number | null;
+  t_end_s?: number | null;
   chart_data: Record<string, unknown> | null;
   param_changes: ParamRecommendation[];
 }
@@ -45,6 +48,7 @@ export interface AnalyserResult {
   health_score: number;
   skipped: boolean;
   skip_reason: string | null;
+  assessed?: boolean;
   processing_ms: number;
   key_metrics: Record<string, number>;
 }
@@ -75,6 +79,8 @@ export interface FlightMetadata {
   gps_path?: [number, number, number][] | null;
   gps_path_wind_speed_ms?: (number | null)[] | null;
   gps_path_hdop?: (number | null)[] | null;
+  parse_warnings?: string[] | null;
+  armed_windows?: [number, number][] | null; // log-relative seconds
 }
 
 export interface FlightMDReport {
@@ -88,6 +94,7 @@ export interface FlightMDReport {
   findings: Finding[];
   param_change_sheet: ParamRecommendation[];
   analyser_results: AnalyserResult[];
+  assessed_fraction?: number | null;
   processing_time_ms: number;
   file_name: string;
   file_size_bytes: number;
@@ -106,9 +113,8 @@ export interface AnalyseResponse {
   report_id: string;
   status: "processing";
   estimated_seconds: number;
+  airframe_token?: string;
 }
-
-// ── Trends & diff ─────────────────────────────────────────────────────────────
 
 export interface TrendFlight {
   report_id: string;
@@ -116,7 +122,8 @@ export interface TrendFlight {
   created_at: number;
   overall_score: number;
   letter_grade: string;
-  module_scores: Record<string, number>;
+  // null (or missing) = module skipped / not assessed on that flight
+  module_scores: Record<string, number | null>;
   key_metrics: Record<string, number>;
 }
 
@@ -165,8 +172,6 @@ export interface DiffResponse {
   };
 }
 
-// ── Airframe config: maintenance, checklist, alerts ───────────────────────────
-
 export interface MaintenanceEntry {
   date: string;
   maintenance_type: string;
@@ -191,4 +196,5 @@ export interface AirframeConfigResponse {
   hours_since_maintenance: number;
   maintenance_due: boolean;
   flight_count: number;
+  airframe_token?: string;
 }

@@ -1,6 +1,11 @@
 import type { Config } from "tailwindcss";
+import plugin from "tailwindcss/plugin";
+
+// colours resolve to the CSS variables in app/globals.css; the -rgb form keeps bg-x/15 working
+const token = (name: string) => `rgb(var(--${name}-rgb) / <alpha-value>)`;
 
 const config: Config = {
+  darkMode: "class",
   content: [
     "./app/**/*.{ts,tsx}",
     "./components/**/*.{ts,tsx}",
@@ -9,37 +14,60 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        bg:            "var(--bg-primary)",
-        card:          "var(--bg-card)",
-        elevated:      "var(--bg-elevated)",
-        surface:       "var(--surface)",
-        "surface-2":   "var(--surface-2)",
-        accent:        "var(--accent)",
-        border:        "var(--border)",
-        "text-secondary": "var(--text-secondary)",
-        "text-muted":  "var(--text-muted)",
-        gold: {
-          DEFAULT: "#B89642",
-          50:  "#F7F0DE",
-          100: "#EFE1BE",
-          200: "#E7C25B",
-          300: "#D1AE52",
-          400: "#C7A44B",
-          500: "#B89642",
-          600: "#9C7F37",
-          700: "#6F5820",
-          800: "#4A3B15",
-          900: "#2A2418",
+        bg: token("bg"),
+        surface: token("surface"),
+        elevated: token("elevated"),
+        border: token("border"),
+        fg: {
+          DEFAULT: token("text"),
+          muted: token("text-muted"),
+          subtle: token("text-subtle"),
         },
+        accent: {
+          DEFAULT: token("accent"),
+          solid: token("accent-solid"),
+          text: token("accent-text"),
+        },
+        "on-accent": token("on-accent"),
+        critical: { DEFAULT: token("critical"), fill: token("critical-fill") },
+        caution: { DEFAULT: token("caution"), fill: token("caution-fill") },
+        advisory: { DEFAULT: token("advisory"), fill: token("advisory-fill") },
+        ok: { DEFAULT: token("ok"), fill: token("ok-fill") },
+        sim: token("sim"),
+      },
+      borderColor: {
+        DEFAULT: token("border"),
+      },
+      borderRadius: {
+        DEFAULT: "6px",
+        sm: "4px",
+        md: "6px",
       },
       fontFamily: {
-        sans: ["var(--font-geist-sans)", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "system-ui", "sans-serif"],
-        mono: ["var(--font-geist-mono)", "JetBrains Mono", "Fira Code", "Cascadia Code", "Consolas", "monospace"],
-        display: ["var(--font-display)", "system-ui", "sans-serif"],
+        sans: ["var(--font-geist-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
+        mono: ["var(--font-geist-mono)", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+      },
+      // the suite type scale: 11/16, 12/18, 14/20, 16/24, 22/28, 32/36
+      fontSize: {
+        "2xs": ["11px", { lineHeight: "16px" }],
+        xs: ["12px", { lineHeight: "18px" }],
+        sm: ["14px", { lineHeight: "20px" }],
+        base: ["16px", { lineHeight: "24px" }],
+        value: ["22px", { lineHeight: "28px" }],
+        hero: ["32px", { lineHeight: "36px" }],
+      },
+      transitionDuration: {
+        DEFAULT: "150ms",
       },
     },
   },
-  plugins: [],
+  plugins: [
+    plugin(({ addVariant }) => {
+      // gloves on a tablet: targets go to 44 px
+      addVariant("pointer-coarse", "@media (pointer: coarse)");
+      addVariant("reduce-motion", "@media (prefers-reduced-motion: reduce)");
+    }),
+  ],
 };
 
 export default config;

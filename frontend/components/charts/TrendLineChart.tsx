@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { fmtNum } from "@/lib/format";
+import { AXIS_TICK, GRID_STROKE, TOOLTIP_STYLE } from "./chartTheme";
 
 export interface TrendSeriesPoint {
-  x: number;      // flight index
-  y: number;
-  label: string;  // tooltip label, e.g. file name
+  x: number; // flight index, oldest first
+  y: number | null; // null = not assessed on that flight, drawn as a gap
+  label: string;
 }
 
 interface TrendLineChartProps {
@@ -13,134 +15,87 @@ interface TrendLineChartProps {
   color?: string;
   height?: number;
   unit?: string;
-  /** Optional fixed y-domain, e.g. [0, 100] for scores. Auto-scaled if omitted. */
   yDomain?: [number, number];
+  digits?: number;
+  title?: string;
 }
 
-const PADDING = { top: 12, right: 12, bottom: 22, left: 34 };
-
-/**
- * Minimal dependency-free SVG line chart for cross-flight trends. Built
- * in-house rather than pulling in a charting library — the app already
- * hand-rolls its 3D scenes and animations, and a handful of points on an
- * axis doesn't need a 40KB dependency.
- */
 export function TrendLineChart({
   points,
-  color = "#B89642",
+  color = "var(--series-1)",
   height = 160,
   unit = "",
   yDomain,
+  digits = 1,
+  title = "Trend",
 }: TrendLineChartProps) {
-  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
-  const width = 560;
-
-  if (points.length === 0) {
+  if (points.every((p) => p.y === null)) {
     return (
-      <div
-        className="flex items-center justify-center text-xs text-white/30"
-        style={{ height }}
-      >
-        No data
+      <div className="flex items-center justify-center text-xs text-fg-muted" style={{ height }}>
+        No assessed values yet
       </div>
     );
   }
 
-  const innerW = width - PADDING.left - PADDING.right;
-  const innerH = height - PADDING.top - PADDING.bottom;
-
-  const ys = points.map((p) => p.y);
-  const [yMin, yMax] = yDomain ?? [Math.min(...ys), Math.max(...ys)];
-  const ySpan = yMax - yMin || 1;
-
-  const xFor = (i: number) =>
-    points.length === 1
-      ? PADDING.left + innerW / 2
-      : PADDING.left + (i / (points.length - 1)) * innerW;
-  const yFor = (v: number) =>
-    PADDING.top + innerH - ((v - yMin) / ySpan) * innerH;
-
-  const linePath = points
-    .map((p, i) => `${i === 0 ? "M" : "L"} ${xFor(i).toFixed(1)} ${yFor(p.y).toFixed(1)}`)
-    .join(" ");
-
-  const gridLines = 3;
+  const fmt = (v: number | null) => fmtNum(v, digits, unit || undefined);
 
   return (
-    <svg
-      viewBox={`0 0 ${width} ${height}`}
-      className="w-full"
-      style={{ height }}
-      onMouseLeave={() => setHoverIdx(null)}
-    >
-      {/* horizontal gridlines */}
-      {Array.from({ length: gridLines + 1 }, (_, i) => {
-        const v = yMin + (ySpan * i) / gridLines;
-        const y = yFor(v);
-        return (
-          <g key={i}>
-            <line
-              x1={PADDING.left} x2={width - PADDING.right}
-              y1={y} y2={y}
-              stroke="rgba(255,255,255,0.06)" strokeWidth={1}
+    <figure aria-label={`${title}, ${points.length} flights`}>
+      <div style={{ height }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={points} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} accessibilityLayer>
+            <CartesianGrid stroke={GRID_STROKE} strokeOpacity={0.6} vertical={false} />
+            <XAxis
+              dataKey="x"
+              type="number"
+              domain={["dataMin", "dataMax"]}
+              allowDecimals={false}
+              tickFormatter={(v: number) => `#${v + 1}`}
+              tick={AXIS_TICK}
+              stroke={GRID_STROKE}
             />
-            <text x={PADDING.left - 6} y={y + 3} textAnchor="end" fontSize="9" fill="rgba(255,255,255,0.35)">
-              {v.toFixed(v < 10 ? 1 : 0)}
-            </text>
-          </g>
-        );
-      })}
-
-      <path d={linePath} fill="none" stroke={color} strokeWidth={2} />
-
-      {points.map((p, i) => (
-        <g key={i}>
-          <circle
-            cx={xFor(i)} cy={yFor(p.y)} r={hoverIdx === i ? 5 : 3.5}
-            fill={color}
-            stroke="#0A0A0A" strokeWidth={1.5}
-            onMouseEnter={() => setHoverIdx(i)}
-          />
-          {/* wider invisible hit target */}
-          <rect
-            x={xFor(i) - innerW / points.length / 2}
-            y={PADDING.top}
-            width={innerW / points.length}
-            height={innerH}
-            fill="transparent"
-            onMouseEnter={() => setHoverIdx(i)}
-          />
-        </g>
-      ))}
-
-      {hoverIdx !== null && (
-        <g>
-          <line
-            x1={xFor(hoverIdx)} x2={xFor(hoverIdx)}
-            y1={PADDING.top} y2={PADDING.top + innerH}
-            stroke="rgba(255,255,255,0.15)" strokeWidth={1}
-          />
-          <text
-            x={Math.min(Math.max(xFor(hoverIdx), 50), width - 60)}
-            y={PADDING.top + 10}
-            textAnchor="middle"
-            fontSize="10"
-            fontWeight="600"
-            fill="#E8EDF5"
-          >
-            {points[hoverIdx].y.toFixed(2)}{unit}
-          </text>
-          <text
-            x={Math.min(Math.max(xFor(hoverIdx), 50), width - 60)}
-            y={height - 6}
-            textAnchor="middle"
-            fontSize="8"
-            fill="rgba(255,255,255,0.4)"
-          >
-            {points[hoverIdx].label}
-          </text>
-        </g>
-      )}
-    </svg>
+            <YAxis
+              domain={yDomain ?? ["auto", "auto"]}
+              tick={AXIS_TICK}
+              stroke={GRID_STROKE}
+              width={40}
+              tickFormatter={(v: number) => fmtNum(v, digits)}
+            />
+            <Tooltip
+              contentStyle={TOOLTIP_STYLE}
+              labelFormatter={(_, payload) => {
+                const p = payload?.[0]?.payload as TrendSeriesPoint | undefined;
+                return p ? `#${p.x + 1} ${p.label}` : "";
+              }}
+              formatter={(v) => [fmt(v === null ? null : Number(v)), title]}
+            />
+            <Line
+              type="linear"
+              dataKey="y"
+              stroke={color}
+              strokeWidth={2}
+              dot={{ r: 3, fill: color, strokeWidth: 0 }}
+              activeDot={{ r: 5 }}
+              connectNulls={false}
+              isAnimationActive={false}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <details className="no-print mt-1 text-2xs text-fg-muted">
+        <summary className="cursor-pointer">Values</summary>
+        <table className="mt-1 w-full">
+          <tbody>
+            {points.map((p) => (
+              <tr key={p.x} className="border-t">
+                <td className="py-0.5 pr-2">#{p.x + 1}</td>
+                <td className="max-w-0 truncate py-0.5 pr-2">{p.label}</td>
+                <td className="num py-0.5 text-right">{p.y === null ? "not assessed" : fmt(p.y)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </details>
+    </figure>
   );
 }

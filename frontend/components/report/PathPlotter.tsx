@@ -1,194 +1,161 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
-import { FlightMDReport } from "../../lib/types";
-import { Compass, RotateCcw, Map, Box, Wind, Radio } from "lucide-react";
-import {
-  FlightPathScene, type FlightPathCameraHandle, type PathColorMode,
-} from "@/components/three/FlightPathScene";
+import { Box, Compass, Map as MapIcon, Radio, RotateCcw, Wind } from "lucide-react";
+import type { FlightMDReport } from "@/lib/types";
+import { fmtNum } from "@/lib/format";
+import { cn } from "@/lib/utils";
+import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
+import { RAMP_CSS, minMax, type PathColorMode } from "@/components/three/flightPathGeometry";
+import type { FlightPathCameraHandle } from "@/components/three/FlightPathScene";
 
-const FlightPathMap = dynamic(
-  () => import("./FlightPathMap").then((m) => m.FlightPathMap),
-  { ssr: false }
-);
+const FlightPathMap = dynamic(() => import("./FlightPathMap").then((m) => m.FlightPathMap), {
+  ssr: false,
+  loading: () => <Placeholder text="Loading map" />,
+});
 
-interface PathPlotterProps {
-  report: FlightMDReport;
+// three.js is the biggest chunk in the app; only fetched when someone opens 3D
+const FlightPathScene = dynamic(() => import("@/components/three/FlightPathScene").then((m) => m.FlightPathScene), {
+  ssr: false,
+  loading: () => <Placeholder text="Loading 3D view" />,
+});
+
+function Placeholder({ text }: { text: string }) {
+  return <div className="flex h-full items-center justify-center text-xs text-fg-muted">{text}…</div>;
 }
 
-const COLOR_MODE_LEGEND: Record<Exclude<PathColorMode, "standard">, { label: string; low: string; high: string }> = {
-  wind:   { label: "Wind Speed", low: "Calm", high: "Strong" },
-  signal: { label: "GPS Signal Quality", low: "Good", high: "Poor" },
+const LEGEND: Record<Exclude<PathColorMode, "standard">, { label: string; low: string; high: string }> = {
+  wind: { label: "Wind speed", low: "calm", high: "strong" },
+  signal: { label: "GPS HDOP", low: "good", high: "poor" },
 };
 
-export default function PathPlotter({ report }: PathPlotterProps) {
-  const gpsPath = report.metadata.gps_path;
+function Toggle({ pressed, onClick, children, title }: { pressed: boolean; onClick: () => void; children: ReactNode; title?: string }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={pressed}
+      onClick={onClick}
+      title={title}
+      className={cn(
+        "flex min-h-[28px] items-center gap-1 rounded-sm px-2 text-xs pointer-coarse:min-h-[44px]",
+        pressed ? "bg-accent-solid text-on-accent" : "text-fg-muted hover:text-fg"
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+export default function PathPlotter({ report }: { report: FlightMDReport }) {
+  const m = report.metadata;
+  const gpsPath = m.gps_path;
   const cameraApi = useRef<FlightPathCameraHandle | null>(null);
   const [colorMode, setColorMode] = useState<PathColorMode>("standard");
   const [viewMode, setViewMode] = useState<"map" | "3d">("map");
 
-  const hasWindData = useMemo(
-    () => (report.metadata.gps_path_wind_speed_ms ?? []).some((v) => v !== null && v !== undefined),
-    [report.metadata.gps_path_wind_speed_ms]
-  );
-  const hasSignalData = useMemo(
-    () => (report.metadata.gps_path_hdop ?? []).some((v) => v !== null && v !== undefined),
-    [report.metadata.gps_path_hdop]
-  );
+  const hasWind = useMemo(() => (m.gps_path_wind_speed_ms ?? []).some((v) => v != null), [m.gps_path_wind_speed_ms]);
+  const hasSignal = useMemo(() => (m.gps_path_hdop ?? []).some((v) => v != null), [m.gps_path_hdop]);
+  const altRange = useMemo(() => {
+    if (!gpsPath || gpsPath.length === 0) return null;
+    const [lo, hi] = minMax(gpsPath.map((p) => p[2]));
+    return hi - lo;
+  }, [gpsPath]);
 
   if (!gpsPath || gpsPath.length === 0) {
     return (
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center text-slate-500 text-sm">
-        No flight path data available (missing GPS coordinates in log file).
-      </div>
+      <section aria-labelledby="path-h" className="space-y-3">
+        <h2 id="path-h" className="text-base font-semibold">Flight path</h2>
+        <p className="panel p-4 text-sm text-fg-muted">No GPS positions in this log, so there is no path to draw.</p>
+      </section>
     );
   }
 
-  const alts = gpsPath.map((p) => p[2]);
-  const maxAlt = Math.max(...alts) - Math.min(...alts);
-
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center space-x-2">
-          <Map className="w-5 h-5 text-gold-500" />
-          <h3 className="font-semibold text-slate-100">Flight Path</h3>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex bg-slate-850 rounded-lg p-1 border border-slate-800 gap-1">
-            <button
-              onClick={() => setViewMode("map")}
-              title="Real-world map view"
-              className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1 ${viewMode === "map" ? "bg-slate-700 text-slate-100" : "text-slate-400 hover:text-slate-200"}`}
-            >
-              <Map className="w-3.5 h-3.5" />
-              Map
-            </button>
-            <button
-              onClick={() => setViewMode("3d")}
-              title="3D scene view"
-              className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1 ${viewMode === "3d" ? "bg-slate-700 text-slate-100" : "text-slate-400 hover:text-slate-200"}`}
-            >
-              <Box className="w-3.5 h-3.5" />
-              3D
-            </button>
+    <section aria-labelledby="path-h" className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 id="path-h" className="text-base font-semibold">Flight path</h2>
+        <div className="no-print ml-auto flex flex-wrap items-center gap-2">
+          <div role="group" aria-label="View" className="flex gap-0.5 rounded border p-0.5">
+            <Toggle pressed={viewMode === "map"} onClick={() => setViewMode("map")}>
+              <MapIcon aria-hidden className="h-3.5 w-3.5" /> Map
+            </Toggle>
+            <Toggle pressed={viewMode === "3d"} onClick={() => setViewMode("3d")}>
+              <Box aria-hidden className="h-3.5 w-3.5" /> 3D
+            </Toggle>
           </div>
-          {(hasWindData || hasSignalData) && (
-            <div className="flex bg-slate-850 rounded-lg p-1 border border-slate-800 gap-1">
-              <button
-                onClick={() => setColorMode("standard")}
-                title="Standard colouring"
-                className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition-all ${colorMode === "standard" ? "bg-slate-700 text-slate-100" : "text-slate-400 hover:text-slate-200"}`}
-              >
-                Standard
-              </button>
-              {hasWindData && (
-                <button
-                  onClick={() => setColorMode("wind")}
-                  title="Colour path by wind speed"
-                  className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1 ${colorMode === "wind" ? "bg-slate-700 text-slate-100" : "text-slate-400 hover:text-slate-200"}`}
-                >
-                  <Wind className="w-3.5 h-3.5" />
-                  Wind
-                </button>
+          {(hasWind || hasSignal) && (
+            <div role="group" aria-label="Path colour" className="flex gap-0.5 rounded border p-0.5">
+              <Toggle pressed={colorMode === "standard"} onClick={() => setColorMode("standard")}>Plain</Toggle>
+              {hasWind && (
+                <Toggle pressed={colorMode === "wind"} onClick={() => setColorMode("wind")} title="Colour by wind speed">
+                  <Wind aria-hidden className="h-3.5 w-3.5" /> Wind
+                </Toggle>
               )}
-              {hasSignalData && (
-                <button
-                  onClick={() => setColorMode("signal")}
-                  title="Colour path by GPS signal quality"
-                  className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1 ${colorMode === "signal" ? "bg-slate-700 text-slate-100" : "text-slate-400 hover:text-slate-200"}`}
-                >
-                  <Radio className="w-3.5 h-3.5" />
-                  Signal
-                </button>
+              {hasSignal && (
+                <Toggle pressed={colorMode === "signal"} onClick={() => setColorMode("signal")} title="Colour by GPS HDOP">
+                  <Radio aria-hidden className="h-3.5 w-3.5" /> HDOP
+                </Toggle>
               )}
             </div>
           )}
           {viewMode === "3d" && (
-            <div className="flex bg-slate-850 rounded-lg p-1 border border-slate-800 gap-1">
-              <button
-                onClick={() => cameraApi.current?.top()}
-                title="Top-down view"
-                className="px-3 py-1.5 rounded-md text-xs font-semibold transition-all text-slate-400 hover:text-slate-200 flex items-center gap-1.5"
-              >
-                <Compass className="w-3.5 h-3.5" />
-                Top View
+            <div className="flex gap-1">
+              <button type="button" onClick={() => cameraApi.current?.top()} className="btn px-2 text-xs">
+                <Compass aria-hidden className="h-3.5 w-3.5" /> Top
               </button>
-              <button
-                onClick={() => cameraApi.current?.reset()}
-                title="Reset to default orbit view"
-                className="px-3 py-1.5 rounded-md text-xs font-semibold transition-all text-slate-400 hover:text-slate-200 flex items-center gap-1.5"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                Reset View
+              <button type="button" onClick={() => cameraApi.current?.reset()} className="btn px-2 text-xs">
+                <RotateCcw aria-hidden className="h-3.5 w-3.5" /> Reset
               </button>
             </div>
           )}
         </div>
       </div>
 
-      <div className="relative bg-slate-950 rounded-xl overflow-hidden border border-slate-850 h-[380px]">
-        {viewMode === "map" ? (
-          <FlightPathMap
-            gpsPath={gpsPath}
-            className="w-full h-full"
-            colorMode={colorMode}
-            windSpeedPath={report.metadata.gps_path_wind_speed_ms}
-            signalQualityPath={report.metadata.gps_path_hdop}
-          />
-        ) : (
-          <FlightPathScene
-            gpsPath={gpsPath}
-            className="w-full h-full"
-            cameraApiRef={cameraApi}
-            colorMode={colorMode}
-            windSpeedPath={report.metadata.gps_path_wind_speed_ms}
-            signalQualityPath={report.metadata.gps_path_hdop}
-          />
-        )}
-
-        {/* Legend */}
-        <div className="absolute bottom-4 left-4 z-[500] bg-slate-900/90 border border-slate-800 rounded-lg px-3 py-2 text-xxs text-slate-300 font-mono space-y-1 backdrop-blur-sm pointer-events-none">
-          {colorMode === "standard" ? (
-            <>
-              <div className="flex items-center space-x-2">
-                <span className="w-2.5 h-2.5 bg-[#0DD97C] rounded-full inline-block" />
-                <span>Launch Point</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <span className="w-2.5 h-2.5 bg-[#f43f5e] rounded-full inline-block" />
-                <span>Land/Stop Point</span>
-              </div>
-            </>
+      <div className="panel relative h-[300px] overflow-hidden sm:h-[380px]">
+        <ErrorBoundary what={viewMode === "map" ? "Map" : "3D view"}>
+          {viewMode === "map" ? (
+            <FlightPathMap
+              gpsPath={gpsPath}
+              className="h-full w-full"
+              colorMode={colorMode}
+              windSpeedPath={m.gps_path_wind_speed_ms}
+              signalQualityPath={m.gps_path_hdop}
+            />
           ) : (
-            <div className="flex items-center space-x-2">
-              <span className="text-slate-400">{COLOR_MODE_LEGEND[colorMode].label}:</span>
-              <span className="w-16 h-2 rounded-full inline-block" style={{
-                background: colorMode === "wind"
-                  ? "linear-gradient(90deg, #1c52d9, #e6bf1a, #f22626)"
-                  : "linear-gradient(90deg, #0dd973, #e6bf1a, #f22626)",
-              }} />
-              <span className="text-slate-500">{COLOR_MODE_LEGEND[colorMode].low} → {COLOR_MODE_LEGEND[colorMode].high}</span>
-            </div>
+            <FlightPathScene
+              gpsPath={gpsPath}
+              className="h-full w-full"
+              cameraApiRef={cameraApi}
+              colorMode={colorMode}
+              windSpeedPath={m.gps_path_wind_speed_ms}
+              signalQualityPath={m.gps_path_hdop}
+            />
           )}
-        </div>
-
-        {/* Stats */}
-        <div className="absolute top-4 right-4 z-[500] bg-slate-900/90 border border-slate-800 rounded-lg px-3 py-2 text-xxs text-slate-300 font-mono space-y-1 backdrop-blur-sm pointer-events-none">
-          <div>Max Altitude: <span className="text-emerald-400">{maxAlt.toFixed(1)} m</span></div>
-          {report.metadata.total_distance_m && (
-            <div>Distance: <span className="text-gold-500">{report.metadata.total_distance_m.toFixed(0)} m</span></div>
-          )}
-        </div>
-
-        {/* Interaction hint (3D only — map controls are self-explanatory) */}
-        {viewMode === "3d" && (
-          <div className="absolute bottom-4 right-4 text-xxs text-slate-500 pointer-events-none">
-            Drag to orbit · Scroll to zoom
-          </div>
-        )}
+        </ErrorBoundary>
       </div>
-    </div>
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-muted">
+        {colorMode === "standard" ? (
+          <>
+            <span className="flex items-center gap-1.5">
+              <span aria-hidden className="inline-block h-3 w-3 rounded-full border-[3px] border-accent" /> Launch
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span aria-hidden className="inline-block h-2.5 w-2.5 bg-fg" /> Land / log end
+            </span>
+          </>
+        ) : (
+          <span className="flex items-center gap-1.5">
+            {LEGEND[colorMode].label}: {LEGEND[colorMode].low}
+            <span aria-hidden className="inline-block h-2 w-16 rounded-sm" style={{ background: RAMP_CSS }} />
+            {LEGEND[colorMode].high}; grey = no reading
+          </span>
+        )}
+        <span className="num">Altitude range (GPS): {fmtNum(altRange, 1, "m")}</span>
+        <span className="num">Distance: {fmtNum(m.total_distance_m, 0, "m")}</span>
+        {viewMode === "3d" && <span>Drag to orbit, scroll to zoom. Height ×3.</span>}
+      </div>
+    </section>
   );
 }

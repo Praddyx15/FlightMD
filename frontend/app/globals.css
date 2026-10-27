@@ -2,107 +2,319 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --bg-primary:     #0A0A0A;
-  --bg-card:        #111111;
-  --bg-elevated:    #171717;
-  --surface:        #111111;
-  --surface-2:      #171717;
-  --accent:         #B89642; /* Muted gold */
-  --accent-amber:   #B89642;
-  --gold:           #B89642;
-  --gold-light:     #D1AE52;
-  --gold-hover:     #C7A44B;
-  --gold-dark:      #6F5820;
-  --border:         #2A2A2A;
-  --text-primary:   #F5F5F2;
-  --text-secondary: #A2A2A2;
-  --text-muted:     #6E6E6E;
-  --mono:           var(--font-geist-mono), 'JetBrains Mono', 'Fira Code', monospace;
-  --font-display:   var(--font-geist-sans), sans-serif;
+/*
+ * UAV suite tokens (design-system.md section 3). Dark "ops" is the default on :root,
+ * light "field" lives under .light. Each colour has a hex form (--x) for SVG/canvas and
+ * an rgb-channel form (--x-rgb) so Tailwind opacity modifiers like bg-accent/10 work.
+ * Components never use a hex directly.
+ */
+@layer base {
+  :root {
+    color-scheme: dark;
+
+    --bg: #0b0e11;
+    --bg-rgb: 11 14 17;
+    --surface: #12161b;
+    --surface-rgb: 18 22 27;
+    --elevated: #1a2027;
+    --elevated-rgb: 26 32 39;
+    --border: #2a323c;
+    --border-rgb: 42 50 60;
+    --text: #e6eaee;
+    --text-rgb: 230 234 238;
+    --text-muted: #9aa5b1;
+    --text-muted-rgb: 154 165 177;
+    /* disabled text, or text >= 18 px only */
+    --text-subtle: #5c6773;
+    --text-subtle-rgb: 92 103 115;
+
+    --accent: #3b82f6;
+    --accent-rgb: 59 130 246;
+    --accent-solid: #2563eb;
+    --accent-solid-rgb: 37 99 235;
+    --accent-text: #60a5fa;
+    --accent-text-rgb: 96 165 250;
+    --on-accent: #ffffff;
+    --on-accent-rgb: 255 255 255;
+
+    /* aviation semantics: text values; always next to an icon and a word */
+    --critical: #f58a8e;
+    --critical-rgb: 245 138 142;
+    --caution: #f5a524;
+    --caution-rgb: 245 165 36;
+    --advisory: #4cc2d9;
+    --advisory-rgb: 76 194 217;
+    --ok: #3dbb7c;
+    --ok-rgb: 61 187 124;
+    --sim: #8b7ec8;
+    --sim-rgb: 139 126 200;
+
+    /* fills stay the bright values in both themes, used at 12-16 % alpha */
+    --critical-fill: #e5484d;
+    --critical-fill-rgb: 229 72 77;
+    --caution-fill: #f5a524;
+    --caution-fill-rgb: 245 165 36;
+    --advisory-fill: #4cc2d9;
+    --advisory-fill-rgb: 76 194 217;
+    --ok-fill: #3dbb7c;
+    --ok-fill-rgb: 61 187 124;
+
+    /* chart series: never semantic */
+    --series-1: #5b8def;
+    --series-2: #e0a458;
+    --series-3: #7cc7a6;
+    --series-4: #c77ca6;
+    --series-5: #8fa35c;
+    --series-6: #6bb8c4;
+
+    --radius: 6px;
+  }
+
+  .light {
+    color-scheme: light;
+
+    --bg: #f8fafc;
+    --bg-rgb: 248 250 252;
+    --surface: #ffffff;
+    --surface-rgb: 255 255 255;
+    --elevated: #f1f5f9;
+    --elevated-rgb: 241 245 249;
+    --border: #cbd5e1;
+    --border-rgb: 203 213 225;
+    --text: #0f172a;
+    --text-rgb: 15 23 42;
+    --text-muted: #475569;
+    --text-muted-rgb: 71 85 105;
+    --text-subtle: #64748b;
+    --text-subtle-rgb: 100 116 139;
+
+    --accent: #2563eb;
+    --accent-rgb: 37 99 235;
+    --accent-solid: #1e40af;
+    --accent-solid-rgb: 30 64 175;
+    --accent-text: #1d4ed8;
+    --accent-text-rgb: 29 78 216;
+
+    --critical: #b91c1c;
+    --critical-rgb: 185 28 28;
+    --caution: #b45309;
+    --caution-rgb: 180 83 9;
+    --advisory: #0e7490;
+    --advisory-rgb: 14 116 144;
+    --ok: #15803d;
+    --ok-rgb: 21 128 61;
+
+    /* the dark ramp is too light on white for 3:1 lines */
+    --series-1: #3567d6;
+    --series-2: #a8681c;
+    --series-3: #2e8a63;
+    --series-4: #a9558a;
+    --series-5: #61742a;
+    --series-6: #2f8394;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    background: var(--bg);
+  }
+
+  body {
+    @apply bg-bg font-sans text-fg antialiased;
+    min-height: 100dvh;
+  }
+
+  a {
+    @apply text-accent-text underline-offset-4;
+  }
+
+  ::selection {
+    background: rgb(var(--accent-rgb) / 0.35);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  table,
+  input,
+  output,
+  time {
+    font-variant-numeric: tabular-nums;
+  }
+
+  [hidden] {
+    display: none !important;
+  }
 }
 
-* { box-sizing: border-box; }
+@layer components {
+  .skip-link {
+    @apply fixed left-3 top-3 z-50 -translate-y-[200%] rounded bg-accent-solid px-4 py-2 text-sm font-medium text-on-accent no-underline;
+  }
 
-/* Only `html` carries an opaque background — it's the canvas fallback
-   shown before/without the WebGL layer. `body` must stay transparent:
-   since html already has a non-'none' background, body's background
-   would NOT propagate to the canvas but would instead paint as body's
-   own in-flow box, which renders in front of any position:fixed
-   z-index:-10 child (like the Lightfall background), hiding it entirely. */
-html {
-  background-color: var(--bg-primary);
-  background-image:
-    radial-gradient(at 0% 0%, rgba(184, 150, 66, 0.05) 0px, transparent 50%),
-    radial-gradient(at 100% 100%, rgba(184, 150, 66, 0.03) 0px, transparent 50%),
-    radial-gradient(at 50% 20%, rgba(23, 23, 23, 0.4) 0px, transparent 60%);
-  background-attachment: fixed;
-}
+  .skip-link:focus,
+  .skip-link:focus-visible {
+    @apply translate-y-0;
+  }
 
-body {
-  background-color: transparent;
-  color: var(--text-primary);
-  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  -webkit-font-smoothing: antialiased;
-}
+  .panel {
+    @apply rounded border border-border bg-surface;
+  }
 
-/* Monospace for all numbers and param names */
-.mono { font-family: var(--mono); }
+  .label {
+    @apply text-2xs font-medium uppercase tracking-[0.02em] text-fg-muted;
+  }
 
-/* Distinctive display face for headings */
-h1, h2, h3 {
-  font-family: var(--font-display);
-  letter-spacing: -0.02em;
+  .btn {
+    @apply inline-flex min-h-[32px] items-center justify-center gap-1.5 rounded border border-border bg-elevated px-3 text-sm font-medium text-fg no-underline transition-colors hover:border-fg-subtle disabled:cursor-not-allowed disabled:opacity-50 pointer-coarse:min-h-[44px];
+  }
+
+  .btn-primary {
+    @apply btn border-accent-solid bg-accent-solid text-on-accent hover:border-accent-solid hover:bg-accent-solid/90;
+  }
+
+  .input {
+    @apply min-h-[32px] rounded border border-border bg-elevated px-2.5 text-sm text-fg placeholder:text-fg-muted pointer-coarse:min-h-[44px];
+  }
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: var(--bg-primary); }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
-
-/* Severity text colours */
-.text-critical { color: #FF3D3D; }
-.text-warning  { color: #FF7A2F; }
-.text-info     { color: #3A9CF8; }
-.text-good     { color: #0DD97C; }
-
-/* Animated progress bar */
-@keyframes progress-shimmer {
-  0%   { background-position: -200% center; }
-  100% { background-position: 200% center; }
-}
-.progress-shimmer {
-  background: linear-gradient(90deg, #B89642 0%, #E7C25B 50%, #B89642 100%);
-  background-size: 200% auto;
-  animation: progress-shimmer 1.5s linear infinite;
+@layer utilities {
+  .num {
+    font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-variant-numeric: tabular-nums slashed-zero;
+    font-feature-settings: "tnum" 1, "zero" 1;
+  }
 }
 
-/* Score circle animation */
-@keyframes draw-circle {
-  from { stroke-dashoffset: var(--circumference); }
-  to   { stroke-dashoffset: var(--offset); }
-}
-.score-ring {
-  animation: draw-circle 0.8s ease-out forwards;
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
-/* Radix Collapsible — smooth expand/collapse using the height custom
-   property Radix exposes on the content element. */
-@keyframes collapsible-down {
-  from { height: 0; }
-  to   { height: var(--radix-collapsible-content-height); }
+/* Leaflet sits on the token ground while tiles load */
+.leaflet-container {
+  background: var(--elevated);
+  font-family: inherit;
 }
-@keyframes collapsible-up {
-  from { height: var(--radix-collapsible-content-height); }
-  to   { height: 0; }
+
+/*
+ * Print = the report. Always light, no chrome. Interactive-only UI carries .no-print,
+ * paper-only content .print-only; collapsed finding bodies are forced open.
+ */
+.print-only {
+  display: none;
 }
-.collapsible-content {
-  overflow: hidden;
-}
-.collapsible-content[data-state="open"] {
-  animation: collapsible-down 220ms ease-out;
-}
-.collapsible-content[data-state="closed"] {
-  animation: collapsible-up 220ms ease-out;
+
+@media print {
+  :root,
+  .light {
+    color-scheme: light;
+    --bg: #ffffff;
+    --bg-rgb: 255 255 255;
+    --surface: #ffffff;
+    --surface-rgb: 255 255 255;
+    --elevated: #f1f5f9;
+    --elevated-rgb: 241 245 249;
+    --border: #94a3b8;
+    --border-rgb: 148 163 184;
+    --text: #000000;
+    --text-rgb: 0 0 0;
+    --text-muted: #334155;
+    --text-muted-rgb: 51 65 85;
+    --text-subtle: #475569;
+    --text-subtle-rgb: 71 85 105;
+    --accent: #1e40af;
+    --accent-rgb: 30 64 175;
+    --accent-text: #1e40af;
+    --accent-text-rgb: 30 64 175;
+    --critical: #b91c1c;
+    --critical-rgb: 185 28 28;
+    --caution: #92400e;
+    --caution-rgb: 146 64 14;
+    --advisory: #0e7490;
+    --advisory-rgb: 14 116 144;
+    --ok: #166534;
+    --ok-rgb: 22 101 52;
+    --series-1: #3567d6;
+    --series-2: #a8681c;
+    --series-3: #2e8a63;
+    --series-4: #a9558a;
+    --series-5: #61742a;
+    --series-6: #2f8394;
+  }
+
+  @page {
+    margin: 14mm 12mm;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 11pt;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  .print-expand[hidden] {
+    display: block !important;
+  }
+
+  .truncate {
+    overflow: visible !important;
+    white-space: normal !important;
+    text-overflow: clip !important;
+    overflow-wrap: break-word;
+  }
+
+  * {
+    box-shadow: none !important;
+    animation: none !important;
+    transition: none !important;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
+  tr,
+  svg,
+  figure,
+  section > article,
+  .print-avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  h1,
+  h2,
+  h3 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
 }

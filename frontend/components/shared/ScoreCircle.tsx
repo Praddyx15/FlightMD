@@ -1,93 +1,60 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { scoreColour } from "@/lib/utils";
+import { useEffect, useState } from "react";
+import { MinusCircle } from "lucide-react";
+import { TONE_VAR, scoreTone } from "@/lib/utils";
+import { TONE_ICON } from "./SeverityBadge";
 
 interface Props {
   score: number;
   label: string;
   size?: number;
+  notAssessed?: boolean;
 }
 
-export function ScoreCircle({ score, label, size = 140 }: Props) {
-  const [displayed, setDisplayed] = useState(0);
-  const [drawn, setDrawn] = useState(0);
-  const rafRef = useRef<number>(0);
-
-  const radius = (size - 16) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const colour = scoreColour(score);
+export function ScoreCircle({ score, label, size = 120, notAssessed = false }: Props) {
+  const [drawn, setDrawn] = useState(false);
 
   useEffect(() => {
-    const duration = 800;
-    const start = performance.now();
+    const id = requestAnimationFrame(() => setDrawn(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
 
-    function frame(now: number) {
-      const elapsed = now - start;
-      const t = Math.min(elapsed / duration, 1);
-      // ease-out cubic
-      const eased = 1 - Math.pow(1 - t, 3);
-      const current = eased * score;
-      setDisplayed(Math.round(current));
-      setDrawn(current);
-      if (t < 1) rafRef.current = requestAnimationFrame(frame);
-    }
-
-    rafRef.current = requestAnimationFrame(frame);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [score]);
-
-  const offset = circumference - (drawn / 100) * circumference;
+  const stroke = 8;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const value = notAssessed ? 0 : Math.max(0, Math.min(100, score));
+  const tone = scoreTone(value);
+  const colour = notAssessed ? "var(--text-subtle)" : TONE_VAR[tone];
+  const offset = circumference - (drawn ? value / 100 : 0) * circumference;
+  const Icon = notAssessed ? MinusCircle : TONE_ICON[tone];
 
   return (
-    <div className="flex flex-col items-center gap-2">
-      <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
-        {/* Track */}
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke="rgba(255,255,255,0.07)"
-          strokeWidth={10}
-        />
-        {/* Progress arc */}
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke={colour}
-          strokeWidth={10}
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          style={{ transition: "stroke-dashoffset 0.05s linear, stroke 0.3s" }}
-        />
-        {/* Centre text — rotate back */}
-        <text
-          x={size / 2}
-          y={size / 2 + 2}
-          textAnchor="middle"
-          dominantBaseline="middle"
-          style={{
-            transform: `rotate(90deg)`,
-            transformOrigin: `${size / 2}px ${size / 2}px`,
-            fill: colour,
-            fontSize: size * 0.22,
-            fontWeight: "bold",
-            fontFamily: "monospace",
-          }}
-        >
-          {displayed}
-        </text>
-      </svg>
-      <span
-        className="text-sm font-bold tracking-wide"
-        style={{ color: colour }}
-      >
-        {label}
-      </span>
-    </div>
+    <figure className="flex flex-col items-center gap-2" aria-label={notAssessed ? "Not assessed" : `Health score ${Math.round(value)} out of 100, ${label}`}>
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg width={size} height={size} className="-rotate-90" aria-hidden>
+          <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="var(--border)" strokeWidth={stroke} />
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke={colour}
+            strokeWidth={stroke}
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            style={{ transition: "stroke-dashoffset 300ms ease-out" }}
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="num text-hero font-semibold text-fg">{notAssessed ? "—" : Math.round(value)}</span>
+          {!notAssessed && <span className="num text-2xs text-fg-muted">/ 100</span>}
+        </div>
+      </div>
+      <figcaption className="flex items-center gap-1 text-sm font-semibold" style={{ color: notAssessed ? "var(--text-muted)" : colour }}>
+        <Icon aria-hidden className="h-4 w-4" />
+        {notAssessed ? "Not assessed" : label}
+      </figcaption>
+    </figure>
   );
 }

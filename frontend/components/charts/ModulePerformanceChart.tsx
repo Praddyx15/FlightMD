@@ -1,69 +1,45 @@
-"use client";
-
-import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Cell, ResponsiveContainer } from "recharts";
+import { MinusCircle } from "lucide-react";
 import type { AnalyserResult } from "@/lib/types";
-import { scoreColour } from "@/lib/utils";
+import { fmtScore } from "@/lib/format";
+import { TONE_VAR, isAssessed, scoreTone } from "@/lib/utils";
+import { TONE_ICON } from "@/components/shared/SeverityBadge";
 
-interface Props {
-  analyserResults: AnalyserResult[];
-}
+// Plain HTML bars: readable by screen readers, prints cleanly, and a module that was not
+// assessed shows as such instead of a full bar.
+export function ModulePerformanceChart({ analyserResults }: { analyserResults: AnalyserResult[] }) {
+  if (analyserResults.length === 0) return null;
 
-interface TooltipPayloadItem {
-  payload?: { name: string; score: number };
-}
-
-// Every applicable module's health_score at a glance — the overall score is
-// a single weighted number, but "why" always traces back to one or two
-// modules dragging it down, and this makes that visible without opening
-// every finding card individually.
-export function ModulePerformanceChart({ analyserResults }: Props) {
-  const applicable = analyserResults.filter((r) => !r.skipped);
-
-  if (applicable.length === 0) return null;
-
-  const chartData = applicable
-    .map((r) => ({ name: r.display_name, score: Math.round(r.health_score) }))
-    .sort((a, b) => a.score - b.score);
-
-  const height = Math.max(160, chartData.length * 34);
+  const assessed = analyserResults.filter(isAssessed).sort((a, b) => a.health_score - b.health_score);
+  const notAssessed = analyserResults.filter((r) => !isAssessed(r));
 
   return (
-    <div style={{ height }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart
-          data={chartData}
-          layout="vertical"
-          margin={{ top: 4, right: 24, left: 8, bottom: 0 }}
-        >
-          <CartesianGrid stroke="rgba(255,255,255,0.04)" horizontal={false} />
-          <XAxis
-            type="number"
-            domain={[0, 100]}
-            tick={{ fontSize: 10, fill: "rgba(255,255,255,0.35)" }}
-          />
-          <YAxis
-            type="category"
-            dataKey="name"
-            width={110}
-            tick={{ fontSize: 11, fill: "rgba(255,255,255,0.7)" }}
-          />
-          <Tooltip
-            cursor={{ fill: "rgba(255,255,255,0.03)" }}
-            contentStyle={{ background: "#171717", border: "1px solid rgba(255,255,255,0.1)", fontSize: 11 }}
-            labelStyle={{ color: "rgba(255,255,255,0.85)", fontWeight: 600, marginBottom: 4 }}
-            itemStyle={{ color: "#E7C25B" }}
-            formatter={(value: number) => [`${value}/100`, "Health score"]}
-            labelFormatter={(_label: string, payload: TooltipPayloadItem[]) =>
-              payload?.[0]?.payload?.name ?? ""
-            }
-          />
-          <Bar dataKey="score" radius={[0, 4, 4, 0]} barSize={16}>
-            {chartData.map((entry) => (
-              <Cell key={entry.name} fill={scoreColour(entry.score)} />
-            ))}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
+    <ul className="space-y-1.5">
+      {assessed.map((r) => {
+        const tone = scoreTone(r.health_score);
+        const Icon = TONE_ICON[tone];
+        const pct = Math.max(0, Math.min(100, r.health_score));
+        return (
+          <li key={r.analyser} className="grid grid-cols-[minmax(0,9rem)_1fr_auto] items-center gap-2 text-xs sm:grid-cols-[12rem_1fr_auto]">
+            <span className="truncate">{r.display_name}</span>
+            <span className="h-2 rounded-sm bg-elevated" aria-hidden>
+              <span className="block h-full rounded-sm" style={{ width: `${pct}%`, background: TONE_VAR[tone] }} />
+            </span>
+            <span className="num flex items-center gap-1 whitespace-nowrap" style={{ color: TONE_VAR[tone] }}>
+              <Icon aria-hidden className="h-3.5 w-3.5" />
+              {fmtScore(r.health_score)}
+            </span>
+          </li>
+        );
+      })}
+      {notAssessed.map((r) => (
+        <li key={r.analyser} className="grid grid-cols-[minmax(0,9rem)_1fr] items-center gap-2 text-xs text-fg-muted sm:grid-cols-[12rem_1fr]">
+          <span className="truncate">{r.display_name}</span>
+          <span className="flex items-center gap-1">
+            <MinusCircle aria-hidden className="h-3.5 w-3.5 shrink-0" />
+            Not assessed{r.skip_reason ? `: ${r.skip_reason}` : ""}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }

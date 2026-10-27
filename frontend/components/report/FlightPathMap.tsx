@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
-import { MapContainer, TileLayer, Polyline, Marker, useMap } from "react-leaflet";
+import { useEffect, useMemo } from "react";
+import { MapContainer, Marker, Polyline, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { buildPathColors, type PathColorMode } from "@/components/three/flightPathGeometry";
+import {
+  normaliseValues, rampColour, rgbCss, sampleIndices, type PathColorMode,
+} from "@/components/three/flightPathGeometry";
 
 interface Props {
   gpsPath: [number, number, number][];
@@ -14,9 +16,11 @@ interface Props {
   className?: string;
 }
 
-function rgbCss([r, g, b]: [number, number, number]): string {
-  return `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`;
-}
+// todo: a bundled basemap so the map works offline; the env var covers self-hosted tiles for now
+const TILE_URL = process.env.NEXT_PUBLIC_TILE_URL || "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+const TILE_ATTRIBUTION = process.env.NEXT_PUBLIC_TILE_ATTRIBUTION ||
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+const BINS = 8;
 
 function bearingDeg(a: [number, number], b: [number, number]): number {
   const lat1 = (a[0] * Math.PI) / 180;
@@ -27,19 +31,25 @@ function bearingDeg(a: [number, number], b: [number, number]): number {
   return (Math.atan2(y, x) * 180) / Math.PI;
 }
 
-function dotIcon(colour: string, size = 14) {
-  return L.divIcon({
-    className: "",
-    html: `<div style="width:${size}px;height:${size}px;border-radius:9999px;background:${colour};border:2px solid #0A0A0A;box-shadow:0 0 6px ${colour}99;"></div>`,
-    iconSize: [size, size],
-    iconAnchor: [size / 2, size / 2],
-  });
-}
+// launch = hollow circle, land = filled square: told apart by shape, not colour
+const launchIcon = L.divIcon({
+  className: "",
+  html: '<div style="width:14px;height:14px;border-radius:9999px;border:3px solid var(--accent);background:var(--surface)"></div>',
+  iconSize: [14, 14],
+  iconAnchor: [7, 7],
+});
 
-function arrowIcon(rotationDeg: number, colour: string) {
+const landIcon = L.divIcon({
+  className: "",
+  html: '<div style="width:12px;height:12px;background:var(--text);border:2px solid var(--surface)"></div>',
+  iconSize: [12, 12],
+  iconAnchor: [6, 6],
+});
+
+function arrowIcon(rotationDeg: number) {
   return L.divIcon({
     className: "",
-    html: `<div style="transform:rotate(${rotationDeg}deg);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:10px solid ${colour};filter:drop-shadow(0 0 2px #0A0A0A);"></div>`,
+    html: `<div style="transform:rotate(${rotationDeg}deg);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:10px solid var(--text)"></div>`,
     iconSize: [10, 10],
     iconAnchor: [5, 5],
   });
@@ -48,32 +58,39 @@ function arrowIcon(rotationDeg: number, colour: string) {
 function FitBounds({ positions }: { positions: [number, number][] }) {
   const map = useMap();
   useEffect(() => {
-    if (positions.length === 0) return;
-    const bounds = L.latLngBounds(positions);
-    map.fitBounds(bounds, { padding: [30, 30] });
+    if (positions.length > 0) map.fitBounds(L.latLngBounds(positions), { padding: [30, 30] });
   }, [positions, map]);
   return null;
 }
 
-export function FlightPathMap({
-  gpsPath, colorMode, windSpeedPath, signalQualityPath, className,
-}: Props) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
+export function FlightPathMap({ gpsPath, colorMode, windSpeedPath, signalQualityPath, className }: Props) {
+  // <= 1000 points; the values arrays are indexed the same way as gpsPath
+  const idx = useMemo(() => sampleIndices(gpsPath.length), [gpsPath]);
+  const positions = useMemo<[number, number][]>(() => idx.map((i) => [gpsPath[i][0], gpsPath[i][1]]), [idx, gpsPath]);
 
-  const positions = useMemo<[number, number][]>(
-    () => gpsPath.map(([lat, lon]) => [lat, lon]),
-    [gpsPath]
-  );
+  // Consecutive points in the same colour bin merge into one polyline, so a coloured
+  // path is a handful of layers instead of one per sample.
+  const runs = useMemo(() => {
+    if (colorMode === "standard") return null;
+    const t = normaliseValues(colorMode === "wind" ? windSpeedPath : signalQualityPath);
+    if (!t) return null;
+    const binOf = (i: number) => {
+      const v = t[i];
+      return v === null || v === undefined ? -1 : Math.min(BINS - 1, Math.floor(v * BINS));
+    };
+    const out: { bin: number; pos: [number, number][] }[] = [];
+    idx.forEach((src, k) => {
+      const bin = binOf(src);
+      const last = out[out.length - 1];
+      if (last && last.bin === bin) last.pos.push(positions[k]);
+      else out.push({ bin, pos: last ? [last.pos[last.pos.length - 1], positions[k]] : [positions[k]] });
+    });
+    return out;
+  }, [colorMode, windSpeedPath, signalQualityPath, idx, positions]);
 
-  const colours = useMemo(() => {
-    const values = colorMode === "wind" ? windSpeedPath : colorMode === "signal" ? signalQualityPath : null;
-    return buildPathColors(colorMode, values);
-  }, [colorMode, windSpeedPath, signalQualityPath]);
-
-  // Direction-of-flight arrows at ~10 evenly spaced points along the path.
-  const arrowPoints = useMemo(() => {
+  const arrows = useMemo(() => {
     if (positions.length < 2) return [];
-    const step = Math.max(1, Math.floor(positions.length / 10));
+    const step = Math.max(1, Math.floor(positions.length / 8));
     const pts: { pos: [number, number]; rotation: number }[] = [];
     for (let i = step; i < positions.length - 1; i += step) {
       pts.push({ pos: positions[i], rotation: bearingDeg(positions[i - 1], positions[i]) });
@@ -83,41 +100,29 @@ export function FlightPathMap({
 
   if (positions.length === 0) return null;
 
-  const segments: { pos: [number, number][]; colour: string }[] = [];
-  if (colours) {
-    for (let i = 0; i < positions.length - 1; i++) {
-      segments.push({ pos: [positions[i], positions[i + 1]], colour: rgbCss(colours[i]) });
-    }
-  }
-
   return (
-    <div ref={containerRef} className={className}>
-      <MapContainer
-        center={positions[0]}
-        zoom={16}
-        scrollWheelZoom={true}
-        style={{ width: "100%", height: "100%", background: "#0A0A0A" }}
-      >
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
+    <div className={className}>
+      <MapContainer center={positions[0]} zoom={16} scrollWheelZoom={false} style={{ width: "100%", height: "100%" }}>
+        <TileLayer attribution={TILE_ATTRIBUTION} url={TILE_URL} />
         <FitBounds positions={positions} />
 
-        {colours ? (
-          segments.map((seg, i) => (
-            <Polyline key={i} positions={seg.pos} pathOptions={{ color: seg.colour, weight: 4 }} />
+        {runs ? (
+          runs.map((r, i) => (
+            <Polyline
+              key={i}
+              positions={r.pos}
+              pathOptions={{ color: r.bin < 0 ? "rgb(115,120,128)" : rgbCss(rampColour((r.bin + 0.5) / BINS)), weight: 4 }}
+            />
           ))
         ) : (
-          <Polyline positions={positions} pathOptions={{ color: "#B89642", weight: 4 }} />
+          <Polyline positions={positions} pathOptions={{ color: "var(--series-1)", weight: 4 }} />
         )}
 
-        {arrowPoints.map((a, i) => (
-          <Marker key={i} position={a.pos} icon={arrowIcon(a.rotation, "#E7C25B")} interactive={false} />
+        {arrows.map((a, i) => (
+          <Marker key={i} position={a.pos} icon={arrowIcon(a.rotation)} interactive={false} keyboard={false} />
         ))}
-
-        <Marker position={positions[0]} icon={dotIcon("#0DD97C")} />
-        <Marker position={positions[positions.length - 1]} icon={dotIcon("#f43f5e")} />
+        <Marker position={positions[0]} icon={launchIcon} title="Launch" />
+        <Marker position={positions[positions.length - 1]} icon={landIcon} title="Land / log end" />
       </MapContainer>
     </div>
   );

@@ -1,8 +1,10 @@
 export default function Loading() {
   return (
-    <div className="max-w-xl mx-auto px-4 py-24 text-center">
-      <div className="text-5xl mb-6 animate-pulse">✈️</div>
-      <p className="text-white/40 text-sm">Loading report…</p>
+    <div className="mx-auto max-w-5xl space-y-4 px-4 py-8" aria-busy="true">
+      <p className="sr-only" role="status">Loading report</p>
+      <div className="panel h-40 animate-pulse" />
+      <div className="panel h-24 animate-pulse" />
+      <div className="panel h-24 animate-pulse" />
     </div>
   );
 }

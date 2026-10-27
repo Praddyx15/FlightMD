@@ -1,168 +1,103 @@
 "use client";
 
+import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
-import useSWR from "swr";
-import { getStatus, getReport } from "@/lib/api";
-import type { FlightMDReport, StatusResponse } from "@/lib/types";
-import { ReportHeader } from "@/components/report/ReportHeader";
-import { FindingsList } from "@/components/report/FindingsList";
-import { ParamSheet } from "@/components/report/ParamSheet";
-import { ExportBar } from "@/components/report/ExportBar";
-import PathPlotter from "@/components/report/PathPlotter";
-import QAAssistant from "@/components/report/QAAssistant";
-import { Quantum } from "ldrs/react";
-import "ldrs/react/Quantum.css";
+import { useEffect } from "react";
+import { AlertTriangle, Clock, Loader2 } from "lucide-react";
+import { useReport, type ReportState } from "@/lib/useReport";
+import { updateRecentReport } from "@/lib/storage";
+import { ReportView } from "@/components/report/ReportView";
+import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
+import { UploadProgress } from "@/components/upload/UploadProgress";
 
-const STATUS_MESSAGES: Record<number, string> = {
-  0:  "Preparing analysis…",
-  5:  "Parsing flight log…",
-  20: "Analysing oscillation…",
-  35: "Checking IMU vibration…",
-  50: "Evaluating EKF health…",
-  62: "Assessing battery…",
-  72: "Reviewing GPS quality…",
-  80: "Inspecting parameters & motors…",
-  88: "Generating explanations…",
-  96: "Assembling report…",
-  100: "Complete!",
-};
-
-function progressMessage(progress: number, apiMessage?: string): string {
-  if (apiMessage) return apiMessage;
-  const thresholds = Object.keys(STATUS_MESSAGES)
-    .map(Number)
-    .sort((a, b) => b - a);
-  for (const t of thresholds) {
-    if (progress >= t) return STATUS_MESSAGES[t];
-  }
-  return "Processing…";
-}
-
-export default function ReportPage() {
-  const params  = useParams();
-  const id      = params?.id as string;
-  const [report, setReport] = useState<FlightMDReport | null>(null);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-
-  // Poll status every 2s while processing
-  const { data: status, error: statusError } = useSWR<StatusResponse>(
-    report ? null : id ? `/status/${id}` : null,
-    () => getStatus(id),
-    {
-      refreshInterval: (data) =>
-        data?.status === "processing" ? 2000 : 0,
-      onSuccess: async (data) => {
-        if (data.status === "complete") {
-          try {
-            const r = await getReport(id);
-            setReport(r);
-          } catch (e: unknown) {
-            setFetchError(e instanceof Error ? e.message : "Failed to load report.");
-          }
-        }
-      },
-    }
-  );
-
-  // ── Loading / error states ────────────────────────────────────────────────
-  if (!id) return <div className="p-8 text-white/50">Invalid report URL.</div>;
-
-  if (fetchError || statusError) {
-    return (
-      <div className="max-w-2xl mx-auto px-4 py-20 text-center">
-        <div className="text-red-400 text-xl mb-3">⚠️ Report Unavailable</div>
-        <p className="text-white/50">
-          {fetchError || "Could not load status. Reports expire after 1 hour."}
-        </p>
-        <a href="/" className="mt-6 inline-block text-sm underline" style={{ color: "#B89642" }}>
-          ← Analyse another log
-        </a>
-      </div>
-    );
-  }
-
-  if (status?.status === "failed") {
-    return (
-      <div className="max-w-2xl mx-auto px-4 py-20 text-center">
-        <div className="text-red-400 text-xl mb-3">❌ Analysis Failed</div>
-        <p className="text-white/50">{status.error || "Unknown error. The log may be corrupted."}</p>
-        <a href="/" className="mt-6 inline-block text-sm underline" style={{ color: "#B89642" }}>
-          ← Try again
-        </a>
-      </div>
-    );
-  }
-
-  // ── Processing view ───────────────────────────────────────────────────────
-  if (!report) {
-    const progress = status?.progress ?? 0;
-    const message  = progressMessage(progress, status?.message);
-
-    return (
-      <div className="max-w-xl mx-auto px-4 py-24 text-center">
-        <div className="mb-6 flex justify-center">
-          <Quantum size="60" speed="1.75" color="#B89642" />
-        </div>
-        <h2 className="text-2xl font-bold mb-2" style={{ color: "#B89642" }}>
-          Analysing your flight log
-        </h2>
-        <p className="text-white/50 mb-8 text-sm">{message}</p>
-
-        {/* Progress bar */}
-        <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden mb-3">
-          <div
-            className="h-full rounded-full transition-all duration-500"
-            style={{
-              width: `${progress}%`,
-              background: "linear-gradient(90deg, #B89642, #E7C25B)",
-            }}
-          />
-        </div>
-        <div className="text-xs text-white/30 mono">{progress}%</div>
-
-        {/* Animated steps */}
-        <div className="mt-10 grid grid-cols-4 gap-2 text-xs text-white/30">
-          {STEP_LABELS.map((label, i) => (
-            <div
-              key={label}
-              className="flex flex-col items-center gap-1"
-              style={{ opacity: progress > i * 12 ? 1 : 0.3, transition: "opacity 0.5s" }}
-            >
-              <span className="text-lg">{STEP_ICONS[i]}</span>
-              <span>{label}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  // ── Full report ───────────────────────────────────────────────────────────
+function Problem({ title, children, retry }: { title: string; children: React.ReactNode; retry?: () => void }) {
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
-      <ReportHeader report={report} />
-      <PathPlotter report={report} />
-      <FindingsList findings={report.findings} />
-      <QAAssistant report={report} />
-      {report.param_change_sheet.length > 0 && (
-        <ParamSheet params={report.param_change_sheet} />
-      )}
-      <ExportBar
-        reportId={id}
-        fileName={report.file_name}
-        hasGpsPath={!!report.metadata.gps_path && report.metadata.gps_path.length > 0}
-      />
-
-      {/* Back link */}
-      <div className="pb-4">
-        <a href="/" className="text-sm text-white/30 hover:text-white/60 transition-colors">
-          ← Analyse another log
-        </a>
+    <div className="mx-auto max-w-xl px-4 py-20 text-center" role="alert">
+      <h1 className="mb-2 flex items-center justify-center gap-2 text-value font-semibold">
+        <AlertTriangle aria-hidden className="h-5 w-5 text-caution" />
+        {title}
+      </h1>
+      <div className="text-sm text-fg-muted">{children}</div>
+      <div className="mt-6 flex justify-center gap-2">
+        {retry && <button type="button" onClick={retry} className="btn-primary">Try again</button>}
+        <Link href="/" className="btn">Analyse another log</Link>
       </div>
     </div>
   );
 }
 
-const STEP_LABELS = ["Parse", "Oscillation", "Vibration", "EKF", "Battery", "GPS", "Params", "Explain"];
-const STEP_ICONS  = ["📄", "〰️", "📳", "🔭", "🔋", "📡", "⚙️", "📝"];
+function Waiting({ state }: { state: Extract<ReportState, { phase: "queued" | "processing" }> }) {
+  return (
+    <div className="mx-auto max-w-xl px-4 py-20">
+      <h1 className="mb-1 flex items-center gap-2 text-value font-semibold">
+        <Loader2 aria-hidden className="h-5 w-5 animate-spin text-accent reduce-motion:animate-none" />
+        Analysing your flight log
+      </h1>
+      <p className="mb-4 text-sm text-fg-muted" aria-live="polite">
+        {state.phase === "queued" ? "Waiting for a free worker…" : state.message || "Working…"}
+      </p>
+      <UploadProgress progress={state.progress} label="Analysis" />
+      <p className="mt-4 text-xs text-fg-muted">Usually about 20 seconds. You can leave this tab open; the page updates itself.</p>
+    </div>
+  );
+}
+
+export default function ReportPage() {
+  const params = useParams();
+  const raw = params?.id;
+  const id = typeof raw === "string" ? raw : undefined;
+  const { state, retry } = useReport(id);
+
+  useEffect(() => {
+    if (state.phase !== "done") return;
+    const r = state.report;
+    document.title = `${r.file_name} · FlightMD`;
+    updateRecentReport(r.report_id, {
+      score: r.overall_score,
+      grade: r.letter_grade,
+      scoreLabel: r.score_label,
+      flightStart: r.metadata.log_start_utc,
+      vehicle: r.metadata.vehicle_type,
+      firmware: r.metadata.firmware_version,
+    });
+  }, [state]);
+
+  if (!id) return <Problem title="Invalid report link">This address does not contain a report id.</Problem>;
+
+  switch (state.phase) {
+    case "queued":
+    case "processing":
+      return <Waiting state={state} />;
+    case "expired":
+      return (
+        <Problem title="Report expired">
+          <p className="flex items-center justify-center gap-1">
+            <Clock aria-hidden className="h-4 w-4" />
+            Untagged reports are deleted 1 hour after upload. Upload the log again to get a new one.
+          </p>
+        </Problem>
+      );
+    case "failed":
+      return <Problem title="Analysis failed">{state.error}</Problem>;
+    case "error":
+      return <Problem title="Can't reach the server" retry={retry}>{state.error}</Problem>;
+    case "stopped":
+      return (
+        <Problem title="Still not finished" retry={retry}>
+          The analysis has run for over 10 minutes, so this page stopped checking. It may still finish.
+        </Problem>
+      );
+    case "done":
+      return (
+        <ErrorBoundary
+          fallback={
+            <Problem title="This report could not be displayed">
+              The report loaded but part of it could not be drawn. The JSON and PDF exports may still work.
+            </Problem>
+          }
+        >
+          <ReportView report={state.report} />
+        </ErrorBoundary>
+      );
+  }
+}

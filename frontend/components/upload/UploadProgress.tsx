@@ -2,23 +2,33 @@
 
 interface Props {
   progress: number;
+  label?: string;
+  onCancel?: () => void;
 }
 
-export function UploadProgress({ progress }: Props) {
+export function UploadProgress({ progress, label = "Uploading flight log", onCancel }: Props) {
+  const pct = Math.max(0, Math.min(100, Math.round(progress)));
   return (
-    <div className="text-center py-4">
-      <div className="text-3xl mb-4">🚀</div>
-      <p className="text-white/70 font-medium mb-4">Uploading flight log…</p>
-      <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden mb-2">
-        <div
-          className="h-full rounded-full transition-all duration-300"
-          style={{
-            width: `${progress}%`,
-            background: "linear-gradient(90deg, #B89642, #E7C25B)",
-          }}
-        />
+    <div className="py-4">
+      <div className="mb-2 flex items-baseline justify-between text-sm">
+        <span id="upload-label">{label}</span>
+        <span className="num text-fg-muted" aria-live="polite">{pct} %</span>
       </div>
-      <div className="text-xs text-white/30 font-mono">{progress}%</div>
+      <div
+        role="progressbar"
+        aria-labelledby="upload-label"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={pct}
+        className="h-2 overflow-hidden rounded-sm bg-elevated"
+      >
+        <div className="h-full bg-accent transition-[width]" style={{ width: `${pct}%` }} />
+      </div>
+      {onCancel && (
+        <button type="button" onClick={onCancel} className="btn mt-3">
+          Cancel upload
+        </button>
+      )}
     </div>
   );
 }

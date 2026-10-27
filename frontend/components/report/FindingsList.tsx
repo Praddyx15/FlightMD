@@ -1,123 +1,162 @@
 "use client";
 
 import { useState } from "react";
-import { motion } from "framer-motion";
+import { CheckCircle2, ChevronDown } from "lucide-react";
 import type { Finding, Severity } from "@/lib/types";
+import { groupFindings, isFindingGroup, type FindingOrGroup } from "@/lib/groupFindings";
+import { SEVERITY_LABELS, SEVERITY_ORDER, cn } from "@/lib/utils";
+import { SeverityIcon } from "@/components/shared/SeverityBadge";
 import { FindingCard } from "./FindingCard";
 import { GroupedFindingCard } from "./GroupedFindingCard";
-import { groupFindings, isFindingGroup } from "@/lib/groupFindings";
-
-const SEVERITY_ORDER: Record<Severity, number> = {
-  critical: 0, warning: 1, info: 2, good: 3,
-};
+import { FindingsTimeline } from "./FindingsTimeline";
 
 const ALL_SEVERITIES: Severity[] = ["critical", "warning", "info", "good"];
-const SEVERITY_LABELS: Record<Severity, string> = {
-  critical: "Critical", warning: "Warning", info: "Info", good: "Good",
-};
 
-interface Props { findings: Finding[]; }
+interface Props {
+  findings: Finding[];
+  duration?: number;
+  armed?: [number, number][] | null;
+  activeId?: string | null;
+  // ids that have a chart to jump to
+  chartable?: Set<string>;
+  onShowChart?: (id: string) => void;
+  onSelect?: (id: string) => void;
+}
 
-export function FindingsList({ findings }: Props) {
+export function FindingsList({ findings, duration = 0, armed, activeId, chartable, onShowChart, onSelect }: Props) {
   const [filter, setFilter] = useState<Severity | "all">("all");
+  const [showOthers, setShowOthers] = useState(false);
 
-  const sorted = [...findings].sort(
-    (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]
-  );
+  const sorted = [...findings].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
+  const counts = Object.fromEntries(
+    ALL_SEVERITIES.map((s) => [s, findings.filter((f) => f.severity === s).length])
+  ) as Record<Severity, number>;
 
-  const filtered = filter === "all"
-    ? sorted
-    : sorted.filter((f) => f.severity === filter);
+  function select(id: string) {
+    const f = findings.find((x) => x.id === id);
+    if (f && (f.severity === "info" || f.severity === "good")) setShowOthers(true);
+    if (filter !== "all" && f && f.severity !== filter) setFilter("all");
+    onSelect?.(id);
+  }
 
-  const grouped = groupFindings(filtered);
-
-  const counts = ALL_SEVERITIES.reduce(
-    (acc, s) => ({ ...acc, [s]: findings.filter((f) => f.severity === s).length }),
-    {} as Record<Severity, number>
-  );
+  const renderCards = (list: Finding[], open: boolean) =>
+    groupFindings(list).map((g: FindingOrGroup) =>
+      isFindingGroup(g) ? (
+        <GroupedFindingCard
+          key={`group-${g.category}-${g.groupTitle}-${g.items[0].id}`}
+          group={g}
+          defaultOpen={open && g.worstSeverity === "critical"}
+          activeId={activeId}
+          chartable={chartable}
+          onShowChart={onShowChart}
+        />
+      ) : (
+        <FindingCard
+          key={g.id}
+          finding={g}
+          defaultOpen={open && g.severity === "critical"}
+          activeId={activeId}
+          onShowChart={chartable?.has(g.id) ? onShowChart : undefined}
+        />
+      )
+    );
 
   if (findings.length === 0) {
     return (
-      <section>
-        <h2 className="text-lg font-bold text-white/80 mb-4">Findings</h2>
-        <div
-          className="rounded-2xl border border-border bg-card/85 p-8 text-center backdrop-blur-md"
-        >
-          <div className="text-3xl mb-2">✅</div>
-          <p className="text-white/60">No issues detected. Your flight log looks healthy.</p>
-        </div>
+      <section id="findings" aria-labelledby="findings-h" className="scroll-mt-4 space-y-3">
+        <h2 id="findings-h" className="text-base font-semibold">Findings</h2>
+        <p className="panel flex items-center gap-2 p-4 text-sm">
+          <CheckCircle2 aria-hidden className="h-4 w-4 text-ok" />
+          No findings. Every check that could run on this log passed.
+        </p>
       </section>
     );
   }
 
-  return (
-    <section>
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-        <h2 className="text-lg font-bold text-white/80">
-          Findings <span className="text-white/30 font-normal">({findings.length})</span>
-        </h2>
+  const primary = sorted.filter((f) => f.severity === "critical" || f.severity === "warning");
+  const others = sorted.filter((f) => f.severity === "info" || f.severity === "good");
 
-        {/* Filter pills */}
-        <div className="flex gap-1.5 ml-auto">
-          <FilterPill
-            label="All"
-            count={findings.length}
-            active={filter === "all"}
-            onClick={() => setFilter("all")}
-            colour="rgba(255,255,255,0.5)"
-          />
+  return (
+    <section id="findings" aria-labelledby="findings-h" className="scroll-mt-4 space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 id="findings-h" className="text-base font-semibold">
+          Findings <span className="num font-normal text-fg-muted">({findings.length})</span>
+        </h2>
+        <div className="no-print ml-auto flex flex-wrap gap-1.5" role="group" aria-label="Filter findings by severity">
+          <FilterPill label="All" count={findings.length} active={filter === "all"} onClick={() => setFilter("all")} />
           {ALL_SEVERITIES.map((s) =>
             counts[s] > 0 ? (
               <FilterPill
                 key={s}
+                severity={s}
                 label={SEVERITY_LABELS[s]}
                 count={counts[s]}
                 active={filter === s}
                 onClick={() => setFilter(s)}
-                colour={SEV_COLOURS[s]}
               />
             ) : null
           )}
         </div>
       </div>
 
-      <div className="space-y-3">
-        {grouped.map((g, idx) => (
-          <motion.div
-            key={isFindingGroup(g) ? `group-${g.groupTitle}-${g.items[0].id}` : g.id}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.25, delay: Math.min(idx * 0.05, 0.5) }}
-          >
-            {isFindingGroup(g) ? <GroupedFindingCard group={g} /> : <FindingCard finding={g} />}
-          </motion.div>
-        ))}
-      </div>
+      <FindingsTimeline findings={findings} duration={duration} armed={armed} onSelect={select} />
+
+      {filter !== "all" ? (
+        <div className="space-y-2">{renderCards(sorted.filter((f) => f.severity === filter), true)}</div>
+      ) : (
+        <>
+          {primary.length > 0 ? (
+            <div className="space-y-2">{renderCards(primary, true)}</div>
+          ) : (
+            <p className="panel flex items-center gap-2 p-4 text-sm">
+              <CheckCircle2 aria-hidden className="h-4 w-4 text-ok" />
+              No critical or warning findings.
+            </p>
+          )}
+
+          {others.length > 0 && (
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowOthers((v) => !v)}
+                aria-expanded={showOthers}
+                aria-controls="other-findings"
+                className="btn no-print w-full justify-between"
+              >
+                <span>
+                  {others.length} other {others.length === 1 ? "check" : "checks"} (info and passed)
+                </span>
+                <ChevronDown aria-hidden className={cn("h-4 w-4 transition-transform", showOthers && "rotate-180")} />
+              </button>
+              <div id="other-findings" hidden={!showOthers} className="print-expand mt-2 space-y-2">
+                {renderCards(others, false)}
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </section>
   );
 }
 
-const SEV_COLOURS: Record<Severity, string> = {
-  critical: "#FF3D3D", warning: "#FF7A2F", info: "#3A9CF8", good: "#0DD97C",
-};
-
 function FilterPill({
-  label, count, active, onClick, colour,
+  label, count, active, onClick, severity,
 }: {
-  label: string; count: number; active: boolean;
-  onClick: () => void; colour: string;
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+  severity?: Severity;
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      className="text-xs px-2.5 py-1 rounded-full transition-all duration-150 font-medium"
-      style={{
-        color: active ? "#0A0A0A" : colour,
-        background: active ? colour : `${colour}22`,
-        border: `1px solid ${colour}55`,
-      }}
+      aria-pressed={active}
+      className={cn("btn gap-1 px-2 text-xs", active && "border-accent bg-accent/15")}
     >
-      {label} {count}
+      {severity && <SeverityIcon severity={severity} className="h-3.5 w-3.5" />}
+      {label} <span className="num">{count}</span>
     </button>
   );
 }

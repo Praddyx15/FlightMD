@@ -1,67 +1,61 @@
-const SCORE_LABEL_BANDS = [
-  { range: "90–100", label: "Excellent", colour: "#0DD97C" },
-  { range: "75–89",  label: "Good",      colour: "#3A9CF8" },
-  { range: "60–74",  label: "Caution",   colour: "#B89642" },
-  { range: "40–59",  label: "Warning",   colour: "#FF7A2F" },
-  { range: "0–39",   label: "Critical",  colour: "#FF3D3D" },
+import { TONE_CLASSES, type Tone } from "@/lib/utils";
+import { TONE_ICON } from "./SeverityBadge";
+
+const SCORE_BANDS: { range: string; label: string; tone: Tone }[] = [
+  { range: "90–100", label: "Excellent", tone: "ok" },
+  { range: "80–89",  label: "Good",      tone: "ok" },
+  { range: "60–79",  label: "Caution",   tone: "caution" },
+  { range: "50–59",  label: "Warning",   tone: "caution" },
+  { range: "0–49",   label: "Critical",  tone: "critical" },
 ];
 
-const LETTER_GRADE_BANDS = [
-  { range: "90–100", grade: "A", colour: "#0DD97C" },
-  { range: "80–89",  grade: "B", colour: "#3A9CF8" },
-  { range: "70–79",  grade: "C", colour: "#B89642" },
-  { range: "60–69",  grade: "D", colour: "#B89642" },
-  { range: "50–59",  grade: "E", colour: "#FF7A2F" },
-  { range: "0–49",   grade: "F", colour: "#FF3D3D" },
+const GRADES = [
+  { range: "90–100", grade: "A" },
+  { range: "80–89",  grade: "B" },
+  { range: "70–79",  grade: "C" },
+  { range: "60–69",  grade: "D" },
+  { range: "50–59",  grade: "E" },
+  { range: "0–49",   grade: "F" },
 ];
 
 export function ScoreScale() {
   return (
-    <div className="rounded-2xl border border-border bg-card/60 p-5 sm:p-6 backdrop-blur-sm space-y-5">
+    <div className="panel space-y-4 p-4">
       <div>
-        <h3 className="text-sm font-semibold text-white/80 mb-3">
-          Overall score (0–100), weighted across all applicable modules
-        </h3>
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-          {SCORE_LABEL_BANDS.map((b) => (
-            <div
-              key={b.label}
-              className="rounded-lg px-3 py-2 text-center"
-              style={{ background: `${b.colour}18`, border: `1px solid ${b.colour}40` }}
-            >
-              <div className="text-xs font-bold" style={{ color: b.colour }}>
-                {b.label}
-              </div>
-              <div className="text-[10px] text-white/50 mono mt-0.5">{b.range}</div>
-            </div>
-          ))}
-        </div>
+        <h3 className="mb-2 text-sm font-semibold">Overall score, 0–100, weighted across the modules that were assessed</h3>
+        <ul className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+          {SCORE_BANDS.map((b) => {
+            const Icon = TONE_ICON[b.tone];
+            return (
+              <li key={b.label} className={`rounded border px-2 py-1.5 ${TONE_CLASSES[b.tone]}`}>
+                <div className="flex items-center gap-1 text-xs font-semibold">
+                  <Icon aria-hidden className="h-3.5 w-3.5" />
+                  {b.label}
+                </div>
+                <div className="num text-2xs text-fg-muted">{b.range}</div>
+              </li>
+            );
+          })}
+        </ul>
       </div>
 
       <div>
-        <h3 className="text-sm font-semibold text-white/80 mb-3">
-          Letter grade — same score, mapped to a familiar A–F scale
-        </h3>
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-          {LETTER_GRADE_BANDS.map((b) => (
-            <div
-              key={b.grade}
-              className="rounded-lg px-3 py-2 text-center"
-              style={{ background: `${b.colour}18`, border: `1px solid ${b.colour}40` }}
-            >
-              <div className="text-sm font-bold" style={{ color: b.colour }}>
-                {b.grade}
-              </div>
-              <div className="text-[10px] text-white/50 mono mt-0.5">{b.range}</div>
-            </div>
+        <h3 className="mb-2 text-sm font-semibold">Letter grade: the same score on an A–F scale</h3>
+        <ul className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+          {GRADES.map((g) => (
+            <li key={g.grade} className="rounded border bg-elevated px-2 py-1.5 text-center">
+              <div className="text-sm font-semibold">{g.grade}</div>
+              <div className="num text-2xs text-fg-muted">{g.range}</div>
+            </li>
           ))}
-        </div>
+        </ul>
       </div>
 
-      <p className="text-xs text-white/50 leading-relaxed">
-        Oscillation, vibration, and EKF each weigh 20% of the overall score; battery and GPS
-        each weigh 15%; parameters and motors each weigh 5%. Ascent &amp; Recovery Analysis
-        (rockets/HABs) is situational and isn&apos;t counted in the weighted score.
+      <p className="text-xs text-fg-muted">
+        Oscillation, vibration and EKF weigh 20 % each; battery and GPS 15 % each; parameters and
+        motors 5 % each. Ascent &amp; Recovery (rockets, balloons) is situational and not weighted.
+        A module that could not be assessed is left out of the score and shown as &quot;Not
+        assessed&quot;, never as 100.
       </p>
     </div>
   );
