@@ -1,0 +1,35 @@
+name: Lock API requirements
+
+# Resolves api/requirements.txt into api/requirements.lock (exact pins for every
+# transitive dependency, pip-tools format) on the deploy Python. Run it by hand
+# after changing requirements.txt, download the artifact and commit the file.
+# Locally the same thing is:
+#   pip install pip-tools==7.6.1
+#   pip-compile --strip-extras --no-header -o api/requirements.lock api/requirements.txt
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+
+      - name: Compile
+        run: |
+          pip install pip-tools==7.6.1
+          pip-compile --strip-extras --no-header -o api/requirements.lock api/requirements.txt
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: requirements-lock
+          path: api/requirements.lock

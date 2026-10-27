@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -34,6 +35,23 @@ class Settings(BaseSettings):
     # https only unless a self-hoster really wants plain http webhooks
     allow_http_webhooks: bool = False
 
+    # SQLite db, upload spool, export cache and (unless S3 is set) contributed logs.
+    # Relative paths are taken from the working dir, same as the engine's topic cache.
+    flightmd_data_dir: str = "data"
+
+    # Contributed raw logs go to S3 (or anything S3-compatible) when a bucket is set.
+    # Credentials come from the usual AWS_* variables.
+    flightmd_s3_bucket: str = ""
+    flightmd_s3_prefix: str = "contributions/"
+    flightmd_s3_endpoint_url: str = ""
+    flightmd_s3_region: str = ""
+
+    # Set to hand analyses to arq workers through Redis instead of the in-process queue
+    flightmd_redis_url: str = ""
+
+    # When set, GET /metrics needs "Authorization: Bearer <token>"
+    metrics_token: str = ""
+
     # AI is optional. groq is the default because its free tier costs the
     # operator nothing; anthropic is there for anyone with a key.
     ai_provider: str = "groq"
@@ -43,6 +61,10 @@ class Settings(BaseSettings):
     @property
     def max_file_size_bytes(self) -> int:
         return self.max_file_size_mb * 1024 * 1024
+
+    @property
+    def data_dir(self) -> str:
+        return os.path.abspath(self.flightmd_data_dir)
 
     @property
     def cors_origins_list(self) -> list[str]:

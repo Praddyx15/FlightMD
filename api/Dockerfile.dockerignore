@@ -9,6 +9,9 @@ venv
 .env.*
 !.env.example
 api/data
+data
+node_modules
+**/.next
 frontend
 tests
 verification

@@ -1,8 +1,8 @@
 """
-AirframeConfigStore: maintenance log, checklist, alert rules, airframe tokens.
+AirframeConfigStore: maintenance log, checklist, alert rules, airframe tokens,
+and maintenance hours that don't double-count a re-uploaded log.
 """
 
-import json
 import os
 import sys
 
@@ -10,10 +10,12 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from api import db
 from api.airframe_store import (
     AirframeConfigStore, AlertRule, MaintenanceEntry, TokenError,
-    _slugify, evaluate_alert_rules, extract_metric_value, hash_token,
+    compute_maintenance_status, evaluate_alert_rules, extract_metric_value, hash_token,
 )
+from api.storage import JobStore
 from flightmd_core.models.findings import AnalyserResult, FlightMDReport
 from flightmd_core.models.metadata import FlightMetadata
 
@@ -34,8 +36,16 @@ def make_report(score=85.0) -> FlightMDReport:
 
 
 @pytest.fixture
-def store(tmp_path):
-    return AirframeConfigStore(data_dir=str(tmp_path))
+def database(tmp_path, monkeypatch):
+    d = db.Database(str(tmp_path / "data"))
+    monkeypatch.setattr(db, "_db", d)
+    yield d
+    d.close()
+
+
+@pytest.fixture
+def store(database):
+    return AirframeConfigStore()
 
 
 class TestAirframeConfigStore:
@@ -91,39 +101,34 @@ class TestAirframeConfigStore:
         assert config.maintenance_interval_hours is None
         assert config.checklist_items == ["A"]
 
-    def test_corrupt_file_raises_instead_of_being_overwritten(self, store, tmp_path):
+    def test_corrupt_row_raises_instead_of_being_overwritten(self, store, database):
         store.update_settings("Quad-1", checklist_items=["A"])
-        path = store._path("Quad-1")
-        with open(path, "w", encoding="utf-8") as f:
-            f.write("{not json")
+        database.execute("UPDATE airframes SET config_json = '{not json' WHERE label = 'Quad-1'")
 
         with pytest.raises(ValueError):
             store.update_settings("Quad-1", checklist_items=["B"])
-        with open(path, encoding="utf-8") as f:
-            assert f.read() == "{not json"
+        row = database.query_one("SELECT config_json FROM airframes WHERE label = 'Quad-1'")
+        assert row[0] == "{not json"
 
-    def test_legacy_slug_file_is_read_and_migrated(self, store, tmp_path):
-        legacy = tmp_path / f"{_slugify('Quad 1')}.json"
-        legacy.write_text(json.dumps({"airframe_label": "Quad 1", "checklist_items": ["old"]}), encoding="utf-8")
-
-        assert store.get("Quad 1").checklist_items == ["old"]
-        # a different label with the same slug must not see it
-        assert store.get("Quad_1").checklist_items == []
-
-        store.update_settings("Quad 1", checklist_items=["new"])
-        assert not legacy.exists()
-        assert store.get("Quad 1").checklist_items == ["new"]
+    def test_get_does_not_create_a_row(self, store, database):
+        store.get("Quad-1")
+        assert database.query_one("SELECT COUNT(*) FROM airframes")[0] == 0
 
 
 class TestAirframeTokens:
-    def test_first_claim_returns_a_token_and_stores_only_its_hash(self, store):
+    def test_first_claim_returns_a_token_and_stores_only_its_hash(self, store, database):
         token = store.authorise("Quad-1", None, claim=True)
         assert token
 
-        with open(store._path("Quad-1"), encoding="utf-8") as f:
-            raw = f.read()
-        assert token not in raw
-        assert hash_token(token) in raw
+        row = database.query_one("SELECT token_hash, config_json FROM airframes WHERE label = 'Quad-1'")
+        assert row["token_hash"] == hash_token(token)
+        assert token not in row["config_json"]
+        assert "token_hash" not in row["config_json"]
+
+    def test_rejected_token_check_writes_nothing(self, store, database):
+        with pytest.raises(TokenError):
+            store.authorise("Quad-1", None)
+        assert database.query_one("SELECT COUNT(*) FROM airframes")[0] == 0
 
     def test_token_never_in_public_dict(self, store):
         store.authorise("Quad-1", None, claim=True)
@@ -208,3 +213,19 @@ class TestEvaluateAlertRules:
         rules = [AlertRule(metric="gps.max_hdop", comparison="gt", threshold=2.0)]
         triggered = evaluate_alert_rules(make_report(), rules)
         assert triggered == []
+
+
+class TestMaintenanceHours:
+    def test_reuploaded_log_counts_once(self, store):
+        jobs = JobStore()
+        for rid, sha in (("r1", "a" * 64), ("r2", "a" * 64), ("r3", "b" * 64)):
+            jobs.create(rid, airframe_label="Quad-1", log_sha256=sha)
+            jobs.complete(rid, make_report())
+        store.update_settings("Quad-1", maintenance_interval_hours=0.3)
+
+        flights = jobs.list_by_airframe_with_created_at("Quad-1")
+        status = compute_maintenance_status(store.get("Quad-1"), flights)
+
+        # two distinct 600 s logs, not three
+        assert status["total_flight_hours"] == pytest.approx(1200 / 3600)
+        assert status["maintenance_due"] is True

@@ -24,4 +24,8 @@ services:
         value: "10.0.0.0/8"
       - key: CORS_ORIGINS
         value: "https://flightmd.vercel.app,http://localhost:3000"
+      # FLIGHTMD_DATA_DIR defaults to ./data in the checkout, which the free plan wipes on
+      # every deploy; with a paid disk mounted at /var/data, set it to /var/data/flightmd
+      - key: METRICS_TOKEN
+        sync: false
     healthCheckPath: /health

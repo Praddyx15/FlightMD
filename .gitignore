@@ -76,3 +76,6 @@ temp/
 
 # Runtime job storage (user-uploaded report data — never source, never committed)
 api/data/
+
+# runtime data (FLIGHTMD_DATA_DIR default)
+/data/

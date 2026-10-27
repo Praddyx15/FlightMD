@@ -50,16 +50,18 @@ def make_report(report_id: str, score: float, roll_hz: float, sag_v: float,
     )
 
 
-@pytest_asyncio.fixture
-async def client(tmp_path, monkeypatch):
-    from api import airframe_store as afs
-    from api.storage import JobStore, job_store
+@pytest.fixture
+def database(tmp_path, monkeypatch):
+    from api import db
+    d = db.Database(str(tmp_path / "data"))
+    monkeypatch.setattr(db, "_db", d)
+    yield d
+    d.close()
 
-    (tmp_path / "reports").mkdir()
-    (tmp_path / "airframes").mkdir()
-    monkeypatch.setattr(JobStore, "DATA_DIR", str(tmp_path / "reports"))
-    monkeypatch.setattr(job_store, "_store", {})
-    monkeypatch.setattr(afs.airframe_store, "data_dir", str(tmp_path / "airframes"))
+
+@pytest_asyncio.fixture
+async def client(database):
+    from api.storage import job_store
 
     from api.main import app
     transport = ASGITransport(app=app)
@@ -115,6 +117,18 @@ class TestTrendsEndpoint:
         assert data["flights"][1]["key_metrics"]["battery.sag_per_cell_v"] == 0.6
         assert data["flights"][0]["module_scores"]["oscillation"] == 100.0
 
+
+    @pytest.mark.asyncio
+    async def test_reuploaded_log_is_one_trend_point(self, client):
+        c, store = client
+        store.create("r1", airframe_label="Quad-1", log_sha256="a" * 64)
+        store.complete("r1", make_report("r1", score=80.0, roll_hz=0.5, sag_v=0.2))
+        store.create("r2", airframe_label="Quad-1", log_sha256="a" * 64)
+        store.complete("r2", make_report("r2", score=80.0, roll_hz=0.5, sag_v=0.2))
+
+        data = (await c.get("/trends/Quad-1", headers=claim("Quad-1"))).json()
+        assert data["flight_count"] == 1
+        assert data["flights"][0]["report_id"] == "r1"
 
     @pytest.mark.asyncio
     async def test_skipped_module_score_is_null_not_100(self, client):

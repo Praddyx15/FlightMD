@@ -1,26 +1,31 @@
 """
-Job store: in-memory job state plus one JSON file per finished report.
+Job store: job state and finished reports, one row each in the `reports` table.
 
-Untagged reports expire after an hour (cleanup_expired_disk_reports runs from
-the app lifespan). Reports tagged with an airframe label are kept for that
-airframe's trend history; that's the opt-in. On Render's free plan the disk is
-ephemeral, so "kept" really means "until the next deploy or restart".
+Untagged reports expire after an hour (cleanup_expired runs from the app
+lifespan). Reports tagged with an airframe label are kept for that airframe's
+trend history; that's the opt-in. Job state lives in the database too, so
+/status still answers after a restart: anything that was mid-analysis then
+comes back as failed ("interrupted").
 """
 
 import json
 import logging
-import os
 import re
 import threading
 import time
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
-from api.fs import write_json_atomic
+from api import db
 from flightmd_core.models.findings import FlightMDReport
 
 logger = logging.getLogger(__name__)
+
+REPORT_TTL_SECONDS = 3600
+
+INTERRUPTED = "interrupted: the server restarted during the analysis, please upload the log again"
 
 
 class JobStatus(str, Enum):
@@ -43,11 +48,8 @@ class Job:
     error: Optional[str] = None
     airframe_label: Optional[str] = None
     created_at: float = field(default_factory=time.time)
-    ttl_seconds: int = 3600   # only enforced for untagged reports
-
-    @property
-    def is_expired(self) -> bool:
-        return (time.time() - self.created_at) > self.ttl_seconds
+    eta_at: Optional[float] = None
+    log_sha256: Optional[str] = None
 
 
 MAX_AIRFRAME_LABEL_LEN = 40
@@ -55,8 +57,8 @@ MAX_AIRFRAME_LABEL_LEN = 40
 # "/" can't be routed in /airframe/{label}/..., control chars just cause grief
 _BAD_LABEL_CHARS = re.compile(r"[/\\\x00-\x1f\x7f]")
 
-# report ids are uuid4 strings; anything else never touches the disk
-_REPORT_ID_RE = re.compile(r"^[A-Za-z0-9-]{1,64}$")
+# report ids are uuid4 strings; anything else is never looked up
+REPORT_ID_RE = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 
 
 def normalise_airframe_label(label: Optional[str]) -> Optional[str]:
@@ -70,213 +72,234 @@ def normalise_airframe_label(label: Optional[str]) -> Optional[str]:
 
 
 class JobStore:
+    # queued + running at once; past this /analyse answers 503
     MAX_JOBS = 100
-    DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "data", "reports"))
+    PARSED_CACHE = 32
 
     def __init__(self):
-        self._store: dict[str, Job] = {}
-        self._lock  = threading.Lock()
-        os.makedirs(self.DATA_DIR, exist_ok=True)
+        # finished reports never change, so parsed ones are kept for the next request.
+        # Keyed by db path too, tests open a fresh db per case w/ the same ids
+        self._parsed: "OrderedDict[tuple[str, str], FlightMDReport]" = OrderedDict()
+        self._lock = threading.Lock()
 
-    def create(self, report_id: str, airframe_label: Optional[str] = None) -> Job:
-        with self._lock:
-            self._evict_expired()
-            if len(self._store) >= self.MAX_JOBS:
-                self._evict_oldest()
-            job = Job(report_id=report_id, airframe_label=normalise_airframe_label(airframe_label))
-            self._store[report_id] = job
-            return job
+    def create(
+        self,
+        report_id: str,
+        airframe_label: Optional[str] = None,
+        log_sha256: Optional[str] = None,
+        brief_sha256: Optional[str] = None,
+        log_format: Optional[str] = None,
+    ) -> Job:
+        now = time.time()
+        label = normalise_airframe_label(airframe_label)
+        with db.get().transaction() as c:
+            running = c.execute("SELECT COUNT(*) FROM reports WHERE status = ?", (JobStatus.PROCESSING.value,)).fetchone()[0]
+            if running >= self.MAX_JOBS:
+                raise StoreFull()
+            c.execute(
+                "INSERT INTO reports (report_id, status, progress, message, airframe_label, log_format,"
+                " log_sha256, brief_sha256, created_at, updated_at) VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?, ?)",
+                (report_id, JobStatus.PROCESSING.value, "Queued…", label, log_format, log_sha256,
+                 brief_sha256, now, now),
+            )
+        return Job(report_id=report_id, message="Queued…", airframe_label=label, created_at=now,
+                   log_sha256=log_sha256)
 
     def discard(self, report_id: str) -> None:
-        with self._lock:
-            self._store.pop(report_id, None)
+        db.get().execute("DELETE FROM reports WHERE report_id = ?", (report_id,))
+        self._forget(report_id)
 
     def get(self, report_id: str) -> Optional[Job]:
-        with self._lock:
-            job = self._store.get(report_id)
-            if job is not None:
-                # finished reports stay until the disk sweep removes them
-                if job.is_expired and job.status != JobStatus.COMPLETE:
-                    del self._store[report_id]
-                    return None
-                return job
-
-        loaded = self._load_from_disk(report_id)
-        if loaded is None:
+        if not REPORT_ID_RE.match(report_id):
             return None
-        with self._lock:
-            return self._store.setdefault(report_id, loaded)
+        row = db.get().query_one("SELECT * FROM reports WHERE report_id = ?", (report_id,))
+        if row is None:
+            return None
+        job = self._job(row)
+        if job.status == JobStatus.COMPLETE:
+            try:
+                job.report = self._parse(report_id, row["report_json"])
+            except ValueError as e:
+                logger.error(f"could not load report {report_id}: {e}")
+                return None
+        return job
 
-    def update_progress(self, report_id: str, progress: int, message: str = "") -> None:
-        with self._lock:
-            job = self._store.get(report_id)
-            if job:
-                job.progress = min(100, max(0, progress))
-                job.message  = message
+    def update_progress(self, report_id: str, progress: int, message: str = "",
+                        eta_s: Optional[float] = None) -> None:
+        now = time.time()
+        eta_at = now + max(0.0, eta_s) if eta_s is not None else None
+        db.get().execute(
+            "UPDATE reports SET progress = ?, message = ?, eta_at = ?, updated_at = ?"
+            " WHERE report_id = ? AND status = ?",
+            (min(100, max(0, int(progress))), message, eta_at, now, report_id, JobStatus.PROCESSING.value),
+        )
 
     def complete(self, report_id: str, report: FlightMDReport) -> None:
-        with self._lock:
-            job = self._store.get(report_id)
-            if job:
-                job.status   = JobStatus.COMPLETE
-                job.progress = 100
-                job.report   = report
-                job.message  = "Analysis complete."
-            airframe_label = job.airframe_label if job else None
-            created_at     = job.created_at if job else time.time()
-
-        wrapper = {
-            "airframe_label": airframe_label,
-            "created_at": created_at,
-            "report": report.model_dump(mode="json"),
-        }
-        try:
-            write_json_atomic(self._path(report_id), wrapper)
-        except OSError as e:
-            # the report is still served from memory, it just won't survive a restart
-            logger.error(f"could not persist report {report_id}: {e}")
+        now = time.time()
+        body = json.dumps(report.model_dump(mode="json"), separators=(",", ":"))
+        sha = getattr(report.metadata, "log_sha256", None)
+        # upsert: a job that was discarded meanwhile still gets its report saved, untagged
+        db.get().execute(
+            "INSERT INTO reports (report_id, status, progress, message, log_sha256, created_at, updated_at, report_json)"
+            " VALUES (?, ?, 100, ?, ?, ?, ?, ?)"
+            " ON CONFLICT (report_id) DO UPDATE SET status = excluded.status, progress = 100,"
+            " message = excluded.message, eta_at = NULL, error = NULL, updated_at = excluded.updated_at,"
+            " report_json = excluded.report_json,"
+            " log_sha256 = COALESCE(reports.log_sha256, excluded.log_sha256)",
+            (report_id, JobStatus.COMPLETE.value, "Analysis complete.", sha, now, now, body),
+        )
+        self._forget(report_id)
 
     def fail(self, report_id: str, error: str) -> None:
-        with self._lock:
-            job = self._store.get(report_id)
-            if job:
-                job.status = JobStatus.FAILED
-                job.error  = error
-                job.message = f"Analysis failed: {error}"
+        db.get().execute(
+            "UPDATE reports SET status = ?, error = ?, message = ?, eta_at = NULL, updated_at = ? WHERE report_id = ?",
+            (JobStatus.FAILED.value, error, f"Analysis failed: {error}", time.time(), report_id),
+        )
 
     def status_summary(self, report_id: str) -> dict:
-        job = self.get(report_id)
-        if job is None:
+        if not REPORT_ID_RE.match(report_id):
             return {"status": "not_found"}
+        row = db.get().query_one(
+            "SELECT status, progress, message, error, eta_at FROM reports WHERE report_id = ?", (report_id,)
+        )
+        if row is None:
+            return {"status": "not_found"}
+        eta = None
+        if row["status"] == JobStatus.PROCESSING.value and row["eta_at"] is not None:
+            eta = round(max(0.0, row["eta_at"] - time.time()), 1)
         result = {
-            "status":   job.status.value,
-            "progress": job.progress,
-            "message":  job.message,
+            "status": row["status"],
+            "progress": row["progress"],
+            "message": row["message"],
+            "eta_seconds": eta,
         }
-        if job.error:
-            result["error"] = job.error
+        if row["error"]:
+            result["error"] = row["error"]
         return result
 
+    def find_recent_duplicate(
+        self,
+        log_sha256: str,
+        airframe_label: Optional[str],
+        brief_sha256: Optional[str],
+        max_age_s: float = REPORT_TTL_SECONDS,
+    ) -> Optional[tuple[str, str]]:
+        """(report_id, status) of a running or finished analysis of the same bytes,
+        same airframe tag and same brief hash, started within max_age_s."""
+        row = db.get().query_one(
+            "SELECT report_id, status FROM reports"
+            " WHERE log_sha256 = ? AND status IN (?, ?) AND created_at >= ?"
+            " AND COALESCE(airframe_label, '') = ? AND COALESCE(brief_sha256, '') = ?"
+            " ORDER BY created_at DESC LIMIT 1",
+            (log_sha256, JobStatus.PROCESSING.value, JobStatus.COMPLETE.value, time.time() - max_age_s,
+             airframe_label or "", brief_sha256 or ""),
+        )
+        return (row["report_id"], row["status"]) if row else None
+
     def list_by_airframe_with_created_at(self, airframe_label: str) -> list[tuple[float, FlightMDReport]]:
-        """(created_at, report) for every report tagged with this airframe, oldest first."""
+        """(created_at, report) for every finished report tagged with this airframe, oldest first.
+
+        The same log uploaded twice counts once (the first upload), so trend
+        points and maintenance hours aren't doubled.
+        """
         airframe_label = normalise_airframe_label(airframe_label)
         if not airframe_label:
             return []
-
-        # TODO this reads every report file per call; fine until there's a real db
-        reports = []
-        for filename in self._report_files():
-            try:
-                wrapper = self._read_wrapper(os.path.join(self.DATA_DIR, filename))
-                if wrapper["airframe_label"] != airframe_label:
+        rows = db.get().query(
+            "SELECT report_id, created_at, log_sha256, report_json FROM reports"
+            " WHERE airframe_label = ? AND status = ? ORDER BY created_at, report_id",
+            (airframe_label, JobStatus.COMPLETE.value),
+        )
+        seen = set()
+        out = []
+        for r in rows:
+            if r["log_sha256"]:
+                if r["log_sha256"] in seen:
                     continue
-                report = FlightMDReport.model_validate(wrapper["report"])
-            except (OSError, ValueError) as e:
-                logger.error(f"skipping unreadable report {filename}: {e}")
-                continue
-            reports.append((wrapper["created_at"], report))
-
-        reports.sort(key=lambda pair: pair[0])
-        return reports
+                seen.add(r["log_sha256"])
+            try:
+                out.append((r["created_at"], self._parse(r["report_id"], r["report_json"])))
+            except ValueError as e:
+                logger.error(f"skipping unreadable report {r['report_id']}: {e}")
+        return out
 
     def list_by_airframe(self, airframe_label: str) -> list[FlightMDReport]:
         return [r for _, r in self.list_by_airframe_with_created_at(airframe_label)]
 
-    def cleanup_expired_disk_reports(self, ttl_seconds: int = 3600) -> int:
-        """Delete untagged report files older than ttl_seconds. Returns how many went."""
-        deleted = 0
-        now = time.time()
-        for filename in self._report_files():
-            path = os.path.join(self.DATA_DIR, filename)
-            try:
-                wrapper = self._read_wrapper(path)
-            except (OSError, ValueError) as e:
-                logger.error(f"cleanup could not read {filename}: {e}")
-                continue
-            if wrapper["airframe_label"] or now - wrapper["created_at"] <= ttl_seconds:
-                continue
-            try:
-                os.remove(path)
-            except OSError as e:
-                logger.error(f"could not delete expired report {filename}: {e}")
-                continue
-            deleted += 1
-            with self._lock:
-                self._store.pop(filename[:-5], None)
+    def cleanup_expired(self, ttl_seconds: int = REPORT_TTL_SECONDS) -> list[str]:
+        """Delete untagged reports and failed jobs older than ttl_seconds. Returns their ids."""
+        cutoff = time.time() - ttl_seconds
+        with db.get().transaction() as c:
+            rows = c.execute(
+                "SELECT report_id FROM reports WHERE created_at < ? AND"
+                " ((status = ? AND airframe_label IS NULL) OR status = ?)",
+                (cutoff, JobStatus.COMPLETE.value, JobStatus.FAILED.value),
+            ).fetchall()
+            ids = [r[0] for r in rows]
+            c.executemany("DELETE FROM reports WHERE report_id = ?", [(i,) for i in ids])
+        for report_id in ids:
+            self._forget(report_id)
+        if ids:
+            logger.info(f"Cleaned up {len(ids)} expired report(s).")
+        return ids
 
-        if deleted:
-            logger.info(f"Cleaned up {deleted} expired untagged report(s).")
-        return deleted
+    def interrupt_running(self) -> int:
+        """At startup: whatever was mid-analysis died with the old process."""
+        n = db.get().execute(
+            "UPDATE reports SET status = ?, error = ?, message = ?, eta_at = NULL, updated_at = ? WHERE status = ?",
+            (JobStatus.FAILED.value, INTERRUPTED, f"Analysis failed: {INTERRUPTED}", time.time(),
+             JobStatus.PROCESSING.value),
+        )
+        if n:
+            logger.warning(f"{n} analysis job(s) interrupted by the restart")
+        return n
+
+    def fail_stale(self, max_idle_s: float) -> int:
+        """Fail jobs with no progress for max_idle_s (a worker that was killed outright)."""
+        return db.get().execute(
+            "UPDATE reports SET status = ?, error = ?, message = ?, eta_at = NULL, updated_at = ?"
+            " WHERE status = ? AND updated_at < ?",
+            (JobStatus.FAILED.value, INTERRUPTED, f"Analysis failed: {INTERRUPTED}", time.time(),
+             JobStatus.PROCESSING.value, time.time() - max_idle_s),
+        )
 
     @property
     def job_count(self) -> int:
-        with self._lock:
-            return len(self._store)
+        row = db.get().query_one("SELECT COUNT(*) FROM reports WHERE status = ?", (JobStatus.PROCESSING.value,))
+        return row[0]
 
-    def _path(self, report_id: str) -> str:
-        return os.path.join(self.DATA_DIR, f"{report_id}.json")
-
-    def _report_files(self) -> list[str]:
-        try:
-            return [f for f in os.listdir(self.DATA_DIR) if f.endswith(".json")]
-        except FileNotFoundError:
-            return []
-
-    def _read_wrapper(self, path: str) -> dict:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        if "report" in data and "report_id" not in data:
-            return {
-                "airframe_label": normalise_airframe_label(data.get("airframe_label")),
-                "created_at": data.get("created_at", os.path.getmtime(path)),
-                "report": data["report"],
-            }
-        # files from before airframe tagging are a bare report dump, treat as untagged
-        return {
-            "airframe_label": None,
-            "created_at": os.path.getmtime(path),
-            "report": data,
-        }
-
-    def _load_from_disk(self, report_id: str) -> Optional[Job]:
-        if not _REPORT_ID_RE.match(report_id):
-            return None
-        path = self._path(report_id)
-        if not os.path.exists(path):
-            return None
-        try:
-            wrapper = self._read_wrapper(path)
-            report = FlightMDReport.model_validate(wrapper["report"])
-        except (OSError, ValueError) as e:
-            logger.error(f"could not load report {report_id}: {e}")
-            return None
+    def _job(self, row) -> Job:
         return Job(
-            report_id=report_id,
-            status=JobStatus.COMPLETE,
-            progress=100,
-            report=report,
-            message="Analysis complete.",
-            airframe_label=wrapper["airframe_label"],
-            created_at=wrapper["created_at"],
+            report_id=row["report_id"],
+            status=JobStatus(row["status"]),
+            progress=row["progress"],
+            message=row["message"],
+            error=row["error"],
+            airframe_label=row["airframe_label"],
+            created_at=row["created_at"],
+            eta_at=row["eta_at"],
+            log_sha256=row["log_sha256"],
         )
 
-    def _evict_expired(self) -> None:
-        expired = [
-            rid for rid, job in self._store.items()
-            if job.is_expired and job.status != JobStatus.COMPLETE
-        ]
-        for rid in expired:
-            del self._store[rid]
+    def _parse(self, report_id: str, body: Optional[str]) -> FlightMDReport:
+        key = (db.get().path, report_id)
+        with self._lock:
+            hit = self._parsed.get(key)
+            if hit is not None:
+                self._parsed.move_to_end(key)
+                return hit
+        if not body:
+            raise ValueError("no report body")
+        report = FlightMDReport.model_validate_json(body)
+        with self._lock:
+            self._parsed[key] = report
+            while len(self._parsed) > self.PARSED_CACHE:
+                self._parsed.popitem(last=False)
+        return report
 
-    def _evict_oldest(self) -> None:
-        # never drop a running job: complete() would then save it untagged
-        # and /status would 404 halfway through
-        idle = [rid for rid, job in self._store.items() if job.status != JobStatus.PROCESSING]
-        if not idle:
-            raise StoreFull()
-        oldest = min(idle, key=lambda rid: self._store[rid].created_at)
-        del self._store[oldest]
+    def _forget(self, report_id: str) -> None:
+        with self._lock:
+            self._parsed.pop((db.get().path, report_id), None)
 
 
 job_store = JobStore()

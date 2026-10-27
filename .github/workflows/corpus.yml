@@ -1,0 +1,48 @@
+name: Corpus
+
+# The real-log regression corpus (tests/corpus): too slow and too download-heavy
+# for every push, so weekly and on demand. Logs are cached between runs, keyed on
+# the corpus manifest, so a run only downloads what changed.
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"   # Mondays 03:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  corpus:
+    name: pytest -m corpus
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      FLIGHTMD_CORPUS_DIR: tests/corpus/logs
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Cache corpus logs
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: tests/corpus/logs
+          key: corpus-${{ hashFiles('tests/corpus/**/*.json', 'tests/corpus/**/*.yml', 'tests/corpus/**/*.yaml', 'tests/corpus/**/*.toml', 'tests/corpus/**/*.csv') }}
+          restore-keys: corpus-
+
+      - name: Install
+        run: |
+          pip install --upgrade pip
+          pip install -r api/requirements.txt -r api/requirements-dev.txt
+          pip install --no-deps -e .
+
+      - name: Run the corpus
+        env:
+          FLIGHTMD_OFFLINE: "1"
+          FLIGHTMD_DATA_DIR: ${{ runner.temp }}/flightmd-data
+        run: pytest -m corpus --tb=short -ra

@@ -1,10 +1,14 @@
 """
-API tests: upload validation, polling, report access, exports, Q&A, rate-limit keys.
+API tests: upload validation, dedupe, polling, report access, exports, Q&A,
+dataset withdrawal, rate-limit keys.
 
-Every test runs against a temp data dir and a fake run_analysis, so nothing
-touches api/data/ in the checkout and no real parsing happens.
+Every test runs against a temp database and a fake run_analysis, and uploads
+land in a recording queue instead of being analysed, so nothing touches the
+real data dir and no real parsing happens.
 """
 
+import gzip
+import hashlib
 import io
 import os
 import sys
@@ -20,6 +24,7 @@ from flightmd_core.models.findings import FlightMDReport
 from flightmd_core.models.metadata import FlightMetadata
 
 ULOG_MAGIC = b"\x55\x4C\x6F\x67\x01\x00\x00\x00" + b"\x00" * 100
+ULOG_SHA = hashlib.sha256(ULOG_MAGIC).hexdigest()
 
 
 def make_report(report_id, gps_path=None, file_name="f.ulg", summary="s", location_name=None):
@@ -32,25 +37,43 @@ def make_report(report_id, gps_path=None, file_name="f.ulg", summary="s", locati
     )
 
 
-@pytest_asyncio.fixture
-async def client(tmp_path, monkeypatch):
-    import api.routers.analyse as analyse_module
-    from api import airframe_store as afs
-    from api.security import limiter
-    from api.storage import JobStore, job_store
+class RecordingQueue:
+    def __init__(self):
+        self.jobs = []
+        self.broken = False
 
-    reports = tmp_path / "reports"
-    airframes = tmp_path / "airframes"
-    reports.mkdir()
-    airframes.mkdir()
-    monkeypatch.setattr(JobStore, "DATA_DIR", str(reports))
-    monkeypatch.setattr(job_store, "_store", {})
-    monkeypatch.setattr(afs.airframe_store, "data_dir", str(airframes))
+    async def submit(self, job):
+        if self.broken:
+            raise ConnectionError("redis down")
+        self.jobs.append(job)
+
+
+@pytest.fixture
+def database(tmp_path, monkeypatch):
+    from api import db
+    d = db.Database(str(tmp_path / "data"))
+    monkeypatch.setattr(db, "_db", d)
+    yield d
+    d.close()
+
+
+@pytest.fixture
+def queue(monkeypatch):
+    import api.routers.analyse as analyse_module
+    q = RecordingQueue()
+    monkeypatch.setattr(analyse_module, "get_queue", lambda: q)
+    return q
+
+
+@pytest_asyncio.fixture
+async def client(database, queue, monkeypatch):
+    import api.analysis as analysis_module
+    from api.security import limiter
     limiter.reset()
 
     async def fake_run_analysis(**kwargs):
         raise ValueError("no analysable telemetry")
-    monkeypatch.setattr(analyse_module, "run_analysis", fake_run_analysis)
+    monkeypatch.setattr(analysis_module, "run_analysis", fake_run_analysis)
 
     from api.main import app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -87,13 +110,54 @@ class TestHealthEndpoint:
 
 class TestAnalyseEndpoint:
     @pytest.mark.asyncio
-    async def test_valid_ulg_file_accepted(self, client):
+    async def test_valid_ulg_file_accepted_and_queued(self, client, queue):
         resp = await client.post("/analyse", files=upload())
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "processing"
         assert data["estimated_seconds"] == 20
+        assert data["deduplicated"] is False
         assert "airframe_token" not in data
+        assert "contribution_id" not in data
+
+        [job] = queue.jobs
+        assert job.report_id == data["report_id"]
+        assert job.log_format == "px4_ulog"
+        assert job.log_sha256 == ULOG_SHA
+        with open(job.log_path, "rb") as f:
+            assert f.read() == ULOG_MAGIC
+
+    @pytest.mark.asyncio
+    async def test_upload_is_spooled_inside_the_data_dir(self, client, queue, database):
+        await client.post("/analyse", files=upload())
+        assert queue.jobs[0].log_path.startswith(os.path.join(database.data_dir, "uploads"))
+
+    @pytest.mark.asyncio
+    async def test_status_has_eta_seconds(self, client):
+        resp = await client.post("/analyse", files=upload())
+        status = (await client.get(f"/status/{resp.json()['report_id']}")).json()
+        assert status["status"] == "processing"
+        assert "eta_seconds" in status
+        assert status["eta_seconds"] is None
+
+    @pytest.mark.asyncio
+    async def test_compressed_upload_is_left_for_the_engine_to_unpack(self, client, queue):
+        packed = gzip.compress(ULOG_MAGIC)
+        resp = await client.post("/analyse", files=upload("flight.ulg.gz", packed))
+        assert resp.status_code == 200
+        [job] = queue.jobs
+        assert job.log_format == "compressed"
+        assert job.log_path.endswith(".gz")
+        # the hash is of the bytes as uploaded
+        assert job.log_sha256 == hashlib.sha256(packed).hexdigest()
+
+    @pytest.mark.asyncio
+    async def test_queue_failure_is_503(self, client, queue):
+        from api.storage import job_store
+        queue.broken = True
+        resp = await client.post("/analyse", files=upload())
+        assert resp.status_code == 503
+        assert job_store.job_count == 0
 
     @pytest.mark.asyncio
     async def test_invalid_magic_bytes_rejected(self, client):
@@ -114,13 +178,14 @@ class TestAnalyseEndpoint:
         assert resp.status_code == 413
 
     @pytest.mark.asyncio
-    async def test_oversized_file_rejected_without_content_length_check(self, client, monkeypatch):
+    async def test_oversized_file_rejected_without_content_length_check(self, client, monkeypatch, database):
         # just over the limit, under the middleware's multipart allowance:
-        # the streaming copy has to catch it
+        # the streaming copy has to catch it, and leave no spool file behind
         from api.config import get_settings
         monkeypatch.setattr(get_settings(), "max_file_size_mb", 1)
         resp = await client.post("/analyse", files=upload("big.ulg", ULOG_MAGIC + b"\x00" * (1024 * 1024)))
         assert resp.status_code == 413
+        assert os.listdir(os.path.join(database.data_dir, "uploads")) == []
 
     @pytest.mark.asyncio
     async def test_non_ulg_file_rejected(self, client):
@@ -149,7 +214,7 @@ class TestAnalyseEndpoint:
         assert wrong.status_code == 403
 
         right = await client.post(
-            "/analyse", files=upload(), data={"airframe_label": "Quad-1"},
+            "/analyse", files=upload(content=ULOG_MAGIC + b"\x01"), data={"airframe_label": "Quad-1"},
             headers={"X-Airframe-Token": token},
         )
         assert right.status_code == 200
@@ -170,32 +235,166 @@ class TestAnalyseEndpoint:
 
     @pytest.mark.asyncio
     async def test_failed_analysis_returns_422_without_server_paths(self, client):
-        import api.routers.analyse as analyse_module
+        from api.analysis import AnalysisJob, run_job
         from api.storage import job_store
 
         job_store.create("bad-job")
-        await analyse_module._run_analysis_task(
+        await run_job(AnalysisJob(
             report_id="bad-job", log_path=os.devnull + "-missing", file_name="f.ulg",
             file_size=10, log_format="px4_ulog",
-        )
+        ))
         resp = await client.get("/report/bad-job")
         assert resp.status_code == 422
         assert resp.json()["detail"] == "no analysable telemetry"
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("value", ["abc", "g" * 64, "a" * 63])
+    async def test_bad_brief_hash_rejected(self, client, value):
+        resp = await client.post("/analyse", files=upload(), data={"planning_brief_sha256": value})
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_brief_hash_is_passed_on_lowercased(self, client, queue):
+        resp = await client.post("/analyse", files=upload(), data={"planning_brief_sha256": "AB" * 32})
+        assert resp.status_code == 200
+        assert queue.jobs[0].planning_brief_sha256 == "ab" * 32
+
+    @pytest.mark.asyncio
+    async def test_contributing_upload_gets_a_contribution_id(self, client, queue):
+        resp = await client.post("/analyse", files=upload(), data={"contribute_to_dataset": "true"})
+        assert resp.json()["contribution_id"] == ULOG_SHA[:32]
+        assert queue.jobs[0].contribute_to_dataset is True
+
+
+class TestDedupe:
+    @pytest.mark.asyncio
+    async def test_same_log_again_returns_the_existing_report(self, client, queue):
+        first = (await client.post("/analyse", files=upload())).json()
+        again = (await client.post("/analyse", files=upload("renamed.ulg"))).json()
+
+        assert again["report_id"] == first["report_id"]
+        assert again["deduplicated"] is True
+        assert again["status"] == "processing"
+        assert len(queue.jobs) == 1
+
+    @pytest.mark.asyncio
+    async def test_finished_original_comes_back_complete(self, client, queue):
+        from api.storage import job_store
+        first = (await client.post("/analyse", files=upload())).json()
+        job_store.complete(first["report_id"], make_report(first["report_id"]))
+
+        again = (await client.post("/analyse", files=upload())).json()
+        assert again == {"report_id": first["report_id"], "status": "complete",
+                         "estimated_seconds": 0, "deduplicated": True}
+
+    @pytest.mark.asyncio
+    async def test_failed_original_is_not_reused(self, client, queue):
+        from api.storage import job_store
+        first = (await client.post("/analyse", files=upload())).json()
+        job_store.fail(first["report_id"], "internal error")
+
+        again = (await client.post("/analyse", files=upload())).json()
+        assert again["deduplicated"] is False
+        assert again["report_id"] != first["report_id"]
+
+    @pytest.mark.asyncio
+    async def test_different_bytes_are_analysed(self, client, queue):
+        await client.post("/analyse", files=upload())
+        other = (await client.post("/analyse", files=upload(content=ULOG_MAGIC + b"\x01"))).json()
+        assert other["deduplicated"] is False
+        assert len(queue.jobs) == 2
+
+    @pytest.mark.asyncio
+    async def test_tagged_upload_is_not_matched_with_an_untagged_one(self, client, queue):
+        await client.post("/analyse", files=upload())
+        tagged = (await client.post("/analyse", files=upload(), data={"airframe_label": "Quad-1"})).json()
+        assert tagged["deduplicated"] is False
+        assert tagged["airframe_token"]
+
+        again = (await client.post(
+            "/analyse", files=upload(), data={"airframe_label": "Quad-1"},
+            headers={"X-Airframe-Token": tagged["airframe_token"]},
+        )).json()
+        assert again["report_id"] == tagged["report_id"]
+        assert again["deduplicated"] is True
+
+    @pytest.mark.asyncio
+    async def test_contributing_upload_always_runs(self, client, queue):
+        await client.post("/analyse", files=upload())
+        again = (await client.post("/analyse", files=upload(), data={"contribute_to_dataset": "true"})).json()
+        assert again["deduplicated"] is False
+        assert len(queue.jobs) == 2
+
+    @pytest.mark.asyncio
+    async def test_different_brief_is_analysed_again(self, client, queue):
+        await client.post("/analyse", files=upload())
+        again = (await client.post("/analyse", files=upload(), data={"planning_brief_sha256": "c" * 64})).json()
+        assert again["deduplicated"] is False
+
+
+class TestRunJob:
+    @pytest.mark.asyncio
+    async def test_progress_eta_and_hashes_land_on_the_report(self, client, monkeypatch, tmp_path):
+        import api.analysis as analysis_module
+        from api.analysis import AnalysisJob, run_job
+        from api.storage import job_store
+
+        seen = {}
+
+        async def fake_run_analysis(**kwargs):
+            await kwargs["progress_callback"](50, "half way", 12.5)
+            seen["status"] = job_store.status_summary("r1")
+            await kwargs["progress_callback"](60, "two-arg callers still work")
+            return make_report("engine-made-up-id")
+        monkeypatch.setattr(analysis_module, "run_analysis", fake_run_analysis)
+
+        log = tmp_path / "f.ulg"
+        log.write_bytes(b"x")
+        job_store.create("r1", log_sha256="a" * 64)
+        await run_job(AnalysisJob(
+            report_id="r1", log_path=str(log), file_name="f.ulg", file_size=1, log_format="px4_ulog",
+            log_sha256="a" * 64, planning_brief_sha256="b" * 64,
+        ))
+
+        assert seen["status"]["progress"] == 50
+        assert 0 < seen["status"]["eta_seconds"] <= 12.5
+        report = job_store.get("r1").report
+        assert report.report_id == "r1"
+        assert report.metadata.log_sha256 == "a" * 64
+        assert report.metadata.planning_brief_sha256 == "b" * 64
+        assert not log.exists()
+
+    @pytest.mark.asyncio
+    async def test_engine_hash_wins_over_ours(self, client, monkeypatch, tmp_path):
+        import api.analysis as analysis_module
+        from api.analysis import AnalysisJob, run_job
+        from api.storage import job_store
+
+        async def fake_run_analysis(**kwargs):
+            r = make_report("x")
+            r.metadata.log_sha256 = "c" * 64
+            return r
+        monkeypatch.setattr(analysis_module, "run_analysis", fake_run_analysis)
+
+        job_store.create("r1")
+        await run_job(AnalysisJob(report_id="r1", log_path=str(tmp_path / "gone"), file_name="f.ulg",
+                                  file_size=1, log_format="px4_ulog", log_sha256="a" * 64))
+        assert job_store.get("r1").report.metadata.log_sha256 == "c" * 64
+
 
 class TestPublicError:
     def test_value_error_message_kept_but_paths_scrubbed(self):
-        from api.routers.analyse import public_error
+        from api.analysis import public_error
         msg = public_error(ValueError("cannot parse /tmp/flightmd-abc/x.ulg: bad header"))
         assert "/tmp" not in msg
         assert "bad header" in msg
 
     def test_units_are_not_mistaken_for_paths(self):
-        from api.routers.analyse import public_error
+        from api.analysis import public_error
         assert public_error(ValueError("speed above 30 m/s")) == "speed above 30 m/s"
 
     def test_unexpected_errors_are_generic(self):
-        from api.routers.analyse import public_error
+        from api.analysis import public_error
         msg = public_error(KeyError("/srv/app/secret"))
         assert "secret" not in msg
 
@@ -220,6 +419,16 @@ class TestStatusAndReport:
         resp = await client.get("/report/done-1")
         assert resp.status_code == 200
         assert resp.headers["x-flightmd-schema-version"] == resp.json()["schema_version"]
+
+    @pytest.mark.asyncio
+    async def test_interrupted_job_reports_failed_on_status(self, client):
+        from api.storage import job_store
+        job_store.create("was-running")
+        job_store.interrupt_running()
+        data = (await client.get("/status/was-running")).json()
+        assert data["status"] == "failed"
+        assert data["error"].startswith("interrupted")
+        assert (await client.get("/report/was-running")).status_code == 422
 
 
 class TestNoGlobalListing:
@@ -266,11 +475,10 @@ class TestExportEndpoints:
         assert resp.json()["schema_version"] == resp.headers["x-flightmd-schema-version"]
 
     @pytest.mark.asyncio
-    async def test_pdf_is_generated_once_then_cached(self, client, monkeypatch):
+    async def test_pdf_is_generated_once_then_cached_on_disk(self, client, monkeypatch, database):
         import api.routers.export as export_module
         calls = []
-        monkeypatch.setattr(export_module, "_pdf_cache", type(export_module._pdf_cache)())
-        monkeypatch.setattr(export_module.pdf_gen, "generate", lambda r: calls.append(r) or b"%PDF-fake")
+        monkeypatch.setattr(export_module, "render_report_pdf", lambda r: calls.append(r) or b"%PDF-fake")
         finished("pdf-report")
 
         for _ in range(2):
@@ -278,6 +486,28 @@ class TestExportEndpoints:
             assert resp.status_code == 200
             assert resp.content == b"%PDF-fake"
         assert len(calls) == 1
+        assert os.listdir(os.path.join(database.data_dir, "exports", "pdf-report"))
+
+    @pytest.mark.asyncio
+    async def test_gpx_is_cached_too(self, client, monkeypatch):
+        import api.routers.export as export_module
+        calls = []
+        monkeypatch.setattr(export_module, "generate_gpx", lambda r: calls.append(r) or b"<gpx/>")
+        finished("gpx-report", gps_path=[[37.7749, -122.4194, 10.0]])
+
+        for _ in range(3):
+            assert (await client.get("/export/gpx/gpx-report")).content == b"<gpx/>"
+        assert len(calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_missing_weasyprint_is_501(self, client, monkeypatch):
+        import api.routers.export as export_module
+
+        def no_weasyprint(report):
+            raise RuntimeError("PDF export needs WeasyPrint")
+        monkeypatch.setattr(export_module, "render_report_pdf", no_weasyprint)
+        finished("pdf-report")
+        assert (await client.get("/export/pdf/pdf-report")).status_code == 501
 
 
 class TestAsk:
@@ -369,11 +599,26 @@ class TestClientIP:
         assert client_ip(fake_request("198.51.100.9", "5.6.7.8")) == "198.51.100.9"
 
 
-class TestDatasetStatsEndpoint:
+class TestDatasetEndpoints:
     @pytest.mark.asyncio
     async def test_returns_count_and_bytes(self, client):
         resp = await client.get("/dataset/stats")
         assert resp.status_code == 200
-        data = resp.json()
-        assert "contributed_logs" in data
-        assert "total_bytes" in data
+        assert resp.json() == {"contributed_logs": 0, "total_bytes": 0}
+
+    @pytest.mark.asyncio
+    async def test_withdraw_a_contribution(self, client, tmp_path):
+        from api.training_data_store import training_data_store
+        log = tmp_path / "f.ulg"
+        log.write_bytes(b"contributed bytes")
+        contribution_id = training_data_store.save(str(log), ".ulg", "px4_ulog", make_report("r1"))
+
+        assert (await client.get("/dataset/stats")).json()["contributed_logs"] == 1
+        assert (await client.delete(f"/dataset/{contribution_id}")).status_code == 204
+        assert (await client.get("/dataset/stats")).json()["contributed_logs"] == 0
+        assert (await client.delete(f"/dataset/{contribution_id}")).status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bad", ["nope", "A" * 32, "a" * 33])
+    async def test_withdraw_with_a_malformed_id_is_404(self, client, bad):
+        assert (await client.delete(f"/dataset/{bad}")).status_code == 404

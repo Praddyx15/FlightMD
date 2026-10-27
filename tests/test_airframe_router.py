@@ -14,17 +14,18 @@ from httpx import AsyncClient, ASGITransport
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
-@pytest_asyncio.fixture
-async def client(tmp_path, monkeypatch):
-    from api import airframe_store as afs
-    from api.security import limiter
-    from api.storage import JobStore, job_store
+@pytest.fixture
+def database(tmp_path, monkeypatch):
+    from api import db
+    d = db.Database(str(tmp_path / "data"))
+    monkeypatch.setattr(db, "_db", d)
+    yield d
+    d.close()
 
-    (tmp_path / "airframes").mkdir()
-    (tmp_path / "reports").mkdir()
-    monkeypatch.setattr(afs.airframe_store, "data_dir", str(tmp_path / "airframes"))
-    monkeypatch.setattr(JobStore, "DATA_DIR", str(tmp_path / "reports"))
-    monkeypatch.setattr(job_store, "_store", {})
+
+@pytest_asyncio.fixture
+async def client(database):
+    from api.security import limiter
     limiter.reset()
 
     from api.main import app
@@ -183,7 +184,7 @@ class TestAirframeRecordExport:
     @pytest.mark.asyncio
     async def test_non_ascii_label_gets_a_valid_filename(self, client, monkeypatch):
         import api.routers.export as export_module
-        monkeypatch.setattr(export_module.pdf_gen, "generate_airframe_record", lambda **kw: b"%PDF-fake")
+        monkeypatch.setattr(export_module, "render_airframe_record_pdf", lambda **kw: b"%PDF-fake")
 
         label = "Квадро-1"
         token = await claim(client, quote(label))

@@ -6,25 +6,25 @@ There's no "register an airframe" step. A label exists once someone tags a
 flight with it or writes its config, and the first of those claims it: the
 caller gets a random airframe token back once, and every later read or write
 has to present it. Only a sha256 of the token is stored.
+
+Lives in the `airframes` table (api/db.py); the old one-JSON-file-per-airframe
+layout is imported once at startup by api/legacy_import.py.
 """
 
 import hashlib
 import hmac
 import json
 import logging
-import os
 import re
 import secrets
-import threading
+import time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from typing import Optional
 
-from api.fs import write_json_atomic
+from api import db
 
 logger = logging.getLogger(__name__)
-
-DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "data", "airframes"))
 
 VALID_COMPARISONS = ("lt", "gt")
 
@@ -104,64 +104,38 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def _slugify(label: str) -> str:
-    slug = re.sub(r"[^a-zA-Z0-9_-]+", "_", label.strip())
-    return slug[:60] or "unnamed"
-
-
-def _filename(label: str) -> str:
-    # The slug alone collides ("Quad 1", "Quad_1", "Quad#1"); the hash keeps
-    # every exact label in its own file, the slug just keeps the dir readable.
-    digest = hashlib.sha256(label.encode("utf-8")).hexdigest()[:16]
-    return f"{_slugify(label)[:40]}-{digest}.json"
-
-
 class AirframeConfigStore:
-    def __init__(self, data_dir: str = DATA_DIR):
-        self.data_dir = data_dir
-        self._lock = threading.RLock()
-        os.makedirs(self.data_dir, exist_ok=True)
+    """One row per airframe in the `airframes` table: the config as JSON plus the token hash."""
 
-    def _path(self, airframe_label: str) -> str:
-        return os.path.join(self.data_dir, _filename(airframe_label))
+    def _get(self, c, airframe_label: str) -> AirframeConfig:
+        row = c.execute(
+            "SELECT config_json, token_hash FROM airframes WHERE label = ?", (airframe_label,)
+        ).fetchone()
+        if row is None:
+            return AirframeConfig(airframe_label=airframe_label)
+        # a row that won't parse raises instead of coming back empty, so the
+        # next save can't overwrite someone's real data
+        data = json.loads(row["config_json"])
+        data["airframe_label"] = airframe_label
+        data["token_hash"] = row["token_hash"]
+        return AirframeConfig.from_dict(data)
 
-    def _legacy_path(self, airframe_label: str) -> str:
-        return os.path.join(self.data_dir, f"{_slugify(airframe_label)}.json")
-
-    def _read(self, path: str) -> dict:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+    def _save(self, c, config: AirframeConfig) -> None:
+        now = time.time()
+        c.execute(
+            "INSERT INTO airframes (label, token_hash, config_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"
+            " ON CONFLICT (label) DO UPDATE SET token_hash = excluded.token_hash,"
+            " config_json = excluded.config_json, updated_at = excluded.updated_at",
+            (config.airframe_label, config.token_hash, json.dumps(config.to_dict()), now, now),
+        )
 
     def get(self, airframe_label: str) -> AirframeConfig:
-        """Stored config, or an empty unclaimed one for a label nobody has used yet.
-
-        A file that exists but won't parse raises instead of coming back
-        empty, so the next save can't overwrite someone's real data.
-        """
-        with self._lock:
-            path = self._path(airframe_label)
-            if os.path.exists(path):
-                return AirframeConfig.from_dict(self._read(path))
-
-            # pre-hash files were named by slug only; use one if the label matches exactly
-            legacy = self._legacy_path(airframe_label)
-            if os.path.exists(legacy):
-                data = self._read(legacy)
-                if data.get("airframe_label") == airframe_label:
-                    return AirframeConfig.from_dict(data)
-
-            return AirframeConfig(airframe_label=airframe_label)
+        """Stored config, or an empty unclaimed one for a label nobody has used yet."""
+        return self._get(db.get().conn(), airframe_label)
 
     def save(self, config: AirframeConfig) -> None:
-        with self._lock:
-            write_json_atomic(self._path(config.airframe_label), config.to_record(), indent=2)
-            legacy = self._legacy_path(config.airframe_label)
-            if os.path.exists(legacy):
-                try:
-                    if self._read(legacy).get("airframe_label") == config.airframe_label:
-                        os.remove(legacy)
-                except (OSError, ValueError) as e:
-                    logger.warning(f"left legacy airframe file {legacy} in place: {e}")
+        with db.get().transaction() as c:
+            self._save(c, config)
 
     def authorise(self, airframe_label: str, token: Optional[str], claim: bool = False) -> Optional[str]:
         """Check `token` for this airframe, raising TokenError if it doesn't fit.
@@ -169,14 +143,16 @@ class AirframeConfigStore:
         With claim=True an unclaimed airframe is claimed instead, and the new
         token is returned; that's the only time it is ever available.
         """
-        with self._lock:
-            config = self.get(airframe_label)
+        # a claim writes, so it takes the write lock before reading: two
+        # first uploads racing can't both walk away with a token
+        with db.get().transaction(immediate=claim) as c:
+            config = self._get(c, airframe_label)
             if config.token_hash is None:
                 if not claim:
                     raise TokenError("unclaimed")
                 new_token = secrets.token_urlsafe(32)
                 config.token_hash = hash_token(new_token)
-                self.save(config)
+                self._save(c, config)
                 return new_token
 
             if not token:
@@ -186,11 +162,11 @@ class AirframeConfigStore:
             return None
 
     def add_maintenance_entry(self, airframe_label: str, entry: MaintenanceEntry) -> AirframeConfig:
-        with self._lock:
-            config = self.get(airframe_label)
+        with db.get().transaction() as c:
+            config = self._get(c, airframe_label)
             config.maintenance_log.append(entry)
             config.maintenance_log.sort(key=lambda m: m.date)
-            self.save(config)
+            self._save(c, config)
             return config
 
     def update_settings(
@@ -202,8 +178,8 @@ class AirframeConfigStore:
         webhook_url=_UNSET,
     ) -> AirframeConfig:
         """Change only the fields passed. Passing None clears a field."""
-        with self._lock:
-            config = self.get(airframe_label)
+        with db.get().transaction() as c:
+            config = self._get(c, airframe_label)
             if checklist_items is not _UNSET:
                 config.checklist_items = checklist_items or []
             if maintenance_interval_hours is not _UNSET:
@@ -212,7 +188,7 @@ class AirframeConfigStore:
                 config.alert_rules = alert_rules or []
             if webhook_url is not _UNSET:
                 config.webhook_url = webhook_url or None
-            self.save(config)
+            self._save(c, config)
             return config
 
 

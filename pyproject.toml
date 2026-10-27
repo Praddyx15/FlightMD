@@ -1,13 +1,14 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "flightmd-core"
-version = "1.0.0"
+version = "1.1.0"
 description = "Flight log analysis engine for PX4, ArduPilot and MAVLink logs"
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 authors = [
     { name = "Pradum Behl", email = "pradumbehl14@gmail.com" }
@@ -16,8 +17,11 @@ keywords = ["PX4", "ULog", "drone", "flight-analysis", "UAV", "avionics"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering",
 ]
 dependencies = [
@@ -29,10 +33,34 @@ dependencies = [
     "pydantic>=2.5",
 ]
 
+[project.urls]
+Homepage = "https://github.com/Praddyx15/FlightMD"
+Source = "https://github.com/Praddyx15/FlightMD"
+Issues = "https://github.com/Praddyx15/FlightMD/issues"
+
+[project.scripts]
+flightmd = "flightmd_core.__main__:main"
+
 [project.optional-dependencies]
 ai = [
     "anthropic>=0.20",
     "openai>=1.30",
+]
+# PDF export (flightmd_core.exporters.pdf); WeasyPrint also needs Pango from the OS
+pdf = [
+    "weasyprint>=61",
+    "jinja2>=3.1",
+]
+# API extras: contributed logs in S3-compatible storage, and the Redis job queue
+s3 = [
+    "boto3>=1.34",
+]
+queue = [
+    "arq>=0.26",
+]
+# DJI flight records v13+ are AES-encrypted
+dji = [
+    "cryptography>=41",
 ]
 dev = [
     "pytest>=7.4",
@@ -44,7 +72,7 @@ dev = [
 include = ["flightmd_core*"]
 
 [tool.setuptools.package-data]
-flightmd_core = ["data/**/*.json"]
+flightmd_core = ["data/**/*.json", "exporters/templates/*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -52,4 +80,9 @@ pythonpath = ["."]
 asyncio_default_fixture_loop_scope = "function"
 markers = [
     "integration: requires real sample log files in tests/sample_logs/",
+    "corpus: real-log regression corpus in tests/corpus/ (slow, run weekly in CI)",
 ]
+
+[tool.coverage.run]
+source = ["flightmd_core", "api"]
+omit = ["api/worker.py"]

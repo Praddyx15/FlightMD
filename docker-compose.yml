@@ -1,0 +1,131 @@
+# Self-hosting: cp .env.example .env, then
+#   docker compose up -d --build
+# Web on http://localhost:3000, API on http://localhost:8000. Reports, airframes and
+# contributed logs live in the flightmd-data volume; old api/data/ JSON is imported on start.
+#
+# Redis queue instead of the in-process one (needed for more than one API process):
+#   FLIGHTMD_EXTRAS=queue FLIGHTMD_REDIS_URL=redis://redis:6379 docker compose --profile queue up -d --build
+#
+# Needs Docker Compose 2.24+ (dockerfile_inline, optional env_file).
+
+name: flightmd
+
+x-api-build: &api-build
+  context: .
+  dockerfile: api/Dockerfile
+  args:
+    EXTRAS: ${FLIGHTMD_EXTRAS:-}
+
+x-hardening: &hardening
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  restart: unless-stopped
+
+services:
+  api:
+    <<: *hardening
+    build: *api-build
+    image: flightmd-api
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      FLIGHTMD_DATA_DIR: /data
+      FLIGHTMD_REDIS_URL: ${FLIGHTMD_REDIS_URL:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+    user: "10001"
+    ports:
+      - "8000:8000"
+    volumes:
+      - flightmd-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  web:
+    <<: *hardening
+    build:
+      context: ./frontend
+      args:
+        # baked into the browser bundle, so it's the address the *browser* uses
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8000}
+      dockerfile_inline: |
+        FROM node:20-bookworm-slim AS deps
+        WORKDIR /app
+        COPY package.json package-lock.json ./
+        RUN npm ci
+
+        FROM node:20-bookworm-slim AS build
+        WORKDIR /app
+        COPY . .
+        # a host node_modules (maybe built for another OS) can come along in the context
+        RUN rm -rf node_modules .next
+        COPY --from=deps /app/node_modules ./node_modules
+        ARG NEXT_PUBLIC_API_URL
+        ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL NEXT_TELEMETRY_DISABLED=1
+        RUN mkdir -p public && npm run build
+
+        FROM node:20-bookworm-slim
+        WORKDIR /app
+        ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=3000
+        COPY --from=build --chown=node /app/.next/standalone ./
+        COPY --from=build --chown=node /app/.next/static ./.next/static
+        COPY --from=build --chown=node /app/public ./public
+        USER node
+        EXPOSE 3000
+        CMD ["node", "server.js"]
+    image: flightmd-web
+    environment:
+      # server-side fetches go straight to the api service
+      API_URL: http://api:8000
+    user: "1000"
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  worker:
+    <<: *hardening
+    profiles: ["queue"]
+    build: *api-build
+    image: flightmd-api
+    command: ["arq", "api.worker.WorkerSettings"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      FLIGHTMD_DATA_DIR: /data
+      FLIGHTMD_REDIS_URL: redis://redis:6379
+    user: "10001"
+    volumes:
+      - flightmd-data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  redis:
+    <<: *hardening
+    profiles: ["queue"]
+    image: redis:7.4-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    user: "999"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  flightmd-data:

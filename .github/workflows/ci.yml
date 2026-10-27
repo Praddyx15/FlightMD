@@ -5,22 +5,31 @@ on:
     branches: [main, dev]
   pull_request:
     branches: [main]
+  # publish.yml runs this before building a release
+  workflow_call:
 
 permissions:
   contents: read
 
+# Actions are pinned to commit SHAs (resolved from the tags in the comments via the
+# GitHub API, 2026-10-27). Bump them by re-resolving the tag, not by hand-editing.
+
 jobs:
   test-backend:
-    name: Python Tests
+    name: Python ${{ matrix.python-version }} tests
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
           cache: pip
 
       - name: Install WeasyPrint system libraries
@@ -42,43 +51,54 @@ jobs:
           CORS_ORIGINS: "http://localhost:3000"
           # no geocoding, weather or AI calls from CI
           FLIGHTMD_OFFLINE: "1"
+          FLIGHTMD_DATA_DIR: ${{ runner.temp }}/flightmd-data
         run: |
-          pytest -m "not integration" --tb=short \
+          pytest -m "not integration and not corpus" --tb=short \
             --cov=flightmd_core --cov=api \
-            --cov-report=term-missing --cov-report=xml
+            --cov-report=term-missing --cov-report=xml:coverage-${{ matrix.python-version }}.xml
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
-          name: coverage-report
-          path: coverage.xml
+          name: coverage-${{ matrix.python-version }}
+          path: coverage-${{ matrix.python-version }}.xml
+          if-no-files-found: ignore
 
   audit:
     name: Dependency audit
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
 
       - run: pip install pip-audit==2.7.3
 
       - name: Audit API requirements
-        run: pip-audit -r api/requirements.txt
+        run: |
+          pip-audit -r api/requirements.txt
+          if [ -f api/requirements.lock ]; then pip-audit -r api/requirements.lock; fi
 
   test-frontend:
-    name: Next.js Build
+    name: Next.js build
     runs-on: ubuntu-latest
+    env:
+      # Total size of every JS chunk Next emits (raw bytes, lazy chunks included).
+      # Set from an estimate before the first measured build: three + R3F + drei
+      # ~1.2 MB, recharts ~0.45 MB, react/react-dom/next runtime ~0.35 MB, leaflet
+      # ~0.15 MB, app code + next-intl ~0.4 MB = ~2.6 MB, plus ~50% headroom.
+      # The step prints the real figure; tighten this once it's known.
+      BUNDLE_BUDGET_KB: "4000"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Node.js 20
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "20"
           cache: npm
@@ -90,19 +110,115 @@ jobs:
       - name: Type check
         run: cd frontend && npx tsc --noEmit
 
+      - name: Unit tests
+        run: cd frontend && npm run test --if-present
+
       - name: Build Next.js app
         env:
           NEXT_PUBLIC_API_URL: "https://flightmd-api.onrender.com"
         run: cd frontend && npm run build
 
+      - name: Bundle size budget
+        run: |
+          total_kb=$(find frontend/.next/static -name '*.js' -type f -printf '%s\n' | awk '{s += $1} END {print int(s / 1024)}')
+          gzip_kb=$(find frontend/.next/static -name '*.js' -type f -exec gzip -9c {} \; | wc -c | awk '{print int($1 / 1024)}')
+          echo "JS in .next/static: ${total_kb} KB raw, ${gzip_kb} KB gzipped (budget ${BUNDLE_BUDGET_KB} KB raw)" | tee -a "$GITHUB_STEP_SUMMARY"
+          find frontend/.next/static -name '*.js' -type f -printf '%s %P\n' | sort -rn | head -10 | awk '{printf "%8d KB  %s\n", $1 / 1024, $2}'
+          if [ "$total_kb" -gt "$BUNDLE_BUDGET_KB" ]; then
+            echo "::error::Frontend JS is ${total_kb} KB, over the ${BUNDLE_BUDGET_KB} KB budget"
+            exit 1
+          fi
+
+  e2e:
+    name: Playwright smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install the API
+        run: |
+          pip install --upgrade pip
+          pip install -r api/requirements.txt
+          pip install --no-deps -e .
+
+      - name: Start the API
+        env:
+          FLIGHTMD_OFFLINE: "1"
+          FLIGHTMD_DATA_DIR: ${{ runner.temp }}/flightmd-data
+          CORS_ORIGINS: "http://127.0.0.1:3000,http://localhost:3000"
+          RATE_LIMIT_PER_HOUR: "1000"
+          GROQ_API_KEY: ""
+          ANTHROPIC_API_KEY: ""
+        run: |
+          nohup uvicorn api.main:app --host 127.0.0.1 --port 8000 > "$RUNNER_TEMP/api.log" 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8000/health && exit 0
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/api.log"
+          exit 1
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build and start the frontend
+        working-directory: frontend
+        env:
+          NEXT_PUBLIC_API_URL: "http://127.0.0.1:8000"
+        run: |
+          npm ci
+          npm run build
+          # output: "standalone" -> server.js, which needs the static files next to it
+          cp -r .next/static .next/standalone/.next/static
+          if [ -d public ]; then cp -r public .next/standalone/public; fi
+          PORT=3000 HOSTNAME=127.0.0.1 API_URL=http://127.0.0.1:8000 \
+            nohup node .next/standalone/server.js > "$RUNNER_TEMP/web.log" 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf -o /dev/null http://127.0.0.1:3000/ && exit 0
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/web.log"
+          exit 1
+
+      - name: Run the smoke test
+        working-directory: frontend
+        env:
+          PLAYWRIGHT_BASE_URL: "http://127.0.0.1:3000"
+          NEXT_PUBLIC_API_URL: "http://127.0.0.1:8000"
+        run: |
+          npx playwright install --with-deps chromium
+          npx playwright test
+
+      - name: Keep the report and server logs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: playwright-report
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+            ${{ runner.temp }}/api.log
+            ${{ runner.temp }}/web.log
+          if-no-files-found: ignore
+
   lint:
-    name: Python Lint
+    name: Python lint
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
 

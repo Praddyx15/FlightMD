@@ -5,24 +5,28 @@ their report.
 Nothing lands here unless the uploader ticks "contribute". No name, account,
 IP or original filename is stored, and the report copy loses its filename,
 place name and GPS track. The raw log itself still holds whatever positions
-the autopilot recorded; we keep the file as uploaded.
-Contributions aren't auto-deleted. Identical logs are only stored once.
+the autopilot recorded; we keep the file as uploaded, in the blob store.
+Identical logs are stored once. The contribution id goes back to the uploader
+and is what DELETE /dataset/{id} takes to withdraw it.
 """
 
 import hashlib
+import json
 import logging
 import os
-import shutil
-import tempfile
+import re
 import time
 from dataclasses import dataclass
+from typing import Optional
 
-from api.fs import write_json_atomic
+from api import blobs, db
 from flightmd_core.models.findings import FlightMDReport
 
 logger = logging.getLogger(__name__)
 
 _STRIP_META = ("location_name", "gps_path", "gps_path_wind_speed_ms", "gps_path_hdop")
+
+CONTRIBUTION_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 
 
 @dataclass
@@ -31,12 +35,17 @@ class ContributionStats:
     total_bytes: int
 
 
-def _sha256(path: str) -> str:
+def file_sha256(path: str) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def contribution_id_for(log_sha256: str) -> str:
+    # content hash as the id: the same log contributed twice is stored once
+    return log_sha256[:32]
 
 
 def anonymise(report: FlightMDReport) -> dict:
@@ -50,56 +59,43 @@ def anonymise(report: FlightMDReport) -> dict:
 
 
 class TrainingDataStore:
-    DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "data", "training_contributions"))
-
-    def __init__(self):
-        os.makedirs(self.DATA_DIR, exist_ok=True)
-
-    def save(self, log_path: str, file_suffix: str, log_format: str, report: FlightMDReport) -> str:
-        """Copy the log in and write the stripped report next to it. Returns the contribution id."""
-        # content hash as the id: the same log contributed twice is stored once
-        contribution_id = _sha256(log_path)[:32]
-        dest = os.path.join(self.DATA_DIR, f"{contribution_id}{file_suffix}")
-        meta_path = os.path.join(self.DATA_DIR, f"{contribution_id}.json")
-        if os.path.exists(dest) and os.path.exists(meta_path):
+    def save(self, log_path: str, file_suffix: str, log_format: str, report: FlightMDReport,
+             log_sha256: Optional[str] = None) -> str:
+        """Store the log and the stripped report. Returns the contribution id."""
+        sha = log_sha256 or file_sha256(log_path)
+        contribution_id = contribution_id_for(sha)
+        database = db.get()
+        if database.query_one("SELECT 1 FROM contributions WHERE contribution_id = ?", (contribution_id,)):
             return contribution_id
 
-        fd, tmp = tempfile.mkstemp(dir=self.DATA_DIR, prefix=".tmp-")
-        os.close(fd)
-        try:
-            shutil.copyfile(log_path, tmp)
-            os.replace(tmp, dest)
-        except BaseException:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
-            raise
-
-        write_json_atomic(meta_path, {
-            "contribution_id": contribution_id,
-            "log_format": log_format,
-            "contributed_at": time.time(),
-            "report": anonymise(report),
-        })
+        # blob first: a row without its log would be worse than a stray log
+        key = f"{contribution_id}{file_suffix}"
+        blobs.get().put(key, log_path)
+        database.execute(
+            "INSERT INTO contributions (contribution_id, log_sha256, log_format, blob_key, size_bytes,"
+            " contributed_at, report_json) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT (contribution_id) DO NOTHING",
+            (contribution_id, sha, log_format, key, os.path.getsize(log_path), time.time(),
+             json.dumps(anonymise(report))),
+        )
         logger.info(f"dataset contribution {contribution_id} saved ({log_format})")
         return contribution_id
 
+    def delete(self, contribution_id: str) -> bool:
+        """Withdraw a contribution. False if there was nothing under that id."""
+        database = db.get()
+        row = database.query_one("SELECT blob_key FROM contributions WHERE contribution_id = ?", (contribution_id,))
+        if row is None:
+            return False
+        # log before row, so a failed delete leaves a row to retry against
+        blobs.get().delete(row["blob_key"])
+        database.execute("DELETE FROM contributions WHERE contribution_id = ?", (contribution_id,))
+        logger.info(f"dataset contribution {contribution_id} withdrawn")
+        return True
+
     def stats(self) -> ContributionStats:
-        """Count and size of the logs, not their JSON sidecars."""
-        count = 0
-        total_bytes = 0
-        try:
-            names = os.listdir(self.DATA_DIR)
-        except FileNotFoundError:
-            return ContributionStats(count=0, total_bytes=0)
-        for name in names:
-            if name.endswith(".json") or name.startswith(".tmp-"):
-                continue
-            count += 1
-            try:
-                total_bytes += os.path.getsize(os.path.join(self.DATA_DIR, name))
-            except OSError:
-                pass   # deleted between listdir and getsize
-        return ContributionStats(count=count, total_bytes=total_bytes)
+        row = db.get().query_one("SELECT COUNT(*), COALESCE(SUM(size_bytes), 0) FROM contributions")
+        return ContributionStats(count=row[0], total_bytes=row[1])
 
 
 training_data_store = TrainingDataStore()
