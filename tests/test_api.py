@@ -421,6 +421,19 @@ class TestStatusAndReport:
         assert resp.headers["x-flightmd-schema-version"] == resp.json()["schema_version"]
 
     @pytest.mark.asyncio
+    async def test_report_serializes_with_nan_floats(self, client):
+        rep = make_report("done-nan")
+        rep.metadata.max_altitude_m = float("nan")
+        from api.storage import job_store
+        job_store.create("done-nan")
+        job_store.complete("done-nan", rep)
+
+        resp = await client.get("/report/done-nan")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["metadata"]["max_altitude_m"] is None
+
+    @pytest.mark.asyncio
     async def test_interrupted_job_reports_failed_on_status(self, client):
         from api.storage import job_store
         job_store.create("was-running")

@@ -8,7 +8,6 @@ trend history; that's the opt-in. Job state lives in the database too, so
 comes back as failed ("interrupted").
 """
 
-import json
 import logging
 import re
 import threading
@@ -136,7 +135,7 @@ class JobStore:
 
     def complete(self, report_id: str, report: FlightMDReport) -> None:
         now = time.time()
-        body = json.dumps(report.model_dump(mode="json"), separators=(",", ":"))
+        body = report.model_dump_json()
         sha = getattr(report.metadata, "log_sha256", None)
         # upsert: a job that was discarded meanwhile still gets its report saved, untagged
         db.get().execute(

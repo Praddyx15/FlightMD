@@ -1,6 +1,5 @@
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from api.config import get_settings
@@ -49,8 +48,9 @@ def get_status(report_id: str) -> dict:
 )
 def get_report(report_id: str):
     report = finished_report(report_id)
-    return JSONResponse(
-        report.model_dump(mode="json"),
+    return Response(
+        content=report.model_dump_json(),
+        media_type="application/json",
         headers={"X-FlightMD-Schema-Version": report.schema_version},
     )
 

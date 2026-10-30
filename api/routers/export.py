@@ -1,4 +1,3 @@
-import json
 import logging
 from datetime import datetime, timezone
 from typing import Optional
@@ -33,7 +32,7 @@ def _attachment(data: bytes, media_type: str, filename: str, ascii_name: Optiona
 
 def _report_json(report) -> bytes:
     # passed through as-is, schema_version included, so consumers can check the contract
-    return json.dumps(report.model_dump(mode="json"), indent=2, default=str).encode("utf-8")
+    return report.model_dump_json(indent=2).encode("utf-8")
 
 
 # Plain `def` routes on purpose: FastAPI runs them in its threadpool, so
