@@ -1,17 +1,17 @@
 "use client";
 
-import { useRef, useMemo, type MutableRefObject } from "react";
+import { useMemo, useRef, type MutableRefObject } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
-import { Line, OrbitControls, Grid } from "@react-three/drei";
+import { Grid, Line, OrbitControls } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
+import { useCssVars } from "@/lib/theme";
 import {
-  buildFlightPathScene, buildPathColors, type PathColorMode, type ScenePoint,
+  buildFlightPathScene, buildPathColors, sampleIndices, type PathColorMode, type ScenePoint,
 } from "./flightPathGeometry";
 
 export type { PathColorMode };
 
-/** Imperative camera presets — set by CameraRig (inside the Canvas), called
- * by the parent's toolbar buttons (outside the Canvas). */
+// set by CameraRig inside the Canvas, called by the toolbar outside it
 export interface FlightPathCameraHandle {
   reset: () => void;
   top: () => void;
@@ -28,34 +28,6 @@ interface FlightPathSceneProps {
 
 const DEFAULT_CAMERA: [number, number, number] = [3.4, 2.6, 3.4];
 const TOP_CAMERA: [number, number, number] = [0.01, 5.5, 0.01];
-
-function PathLine({ points, vertexColors }: { points: ScenePoint[]; vertexColors: [number, number, number][] | null }) {
-  const vertices = useMemo<[number, number, number][]>(
-    () => points.map((p) => [p.x, p.y, p.z]),
-    [points]
-  );
-  // vertexColors requires the base `color` to be white so the per-vertex
-  // values aren't tinted — see drei's Line implementation.
-  return vertexColors ? (
-    <Line points={vertices} vertexColors={vertexColors} color="white" lineWidth={3} />
-  ) : (
-    <Line points={vertices} color="#B89642" lineWidth={2.5} />
-  );
-}
-
-function Marker({ point, color }: { point: ScenePoint; color: string }) {
-  return (
-    <mesh position={[point.x, point.y, point.z]}>
-      <sphereGeometry args={[0.05, 16, 16]} />
-      <meshStandardMaterial
-        color={color}
-        emissive={color}
-        emissiveIntensity={0.5}
-        roughness={0.4}
-      />
-    </mesh>
-  );
-}
 
 function CameraRig({ apiRef }: { apiRef?: MutableRefObject<FlightPathCameraHandle | null> }) {
   const { camera } = useThree();
@@ -76,58 +48,63 @@ function CameraRig({ apiRef }: { apiRef?: MutableRefObject<FlightPathCameraHandl
     };
   }
 
-  return (
-    <OrbitControls
-      ref={controlsRef}
-      enableDamping
-      dampingFactor={0.08}
-      minDistance={1.5}
-      maxDistance={9}
-      target={[0, 0.3, 0]}
-    />
-  );
+  return <OrbitControls ref={controlsRef} minDistance={1.5} maxDistance={9} target={[0, 0.3, 0]} />;
 }
 
 export function FlightPathScene({
   gpsPath, className, cameraApiRef, colorMode = "standard", windSpeedPath, signalQualityPath,
 }: FlightPathSceneProps) {
-  const scene = useMemo(() => buildFlightPathScene(gpsPath), [gpsPath]);
-  const vertexColors = useMemo(
-    () => buildPathColors(colorMode, colorMode === "wind" ? windSpeedPath : signalQualityPath),
-    [colorMode, windSpeedPath, signalQualityPath]
+  const vars = useCssVars(["series-1", "accent", "text", "border", "text-subtle"]);
+
+  const idx = useMemo(() => sampleIndices(gpsPath.length), [gpsPath]);
+  const scene = useMemo(() => buildFlightPathScene(idx.map((i) => gpsPath[i])), [idx, gpsPath]);
+  const vertexColors = useMemo(() => {
+    const values = colorMode === "wind" ? windSpeedPath : signalQualityPath;
+    return buildPathColors(colorMode, values ? idx.map((i) => values[i] ?? null) : null);
+  }, [colorMode, windSpeedPath, signalQualityPath, idx]);
+  const vertices = useMemo<[number, number, number][]>(
+    () => (scene ? scene.points.map((p: ScenePoint) => [p.x, p.y, p.z]) : []),
+    [scene]
   );
 
-  if (!scene || scene.points.length === 0) return null;
+  // wait for the resolved theme colours; three can't read CSS variables
+  if (!scene || vertices.length < 2 || !vars["series-1"]) return null;
 
   const start = scene.points[0];
   const end = scene.points[scene.points.length - 1];
 
   return (
     <div className={className}>
-      <Canvas
-        camera={{ position: DEFAULT_CAMERA, fov: 42 }}
-        gl={{ antialias: true, alpha: true }}
-        dpr={[1, 2]}
-      >
-        <ambientLight intensity={0.55} />
-        <directionalLight position={[3, 4, 2]} intensity={1.0} color="#EAF0FF" />
-        <directionalLight position={[-3, 1, -2]} intensity={0.5} color="#B89642" />
+      <Canvas camera={{ position: DEFAULT_CAMERA, fov: 42 }} gl={{ antialias: true, alpha: true }} dpr={[1, 2]} frameloop="demand">
+        <ambientLight intensity={0.8} />
+        <directionalLight position={[3, 4, 2]} intensity={0.8} />
 
         <Grid
           position={[0, -0.01, 0]}
           args={[10, 10]}
           cellSize={0.4}
-          cellColor="#1e293b"
+          cellColor={vars.border}
           sectionSize={2}
-          sectionColor="#334155"
+          sectionColor={vars["text-subtle"]}
           fadeDistance={12}
-          fadeStrength={1.5}
           infiniteGrid
         />
 
-        <PathLine points={scene.points} vertexColors={vertexColors} />
-        <Marker point={start} color="#0DD97C" />
-        <Marker point={end} color="#f43f5e" />
+        {/* vertexColors needs a white base colour or drei tints them */}
+        {vertexColors ? (
+          <Line points={vertices} vertexColors={vertexColors} color="white" lineWidth={3} />
+        ) : (
+          <Line points={vertices} color={vars["series-1"]} lineWidth={2.5} />
+        )}
+
+        <mesh position={[start.x, start.y, start.z]}>
+          <torusGeometry args={[0.05, 0.018, 8, 24]} />
+          <meshBasicMaterial color={vars.accent} />
+        </mesh>
+        <mesh position={[end.x, end.y, end.z]}>
+          <boxGeometry args={[0.07, 0.07, 0.07]} />
+          <meshBasicMaterial color={vars.text} />
+        </mesh>
 
         <CameraRig apiRef={cameraApiRef} />
       </Canvas>

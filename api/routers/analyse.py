@@ -1,228 +1,248 @@
-"""
-POST /analyse — accepts a PX4 (.ulg), ArduPilot (.bin), or MAVLink telemetry
-(.tlog) flight log, validates it, kicks off background analysis.
-
-GET /dataset/stats — public count of anonymously-contributed logs, so the
-opt-in checkbox's effect is visible rather than a black box.
-"""
-
-import asyncio
+import hashlib
 import logging
 import os
+import re
 import tempfile
 import uuid
-
 from typing import Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
 
-from api.airframe_store import airframe_store, evaluate_alert_rules
+from api import db, metrics
+from api.analysis import AnalysisJob, remove_file
 from api.config import get_settings
-from api.storage import job_store, normalise_airframe_label
-from api.training_data_store import training_data_store
-from api.webhook_notifier import send_alert_webhook
-from flightmd_core.orchestrator import run_analysis
-from flightmd_core.services.ai_enhancer import AIEnhancer
+from api.job_queue import get_queue
+from api.security import check_airframe_token, limiter, precheck_airframe_token
+from api.storage import REPORT_TTL_SECONDS, StoreFull, job_store, normalise_airframe_label
+from api.training_data_store import CONTRIBUTION_ID_RE, contribution_id_for, training_data_store
 from flightmd_core.services.format_detector import (
     detect_format_from_header,
     UnsupportedFormatError,
 )
 
 logger   = logging.getLogger(__name__)
-router   = APIRouter()
-limiter  = Limiter(key_func=get_remote_address)
+router   = APIRouter(tags=["Analysis"])
 settings = get_settings()
 
 RATE_LIMIT = f"{settings.rate_limit_per_hour}/hour"
+HEADER_BYTES = 4096   # tlog detection needs a few whole frames
+ESTIMATED_SECONDS = 20
 
 FORMAT_SUFFIX = {
     "px4_ulog": ".ulg",
     "ardupilot_bin": ".bin",
+    "ardupilot_log": ".log",
     "mavlink_tlog": ".tlog",
+    "betaflight_bbl": ".bbl",
+    "dji_txt": ".txt",
+    "dji_dat": ".dat",
 }
 
+# The engine unpacks these itself (and enforces the unpacked size); here
+# they only need the right suffix and the compressed-size cap.
+COMPRESSED_MAGIC = {b"\x1f\x8b": ".gz", b"PK\x03\x04": ".zip"}
 
-@router.post("/analyse")
+BAD_FILE = "Invalid file. Must be a PX4 ULog (.ulg), ArduPilot (.bin), or MAVLink telemetry (.tlog) file."
+
+BRIEF_HASH_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+
+
+class UploadTooLarge(Exception):
+    pass
+
+
+def _uploads_dir() -> str:
+    # inside the data dir, not /tmp: with the Redis queue another process reads it
+    path = os.path.join(db.get().data_dir, "uploads")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def _save_upload(src, suffix: str, limit: int) -> tuple[str, int, str]:
+    """Stream the upload to disk. Returns (path, size, sha256 of the bytes)."""
+    fd, path = tempfile.mkstemp(suffix=suffix, prefix="flightmd-", dir=_uploads_dir())
+    size = 0
+    h = hashlib.sha256()
+    try:
+        with os.fdopen(fd, "wb") as out:
+            while chunk := src.read(1 << 20):
+                size += len(chunk)
+                if size > limit:
+                    raise UploadTooLarge()
+                h.update(chunk)
+                out.write(chunk)
+    except BaseException:
+        os.unlink(path)
+        raise
+    return path, size, h.hexdigest()
+
+
+def _detect(head: bytes, file_name: str) -> tuple[str, str]:
+    """(format id, file suffix) for an upload's first bytes. Raises HTTPException(400)."""
+    for magic, suffix in COMPRESSED_MAGIC.items():
+        if head.startswith(magic):
+            return "compressed", suffix
+    try:
+        log_format = detect_format_from_header(head, file_name, complete=len(head) < HEADER_BYTES)
+    except UnsupportedFormatError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return log_format, FORMAT_SUFFIX.get(log_format, ".ulg")
+
+
+@router.post(
+    "/analyse",
+    summary="Upload a flight log",
+    responses={
+        400: {"description": "Not a supported log, a bad airframe label or a bad brief hash"},
+        401: {"description": "Airframe is claimed and X-Airframe-Token is missing"},
+        403: {"description": "Wrong X-Airframe-Token"},
+        413: {"description": "File too large"},
+        429: {"description": "Rate limited"},
+        503: {"description": "Too many analyses queued"},
+    },
+)
 @limiter.limit(RATE_LIMIT)
 async def analyse_log(
     request: Request,
     file: UploadFile = File(...),
     airframe_label: Optional[str] = Form(None),
     contribute_to_dataset: bool = Form(False),
+    planning_brief_sha256: Optional[str] = Form(None),
+    x_airframe_token: Optional[str] = Header(None),
 ) -> dict:
+    """Start analysing a flight log. Poll /status/{report_id}.
+
+    Untagged reports expire after an hour. `airframe_label` keeps the report in
+    that airframe's trend history: a new label is claimed by this upload and the
+    response carries `airframe_token` once; an already claimed one needs the
+    X-Airframe-Token header. `contribute_to_dataset` keeps the raw log and a
+    stripped copy of the report (no filename, place name or GPS track); the
+    response then carries `contribution_id`, which DELETE /dataset/{id} takes.
+    `planning_brief_sha256` is AirBrief's brief hash, copied into the report.
+
+    The same bytes uploaded again within the hour (same airframe tag and brief
+    hash) get the existing report back with `deduplicated: true`.
     """
-    Accept a PX4 .ulg, ArduPilot .bin, or MAVLink .tlog flight log and begin
-    asynchronous analysis.
+    head = await file.read(HEADER_BYTES)
+    if len(head) < 8:
+        raise HTTPException(status_code=400, detail=BAD_FILE)
 
-    airframe_label is optional. If given, this flight is kept indefinitely
-    and included in that airframe's trend history (GET /trends/{label}) —
-    otherwise the report is ephemeral and expires after 1 hour, same as
-    always. Nothing is retained long-term unless the uploader opts in by
-    naming their airframe.
+    file_name = file.filename or "flight.ulg"
+    log_format, suffix = _detect(head, file_name)
 
-    contribute_to_dataset is a separate opt-in: if true, the raw log and
-    its resulting report are saved indefinitely to a growing dataset used
-    to validate (and eventually help train) FlightMD's analysis — with no
-    identifying information about the uploader attached. Independent of
-    airframe_label; an uploader can tag for trends, contribute to the
-    dataset, both, or neither.
+    label = normalise_airframe_label(airframe_label)
+    if airframe_label and airframe_label.strip() and label is None:
+        raise HTTPException(status_code=400, detail="Invalid airframe label (no slashes or control characters).")
 
-    Returns immediately with a report_id and estimated processing time.
-    Poll GET /status/{report_id} for progress.
-    """
-    # ── File size check ──────────────────────────────────────────────────────
-    content = await file.read()
-    file_size = len(content)
+    brief = None
+    if planning_brief_sha256 and planning_brief_sha256.strip():
+        brief = planning_brief_sha256.strip()
+        if not BRIEF_HASH_RE.match(brief):
+            raise HTTPException(status_code=400, detail="planning_brief_sha256 must be 64 hex characters.")
+        brief = brief.lower()
 
-    if file_size > settings.max_file_size_bytes:
+    needs_claim = False
+    if label:
+        needs_claim = await run_in_threadpool(precheck_airframe_token, label, x_airframe_token)
+
+    await file.seek(0)
+    try:
+        tmp_path, file_size, sha = await run_in_threadpool(
+            _save_upload, file.file, suffix, settings.max_file_size_bytes
+        )
+    except UploadTooLarge:
         raise HTTPException(
             status_code=413,
             detail=f"File too large. Maximum size is {settings.max_file_size_mb}MB.",
         )
 
-    if file_size < 8:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid file. Must be a PX4 ULog (.ulg), ArduPilot (.bin), "
-                   "or MAVLink telemetry (.tlog) file.",
-        )
+    # A contributing upload always runs: the earlier one may not have contributed.
+    # A claiming one can't match anything, its label has no reports yet.
+    if not contribute_to_dataset and not needs_claim:
+        dup = await run_in_threadpool(job_store.find_recent_duplicate, sha, label, brief, REPORT_TTL_SECONDS)
+        if dup:
+            remove_file(tmp_path)
+            metrics.count_analysis(log_format, "deduplicated")
+            report_id, status = dup
+            logger.info(f"upload matches job {report_id}, not analysed again")
+            return {
+                "report_id": report_id,
+                "status": status,
+                "estimated_seconds": 0 if status == "complete" else ESTIMATED_SECONDS,
+                "deduplicated": True,
+            }
 
-    # ── Format detection ─────────────────────────────────────────────────────
-    file_name = file.filename or "flight.ulg"
-    try:
-        log_format = detect_format_from_header(content[:8], file_name)
-    except UnsupportedFormatError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    # ── Create job ───────────────────────────────────────────────────────────
     report_id = str(uuid.uuid4())
-    job_store.create(report_id, airframe_label=airframe_label)
+    try:
+        await run_in_threadpool(job_store.create, report_id, label, sha, brief, log_format)
+    except StoreFull:
+        remove_file(tmp_path)
+        raise HTTPException(status_code=503, detail="Too many analyses in progress. Try again in a minute.")
 
-    # ── Kick off background task ─────────────────────────────────────────────
-    asyncio.create_task(
-        _run_analysis_task(
-            report_id=report_id,
-            content=content,
-            file_name=file_name,
-            file_size=file_size,
-            log_format=log_format,
-            airframe_label=normalise_airframe_label(airframe_label),
-            contribute_to_dataset=contribute_to_dataset,
-        )
+    # claim only now, so a 413 or 503 above can't burn the one-time token
+    new_token = None
+    if needs_claim:
+        try:
+            new_token = await run_in_threadpool(check_airframe_token, label, x_airframe_token, True)
+        except HTTPException:
+            # someone else claimed it in between
+            await run_in_threadpool(job_store.discard, report_id)
+            remove_file(tmp_path)
+            raise
+
+    job = AnalysisJob(
+        report_id=report_id,
+        log_path=tmp_path,
+        file_name=file_name,
+        file_size=file_size,
+        log_format=log_format,
+        airframe_label=label,
+        contribute_to_dataset=contribute_to_dataset,
+        log_sha256=sha,
+        planning_brief_sha256=brief,
     )
+    try:
+        await get_queue().submit(job)
+    except Exception:
+        logger.exception(f"could not queue job {report_id}")
+        await run_in_threadpool(job_store.fail, report_id, "could not be queued")
+        remove_file(tmp_path)
+        raise HTTPException(status_code=503, detail="The analysis queue is unavailable. Try again in a minute.")
 
-    logger.info(
-        f"Analysis job {report_id} created for {file_name} "
-        f"({log_format}, {file_size/1024:.1f}KB)"
-    )
+    logger.info(f"job {report_id} queued ({log_format}, {file_size / 1024:.1f}KB)")
 
-    return {
-        "report_id":        report_id,
-        "status":           "processing",
-        "estimated_seconds": 20,
+    out = {
+        "report_id":         report_id,
+        "status":            "processing",
+        "estimated_seconds": ESTIMATED_SECONDS,
+        "deduplicated":      False,
     }
+    if new_token:
+        out["airframe_token"] = new_token
+    if contribute_to_dataset:
+        out["contribution_id"] = contribution_id_for(sha)
+    return out
 
 
-@router.get("/dataset/stats")
-async def dataset_stats() -> dict:
-    """Public count of anonymously-contributed logs and their combined
-    size — so anyone opting in can see the effect, not a black box."""
+@router.get("/dataset/stats", tags=["Dataset"], summary="How many logs have been contributed")
+def dataset_stats() -> dict:
     stats = training_data_store.stats()
     return {"contributed_logs": stats.count, "total_bytes": stats.total_bytes}
 
 
-async def _run_analysis_task(
-    report_id: str,
-    content: bytes,
-    file_name: str,
-    file_size: int,
-    log_format: str,
-    airframe_label: Optional[str] = None,
-    contribute_to_dataset: bool = False,
-) -> None:
-    """
-    Background task: write file to temp disk, run analysis, update job store.
-    """
-    tmp_path = None
-    try:
-        # Write to a temp file with a suffix matching the detected format —
-        # the underlying parsers read binary content directly and don't
-        # depend on the extension, but a matching suffix avoids surprises.
-        suffix = FORMAT_SUFFIX.get(log_format, ".ulg")
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-            tmp.write(content)
-            tmp_path = tmp.name
-
-        async def on_progress(progress: int, message: str):
-            job_store.update_progress(report_id, progress, message)
-
-        ai_enhancer = AIEnhancer(
-            provider=settings.ai_provider,
-            groq_api_key=settings.groq_api_key,
-            anthropic_api_key=settings.anthropic_api_key,
-        )
-
-        report = await run_analysis(
-            ulog_path=tmp_path,
-            file_name=file_name,
-            file_size=file_size,
-            progress_callback=on_progress,
-            ai_enhancer=ai_enhancer,
-        )
-
-        # Override the report_id with our assigned one (orchestrator generates its own)
-        report.report_id = report_id
-        job_store.complete(report_id, report)
-        logger.info(f"Job {report_id} complete: {report.overall_score}/100")
-
-        if airframe_label:
-            await _check_alert_rules(airframe_label, report_id, report)
-
-        if contribute_to_dataset:
-            try:
-                loop = asyncio.get_running_loop()
-                await loop.run_in_executor(
-                    None, training_data_store.save, content, suffix, log_format, report
-                )
-            except Exception as e:
-                # Best-effort — a failed dataset save must never affect the
-                # already-completed analysis the uploader is waiting on.
-                logger.error(f"Failed to save dataset contribution for {report_id}: {e}")
-
-    except Exception as e:
-        logger.error(f"Job {report_id} failed: {e}", exc_info=True)
-        job_store.fail(report_id, str(e))
-    finally:
-        if tmp_path and os.path.exists(tmp_path):
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-
-
-async def _check_alert_rules(airframe_label: str, report_id: str, report) -> None:
-    """
-    Evaluate this tagged flight against its airframe's alert rules and fire
-    the configured webhook (if any) for whatever breached. Best-effort —
-    any failure here is logged and swallowed, never allowed to affect the
-    already-completed analysis job.
-    """
-    try:
-        config = airframe_store.get(airframe_label)
-        if not config.alert_rules or not config.webhook_url:
-            return
-        triggered = evaluate_alert_rules(report, config.alert_rules)
-        if not triggered:
-            return
-        loop = asyncio.get_running_loop()
-        sent = await loop.run_in_executor(
-            None, send_alert_webhook, config.webhook_url, airframe_label, report_id, triggered
-        )
-        logger.info(
-            f"Alert webhook for airframe {airframe_label!r} "
-            f"({len(triggered)} rule(s) breached): {'sent' if sent else 'failed'}"
-        )
-    except Exception as e:
-        logger.error(f"Alert rule evaluation failed for airframe {airframe_label!r}: {e}")
+@router.delete(
+    "/dataset/{contribution_id}",
+    tags=["Dataset"],
+    status_code=204,
+    summary="Withdraw a contributed log",
+    responses={404: {"description": "No contribution with that id"}},
+)
+def withdraw_contribution(contribution_id: str) -> None:
+    """Deletes the raw log and its stripped report. The id is the `contribution_id`
+    returned by the upload; it is derived from the log's bytes, so whoever has the
+    log or the id can withdraw it."""
+    # todo: a withdraw that arrives while the analysis is still running 404s, and the
+    # job then saves the contribution anyway; needs a tombstone row
+    if not CONTRIBUTION_ID_RE.match(contribution_id) or not training_data_store.delete(contribution_id):
+        raise HTTPException(status_code=404, detail="No contribution with that id.")

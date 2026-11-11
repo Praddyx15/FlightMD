@@ -1,7 +1,7 @@
 import json
 import logging
-import urllib.request
 import urllib.parse
+import urllib.request
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -9,19 +9,18 @@ logger = logging.getLogger(__name__)
 
 def reverse_geocode(lat: float, lon: float) -> Optional[str]:
     """
-    Resolve GPS coordinates to a human-readable place name via
-    OpenStreetMap's Nominatim (free, no API key). Safe fallback: returns
-    None on error, offline, or missing coordinates — never raises.
+    Place name for a coordinate via OpenStreetMap Nominatim (free, no key).
+    Returns None on any failure; never raises.
     """
-    if not lat or not lon:
+    # 0,0 is what an unset GPS reports
+    if lat is None or lon is None or (lat == 0 and lon == 0):
         return None
 
     params = urllib.parse.urlencode({
         "lat": f"{lat:.5f}",
         "lon": f"{lon:.5f}",
         "format": "jsonv2",
-        "zoom": "10",  # city/town level — precise enough to be useful,
-                       # coarse enough not to look like a street address
+        "zoom": "10",  # town level, not a street address (people share these)
     })
     url = f"https://nominatim.openstreetmap.org/reverse?{params}"
 

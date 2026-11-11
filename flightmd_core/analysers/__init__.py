@@ -6,6 +6,8 @@ from flightmd_core.analysers.gps            import GPSAnalyser
 from flightmd_core.analysers.parameters     import ParameterAnalyser
 from flightmd_core.analysers.motors         import MotorAnalyser
 from flightmd_core.analysers.ascent_profile import AscentProfileAnalyser
+from flightmd_core.analysers.power          import PowerAnalyser
+from flightmd_core.analysers.registry       import load_analysers
 
 __all__ = [
     "OscillationAnalyser",
@@ -16,4 +18,6 @@ __all__ = [
     "ParameterAnalyser",
     "MotorAnalyser",
     "AscentProfileAnalyser",
+    "PowerAnalyser",
+    "load_analysers",
 ]

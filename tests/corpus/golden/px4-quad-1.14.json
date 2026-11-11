@@ -1,0 +1,54 @@
+{
+  "id": "px4-quad-1.14",
+  "generated_with": "1.0.0",
+  "schema_version": "1.7",
+  "score_band": [
+    76.9,
+    86.9
+  ],
+  "score": 81.9,
+  "findings": [
+    "ekf.innovation_ratio|warning",
+    "gps.jamming|warning",
+    "gps.spoofing|warning",
+    "oscillation.rate_p|info",
+    "vibration.elevated|warning"
+  ],
+  "assessed_modules": [
+    "ekf",
+    "gps",
+    "oscillation",
+    "parameters",
+    "power",
+    "vibration"
+  ],
+  "metrics": {
+    "gps.max_hdop": 1.05,
+    "gps.min_satellites": 16.0,
+    "oscillation.pitch_norm_amp": 2101.856,
+    "oscillation.pitch_osc_amp_dps": 9.48,
+    "oscillation.pitch_peak_hz": 1.471,
+    "oscillation.roll_norm_amp": 1893.595,
+    "oscillation.roll_osc_amp_dps": 4.88,
+    "oscillation.roll_peak_hz": 2.022,
+    "oscillation.yaw_norm_amp": 564.384,
+    "oscillation.yaw_osc_amp_dps": 2.57,
+    "oscillation.yaw_peak_hz": 1.287,
+    "parameters.anomaly_count": 0.0,
+    "parameters.param_count": 1107.0,
+    "power.min_vcc_v": 5.048,
+    "power.vcc_range_v": 0.173,
+    "vibration.max_accel_vibration_metric": 4.925,
+    "vibration.max_gyro_vibration_metric": 0.0522,
+    "vibration.total_clip_count": 0.0,
+    "vibration.vibration_vs_limit": 1.004
+  },
+  "metadata": {
+    "source_format": "px4_ulog",
+    "vehicle_type": "Copter",
+    "airframe_name": "Generic Quadcopter",
+    "firmware_version": "1dacb4cdef2d7145754fc788fa8dc482eed74b40",
+    "px4_version": "v1.14.3",
+    "duration_seconds": 230.64
+  }
+}

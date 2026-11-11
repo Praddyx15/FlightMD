@@ -1,8 +1,6 @@
 """
-Tests for the analyse.py alert-checking hook — evaluates a completed
-tagged flight against its airframe's alert rules and fires the configured
-webhook. Isolated from the actual analysis pipeline (that's covered by
-test_sample_logs.py / test_api.py) and from real network calls.
+The alert hook in api/analysis.py: a finished tagged flight is checked against
+its airframe's rules and the webhook fires for breaches. No real network calls.
 """
 
 import os
@@ -12,7 +10,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-import api.routers.analyse as analyse_module
+import api.analysis as analyse_module
+from api import db
 from api.airframe_store import AirframeConfig, AirframeConfigStore, AlertRule
 from flightmd_core.models.findings import AnalyserResult, FlightMDReport
 from flightmd_core.models.metadata import FlightMetadata
@@ -32,14 +31,16 @@ def make_report(score=60.0) -> FlightMDReport:
 
 
 @pytest.fixture
-def store(tmp_path):
-    return AirframeConfigStore(data_dir=str(tmp_path))
+def store(tmp_path, monkeypatch):
+    d = db.Database(str(tmp_path / "data"))
+    monkeypatch.setattr(db, "_db", d)
+    yield AirframeConfigStore()
+    d.close()
 
 
 class TestCheckAlertRules:
     @pytest.mark.asyncio
     async def test_no_rules_configured_does_nothing(self, store, monkeypatch):
-        monkeypatch.setattr(analyse_module, "airframe_store", store)
         calls = []
         monkeypatch.setattr(analyse_module, "send_alert_webhook", lambda *a: calls.append(a) or True)
 
@@ -53,7 +54,6 @@ class TestCheckAlertRules:
             alert_rules=[AlertRule(metric="overall_score", comparison="lt", threshold=90.0)],
         )
         store.save(config)
-        monkeypatch.setattr(analyse_module, "airframe_store", store)
         calls = []
         monkeypatch.setattr(analyse_module, "send_alert_webhook", lambda *a: calls.append(a) or True)
 
@@ -68,7 +68,6 @@ class TestCheckAlertRules:
             webhook_url="https://example.com/hook",
         )
         store.save(config)
-        monkeypatch.setattr(analyse_module, "airframe_store", store)
         calls = []
         monkeypatch.setattr(analyse_module, "send_alert_webhook", lambda *a: calls.append(a) or True)
 
@@ -90,7 +89,6 @@ class TestCheckAlertRules:
             webhook_url="https://example.com/hook",
         )
         store.save(config)
-        monkeypatch.setattr(analyse_module, "airframe_store", store)
         calls = []
         monkeypatch.setattr(analyse_module, "send_alert_webhook", lambda *a: calls.append(a) or True)
 
@@ -105,11 +103,10 @@ class TestCheckAlertRules:
             webhook_url="https://example.com/hook",
         )
         store.save(config)
-        monkeypatch.setattr(analyse_module, "airframe_store", store)
 
         def boom(*a):
             raise RuntimeError("network exploded")
         monkeypatch.setattr(analyse_module, "send_alert_webhook", boom)
 
-        # Must not raise — alert failures can never break the analysis job.
+        # must not raise: an alert failure can't break the finished job
         await analyse_module._check_alert_rules("Quad-1", "r1", make_report(score=60.0))

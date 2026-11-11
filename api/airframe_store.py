@@ -1,47 +1,52 @@
 """
-AirframeConfigStore — per-airframe configuration: maintenance log, pre-flight
-checklist, and alert rules/webhook for cross-flight monitoring.
+Per-airframe settings that outlive any single flight: maintenance log,
+pre-flight checklist, alert rules and webhook.
 
-This is deliberately separate from JobStore (api/storage.py): a Job is a
-single flight's analysis result; an AirframeConfig is metadata about the
-*airframe itself* that persists across many flights. Airframes only exist
-here once someone tags a flight with that label — there's no separate
-"register an airframe" step.
+There's no "register an airframe" step. A label exists once someone tags a
+flight with it or writes its config, and the first of those claims it: the
+caller gets a random airframe token back once, and every later read or write
+has to present it. Only a sha256 of the token is stored.
+
+Lives in the `airframes` table (api/db.py); the old one-JSON-file-per-airframe
+layout is imported once at startup by api/legacy_import.py.
 """
 
+import hashlib
+import hmac
 import json
 import logging
-import os
 import re
-import threading
+import secrets
+import time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from typing import Optional
 
-logger = logging.getLogger(__name__)
+from api import db
 
-DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "data", "airframes"))
+logger = logging.getLogger(__name__)
 
 VALID_COMPARISONS = ("lt", "gt")
 
-# key_metrics are namespaced "{analyser}.{metric}" (e.g. "battery.sag_per_cell_v");
-# "overall_score" and "module.<name>" (e.g. "module.battery") are also valid.
+# "overall_score", "module.<analyser>" or "<analyser>.<key_metric>"
 METRIC_NAME_RE = re.compile(r"^[a-zA-Z0-9_.]{1,64}$")
+
+_UNSET = object()
 
 
 @dataclass
 class MaintenanceEntry:
-    date: str                  # ISO 8601 date, e.g. "2026-07-05"
-    maintenance_type: str      # e.g. "Propeller replacement", "Full inspection"
+    date: str                  # ISO 8601, e.g. "2026-07-05"
+    maintenance_type: str
     notes: str = ""
 
 
 @dataclass
 class AlertRule:
-    metric: str          # "overall_score" | "module.<analyser>" | "<analyser>.<key_metric>"
-    comparison: str      # "lt" (alert if value < threshold) | "gt" (alert if value > threshold)
+    metric: str
+    comparison: str      # "lt" alerts when value < threshold, "gt" when value > threshold
     threshold: float
-    label: str = ""      # human-readable description shown in the alert message
+    label: str = ""      # shown in the alert message
 
     def __post_init__(self):
         if self.comparison not in VALID_COMPARISONS:
@@ -58,8 +63,10 @@ class AirframeConfig:
     maintenance_interval_hours: Optional[float] = None
     alert_rules: list[AlertRule] = field(default_factory=list)
     webhook_url: Optional[str] = None
+    token_hash: Optional[str] = None
 
     def to_dict(self) -> dict:
+        # what clients see; token_hash stays out of it
         return {
             "airframe_label": self.airframe_label,
             "checklist_items": self.checklist_items,
@@ -68,6 +75,9 @@ class AirframeConfig:
             "alert_rules": [asdict(r) for r in self.alert_rules],
             "webhook_url": self.webhook_url,
         }
+
+    def to_record(self) -> dict:
+        return {**self.to_dict(), "token_hash": self.token_hash}
 
     @classmethod
     def from_dict(cls, data: dict) -> "AirframeConfig":
@@ -78,82 +88,111 @@ class AirframeConfig:
             maintenance_interval_hours=data.get("maintenance_interval_hours"),
             alert_rules=[AlertRule(**r) for r in data.get("alert_rules", [])],
             webhook_url=data.get("webhook_url"),
+            token_hash=data.get("token_hash"),
         )
 
 
-def _slugify(label: str) -> str:
-    """Filesystem-safe slug for the config filename. The original label
-    (with its real casing/spacing) is preserved inside the stored JSON —
-    this only affects the on-disk filename."""
-    slug = re.sub(r"[^a-zA-Z0-9_-]+", "_", label.strip())
-    return slug[:60] or "unnamed"
+class TokenError(Exception):
+    """reason is "unclaimed", "missing" or "invalid"."""
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
+def hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 class AirframeConfigStore:
-    def __init__(self, data_dir: str = DATA_DIR):
-        self.data_dir = data_dir
-        self._lock = threading.Lock()
-        os.makedirs(self.data_dir, exist_ok=True)
+    """One row per airframe in the `airframes` table: the config as JSON plus the token hash."""
 
-    def _path(self, airframe_label: str) -> str:
-        return os.path.join(self.data_dir, f"{_slugify(airframe_label)}.json")
+    def _get(self, c, airframe_label: str) -> AirframeConfig:
+        row = c.execute(
+            "SELECT config_json, token_hash FROM airframes WHERE label = ?", (airframe_label,)
+        ).fetchone()
+        if row is None:
+            return AirframeConfig(airframe_label=airframe_label)
+        # a row that won't parse raises instead of coming back empty, so the
+        # next save can't overwrite someone's real data
+        data = json.loads(row["config_json"])
+        data["airframe_label"] = airframe_label
+        data["token_hash"] = row["token_hash"]
+        return AirframeConfig.from_dict(data)
+
+    def _save(self, c, config: AirframeConfig) -> None:
+        now = time.time()
+        c.execute(
+            "INSERT INTO airframes (label, token_hash, config_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"
+            " ON CONFLICT (label) DO UPDATE SET token_hash = excluded.token_hash,"
+            " config_json = excluded.config_json, updated_at = excluded.updated_at",
+            (config.airframe_label, config.token_hash, json.dumps(config.to_dict()), now, now),
+        )
 
     def get(self, airframe_label: str) -> AirframeConfig:
-        """Returns a default (empty) config if none exists yet — airframes
-        aren't explicitly created, they come into being the first time
-        someone configures or tags one."""
-        path = self._path(airframe_label)
-        with self._lock:
-            if not os.path.exists(path):
-                return AirframeConfig(airframe_label=airframe_label)
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                return AirframeConfig.from_dict(data)
-            except Exception as e:
-                logger.error(f"Failed to load airframe config for {airframe_label!r}: {e}")
-                return AirframeConfig(airframe_label=airframe_label)
+        """Stored config, or an empty unclaimed one for a label nobody has used yet."""
+        return self._get(db.get().conn(), airframe_label)
 
     def save(self, config: AirframeConfig) -> None:
-        path = self._path(config.airframe_label)
-        with self._lock:
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(config.to_dict(), f, indent=2)
+        with db.get().transaction() as c:
+            self._save(c, config)
+
+    def authorise(self, airframe_label: str, token: Optional[str], claim: bool = False) -> Optional[str]:
+        """Check `token` for this airframe, raising TokenError if it doesn't fit.
+
+        With claim=True an unclaimed airframe is claimed instead, and the new
+        token is returned; that's the only time it is ever available.
+        """
+        # a claim writes, so it takes the write lock before reading: two
+        # first uploads racing can't both walk away with a token
+        with db.get().transaction(immediate=claim) as c:
+            config = self._get(c, airframe_label)
+            if config.token_hash is None:
+                if not claim:
+                    raise TokenError("unclaimed")
+                new_token = secrets.token_urlsafe(32)
+                config.token_hash = hash_token(new_token)
+                self._save(c, config)
+                return new_token
+
+            if not token:
+                raise TokenError("missing")
+            if not hmac.compare_digest(config.token_hash, hash_token(token)):
+                raise TokenError("invalid")
+            return None
 
     def add_maintenance_entry(self, airframe_label: str, entry: MaintenanceEntry) -> AirframeConfig:
-        config = self.get(airframe_label)
-        config.maintenance_log.append(entry)
-        config.maintenance_log.sort(key=lambda m: m.date)
-        self.save(config)
-        return config
+        with db.get().transaction() as c:
+            config = self._get(c, airframe_label)
+            config.maintenance_log.append(entry)
+            config.maintenance_log.sort(key=lambda m: m.date)
+            self._save(c, config)
+            return config
 
     def update_settings(
         self,
         airframe_label: str,
-        checklist_items: Optional[list[str]] = None,
-        maintenance_interval_hours: Optional[float] = None,
-        alert_rules: Optional[list[AlertRule]] = None,
-        webhook_url: Optional[str] = None,
+        checklist_items=_UNSET,
+        maintenance_interval_hours=_UNSET,
+        alert_rules=_UNSET,
+        webhook_url=_UNSET,
     ) -> AirframeConfig:
-        config = self.get(airframe_label)
-        if checklist_items is not None:
-            config.checklist_items = checklist_items
-        if maintenance_interval_hours is not None:
-            config.maintenance_interval_hours = maintenance_interval_hours
-        if alert_rules is not None:
-            config.alert_rules = alert_rules
-        if webhook_url is not None:
-            config.webhook_url = webhook_url or None
-        self.save(config)
-        return config
+        """Change only the fields passed. Passing None clears a field."""
+        with db.get().transaction() as c:
+            config = self._get(c, airframe_label)
+            if checklist_items is not _UNSET:
+                config.checklist_items = checklist_items or []
+            if maintenance_interval_hours is not _UNSET:
+                config.maintenance_interval_hours = maintenance_interval_hours
+            if alert_rules is not _UNSET:
+                config.alert_rules = alert_rules or []
+            if webhook_url is not _UNSET:
+                config.webhook_url = webhook_url or None
+            self._save(c, config)
+            return config
 
 
 def compute_maintenance_status(config: AirframeConfig, flights_with_ts: list[tuple[float, object]]) -> dict:
-    """
-    Shared by the airframe config endpoint and the PDF export — both need
-    the same total-hours / hours-since-last-maintenance / due-flag
-    computation from an airframe's flight history.
-    """
     total_hours = sum(r.metadata.duration_seconds for _, r in flights_with_ts) / 3600.0
 
     last_maintenance_date = config.maintenance_log[-1].date if config.maintenance_log else None
@@ -180,15 +219,10 @@ def compute_maintenance_status(config: AirframeConfig, flights_with_ts: list[tup
 
 
 def extract_metric_value(report, metric: str) -> Optional[float]:
-    """
-    Resolve an alert-rule metric name against a FlightMDReport:
-      - "overall_score"        -> report.overall_score
-      - "module.<analyser>"    -> that analyser's health_score
-      - "<analyser>.<key>"     -> that analyser's key_metrics[key]
-    Returns None if the metric doesn't apply to this report (e.g. a
-    module that was skipped, or a key_metric that format didn't produce)
-    — never raises, since alert rules may reference metrics an older or
-    format-limited report doesn't have.
+    """Value of an alert-rule metric for this report, or None if the report doesn't have it.
+
+    Rules can name metrics that an older or format-limited report never
+    produced, so a miss is normal and never raises.
     """
     if metric == "overall_score":
         return report.overall_score
@@ -211,9 +245,7 @@ def extract_metric_value(report, metric: str) -> Optional[float]:
 
 
 def evaluate_alert_rules(report, alert_rules: list[AlertRule]) -> list[dict]:
-    """Returns a list of {rule, value} dicts for every rule the report's
-    metrics actually breach. A rule referencing a metric this report
-    doesn't have is silently skipped, not treated as a breach."""
+    """[{rule, value}] for every rule the report breaches. Missing metrics are skipped."""
     triggered = []
     for rule in alert_rules:
         value = extract_metric_value(report, rule.metric)
@@ -225,5 +257,4 @@ def evaluate_alert_rules(report, alert_rules: list[AlertRule]) -> list[dict]:
     return triggered
 
 
-# Global singleton — imported by routers
 airframe_store = AirframeConfigStore()

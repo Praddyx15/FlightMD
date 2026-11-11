@@ -1,20 +1,34 @@
 "use client";
 
 import { useCallback } from "react";
-import { useDropzone } from "react-dropzone";
-import { formatFileSize } from "@/lib/utils";
+import { useDropzone, type FileRejection } from "react-dropzone";
+import { Upload } from "lucide-react";
+import { useTranslations } from "next-intl";
+import { cn } from "@/lib/utils";
 
 interface Props {
   onFile: (file: File) => void;
   disabled: boolean;
 }
 
-// Overridable per-environment via NEXT_PUBLIC_MAX_FILE_SIZE_MB (e.g. for local
-// testing with larger files) — defaults to the same 50MB the hosted API caps
-// uploads at, so the two stay in sync unless deliberately overridden.
-const MAX_FILE_SIZE_MB = Number(process.env.NEXT_PUBLIC_MAX_FILE_SIZE_MB) || 50;
+// same default as the hosted API; override per deploy with NEXT_PUBLIC_MAX_FILE_SIZE_MB
+export const MAX_FILE_SIZE_MB = Number(process.env.NEXT_PUBLIC_MAX_FILE_SIZE_MB) || 50;
+// .gz/.zip hold one log; the API unpacks them (with its own size cap)
+export const LOG_EXTENSIONS = [".ulg", ".ulog", ".bin", ".log", ".tlog", ".bbl", ".bfl", ".txt", ".dat", ".gz", ".zip"];
+
+const CHIPS = ["px4", "ardupilot", "mavlink", "betaflight", "dji", "compressed"] as const;
 
 export function DropZone({ onFile, disabled }: Props) {
+  const t = useTranslations("dropzone");
+
+  const rejectionText = (r: FileRejection) => {
+    const code = r.errors[0]?.code;
+    if (code === "file-too-large") return t("tooLarge", { name: r.file.name, mb: MAX_FILE_SIZE_MB });
+    if (code === "file-invalid-type") return t("invalidType", { name: r.file.name });
+    if (code === "too-many-files") return t("tooMany");
+    return r.errors[0]?.message ?? t("rejected");
+  };
+
   const onDrop = useCallback(
     (accepted: File[]) => {
       if (accepted.length > 0) onFile(accepted[0]);
@@ -22,71 +36,39 @@ export function DropZone({ onFile, disabled }: Props) {
     [onFile]
   );
 
-  const { getRootProps, getInputProps, isDragActive, acceptedFiles, fileRejections } =
-    useDropzone({
-      onDrop,
-      accept: {
-        "application/octet-stream": [".ulg", ".ulog", ".bin", ".tlog"],
-      },
-      maxFiles: 1,
-      maxSize: MAX_FILE_SIZE_MB * 1024 * 1024,
-      disabled,
-    });
-
-  const selectedFile = acceptedFiles[0];
-  const rejected = fileRejections[0];
+  const { getRootProps, getInputProps, isDragActive, fileRejections } = useDropzone({
+    onDrop,
+    accept: { "application/octet-stream": LOG_EXTENSIONS },
+    maxFiles: 1,
+    maxSize: MAX_FILE_SIZE_MB * 1024 * 1024,
+    disabled,
+  });
 
   return (
-    <div
-      {...getRootProps()}
-      className="relative cursor-pointer rounded-xl border-2 border-dashed p-10 text-center transition-all duration-200"
-      style={{
-        borderColor: isDragActive ? "var(--accent)" : "rgba(255,255,255,0.12)",
-        background: isDragActive ? "rgba(142,201,112,0.05)" : "transparent",
-      }}
-    >
-      <input {...getInputProps()} />
+    <div>
+      <div
+        {...getRootProps()}
+        className={cn(
+          "flex cursor-pointer flex-col items-center rounded border-2 border-dashed px-4 py-10 text-center transition-colors",
+          isDragActive ? "border-accent bg-accent/10" : "border-border hover:border-fg-subtle",
+          disabled && "cursor-not-allowed opacity-50"
+        )}
+      >
+        <input {...getInputProps()} aria-label={t("inputLabel")} />
+        <Upload aria-hidden className="mb-3 h-6 w-6 text-accent" />
+        <p className="font-medium">{isDragActive ? t("dropHere") : t("prompt")}</p>
+        <ul className="mt-3 flex flex-wrap justify-center gap-1.5 text-2xs text-fg-muted">
+          {CHIPS.map((c) => (
+            <li key={c} className="rounded-sm border px-1.5 py-px">{t(`chips.${c}`)}</li>
+          ))}
+          <li className="num rounded-sm border px-1.5 py-px">{t("maxSize", { mb: MAX_FILE_SIZE_MB })}</li>
+        </ul>
+      </div>
 
-      {selectedFile ? (
-        <div>
-          <div className="text-3xl mb-3">📄</div>
-          <div className="font-semibold text-white/90 mono">{selectedFile.name}</div>
-          <div className="text-sm text-white/50 mt-1">{formatFileSize(selectedFile.size)}</div>
-          <div className="mt-3 text-xs text-white/70">Drop another file to replace</div>
-        </div>
-      ) : (
-        <div>
-          <div className="text-4xl mb-4">{isDragActive ? "📂" : "📁"}</div>
-          <p className="text-white font-medium">
-            {isDragActive
-              ? "Drop your flight log here…"
-              : "Drag & drop your flight log here"}
-          </p>
-          <p className="text-white/80 text-sm mt-1">or click to browse</p>
-          <p className="text-white/80 text-xs mt-4">
-            PX4 (.ulg) · ArduPilot (.bin) · MAVLink telemetry (.tlog) · Max {MAX_FILE_SIZE_MB}MB
-          </p>
-        </div>
-      )}
-
-      {rejected && (
-        <div className="mt-4 text-xs text-red-400">
-          {rejected.errors[0]?.message ?? "File rejected. Check format and size."}
-        </div>
-      )}
-
-      {/* Analyse button */}
-      {selectedFile && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onFile(selectedFile);
-          }}
-          className="mt-6 px-8 py-3 rounded-lg font-semibold text-sm transition-all duration-200 hover:opacity-90 active:scale-95"
-          style={{ background: "var(--accent)", color: "var(--bg-primary)" }}
-        >
-          Analyse Flight Log →
-        </button>
+      {fileRejections[0] && (
+        <p role="alert" className="mt-2 text-xs text-critical">
+          {rejectionText(fileRejections[0])}
+        </p>
       )}
     </div>
   );

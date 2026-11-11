@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { pdfExportUrl, jsonExportUrl, gpxExportUrl, kmlExportUrl } from "@/lib/api";
-import { copyToClipboard } from "@/lib/utils";
+import { Download, FileJson, FileText, Globe, Route, type LucideIcon } from "lucide-react";
+import { useTranslations } from "next-intl";
+import { ApiError, downloadFile, gpxExportUrl, jsonExportUrl, kmlExportUrl, pdfExportUrl } from "@/lib/api";
+import { useErrorText } from "@/lib/errors";
 
 interface Props {
   reportId: string;
@@ -10,83 +12,61 @@ interface Props {
   hasGpsPath?: boolean;
 }
 
-export function ExportBar({ reportId, fileName, hasGpsPath }: Props) {
-  const [copiedShare, setCopiedShare] = useState(false);
+type Kind = "pdf" | "json" | "gpx" | "kml";
 
-  async function handleShare() {
-    await copyToClipboard(window.location.href);
-    setCopiedShare(true);
-    setTimeout(() => setCopiedShare(false), 2000);
+export function ExportBar({ reportId, fileName, hasGpsPath }: Props) {
+  const t = useTranslations("export");
+  const errText = useErrorText();
+  const [busy, setBusy] = useState<Kind | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const base = fileName.replace(/\.[^.]+$/, "") || `flightmd_${reportId.slice(0, 8)}`;
+
+  const items: { key: Kind; url: string; file: string; Icon: LucideIcon }[] = [
+    { key: "pdf", url: pdfExportUrl(reportId), file: `${base}_flightmd.pdf`, Icon: FileText },
+    { key: "json", url: jsonExportUrl(reportId), file: `${base}_flightmd.json`, Icon: FileJson },
+  ];
+  if (hasGpsPath) {
+    items.push(
+      { key: "gpx", url: gpxExportUrl(reportId), file: `${base}.gpx`, Icon: Route },
+      { key: "kml", url: kmlExportUrl(reportId), file: `${base}.kml`, Icon: Globe }
+    );
+  }
+
+  async function get(key: Kind, url: string, file: string) {
+    setBusy(key);
+    setError(null);
+    setNote(null);
+    try {
+      await downloadFile(url, file);
+    } catch (e) {
+      // 501: this server has no PDF renderer; the print stylesheet is the same layout
+      if (key === "pdf" && e instanceof ApiError && e.status === 501) {
+        setNote(t("pdfFallback"));
+        window.print();
+      } else {
+        setError(errText(e, "download"));
+      }
+    } finally {
+      setBusy(null);
+    }
   }
 
   return (
-    <section>
-      <h2 className="text-lg font-bold text-white/80 mb-4">Export</h2>
-      <div
-        className="rounded-2xl border border-border bg-card/85 p-4 flex flex-wrap gap-3 shadow-md backdrop-blur-md"
-      >
-        {/* PDF */}
-        <a
-          href={pdfExportUrl(reportId)}
-          download={`flightmd_report_${reportId.slice(0, 8)}.pdf`}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all hover:opacity-90 hover:scale-[1.01]"
-          style={{ background: "var(--bg-elevated)", color: "var(--text-primary)", border: "1px solid var(--border)" }}
-        >
-          📄 Download PDF
-          <span className="text-xs opacity-50">printable record</span>
-        </a>
-
-        {/* JSON */}
-        <a
-          href={jsonExportUrl(reportId)}
-          download={`flightmd_report_${reportId.slice(0, 8)}.json`}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all hover:opacity-90 hover:scale-[1.01]"
-          style={{ background: "var(--bg-elevated)", color: "var(--text-primary)", border: "1px solid var(--border)" }}
-        >
-          📊 Download JSON
-          <span className="text-xs opacity-50">raw data</span>
-        </a>
-
-        {/* GPX */}
-        {hasGpsPath && (
-          <a
-            href={gpxExportUrl(reportId)}
-            download={`flightmd_track_${reportId.slice(0, 8)}.gpx`}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all hover:opacity-90 hover:scale-[1.01]"
-            style={{ background: "var(--bg-elevated)", color: "var(--text-primary)", border: "1px solid var(--border)" }}
-          >
-            🛰️ Download GPX
-            <span className="text-xs opacity-50">flight path</span>
-          </a>
-        )}
-
-        {/* KML */}
-        {hasGpsPath && (
-          <a
-            href={kmlExportUrl(reportId)}
-            download={`flightmd_track_${reportId.slice(0, 8)}.kml`}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all hover:opacity-90 hover:scale-[1.01]"
-            style={{ background: "var(--bg-elevated)", color: "var(--text-primary)", border: "1px solid var(--border)" }}
-          >
-            🌍 Download KML
-            <span className="text-xs opacity-50">Google Earth</span>
-          </a>
-        )}
-
-        {/* Share */}
-        <button
-          onClick={handleShare}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all hover:scale-[1.01]"
-          style={{
-            background: copiedShare ? "rgba(13,217,124,0.15)" : "var(--bg-elevated)",
-            color: copiedShare ? "#0DD97C" : "var(--text-primary)",
-            border: `1px solid ${copiedShare ? "#0DD97C55" : "var(--border)"}`,
-          }}
-        >
-          {copiedShare ? "✓ Link copied!" : "🔗 Share Report"}
-          {!copiedShare && <span className="text-xs opacity-50">expires in 1h</span>}
-        </button>
+    <section aria-labelledby="export-h" className="no-print space-y-3">
+      <h2 id="export-h" className="text-base font-semibold">{t("title")}</h2>
+      <div className="flex flex-wrap gap-2">
+        {items.map(({ key, url, file, Icon }) => (
+          <button key={key} type="button" onClick={() => get(key, url, file)} disabled={busy !== null} className="btn">
+            {busy === key ? <Download aria-hidden className="h-4 w-4 animate-pulse" /> : <Icon aria-hidden className="h-4 w-4" />}
+            {key.toUpperCase()}
+            <span className="text-xs text-fg-muted">{t(`hint.${key}`)}</span>
+          </button>
+        ))}
       </div>
+      {error && <p role="alert" className="text-xs text-critical">{error}</p>}
+      {note && <p role="status" className="text-xs text-fg-muted">{note}</p>}
+      <p className="text-xs text-fg-muted">{t("note")}</p>
     </section>
   );
 }

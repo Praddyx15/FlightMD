@@ -1,7 +1,3 @@
-"""
-Shared pytest fixtures for FlightMD test suite.
-"""
-
 import os
 import numpy as np
 import pandas as pd
@@ -9,13 +5,36 @@ import pytest
 import pytest_asyncio
 
 from httpx import AsyncClient
-from flightmd_core.models.findings import (
-    Finding, Category, Severity, AnalyserResult
-)
 from flightmd_core.models.metadata import FlightMetadata
 
 
-# ── Fixture: minimal FlightMetadata ─────────────────────────────────────────
+def pytest_addoption(parser):
+    parser.addoption("--update-golden", action="store_true", default=False,
+                     help="corpus tests: write tests/corpus/golden/<id>.json instead of comparing")
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "corpus: real public logs, downloaded on first use (pytest -m corpus)")
+
+
+def pytest_collection_modifyitems(config, items):
+    # the corpus downloads a few hundred MB, so it only runs when asked for
+    if "corpus" in (config.getoption("-m") or "") or config.getoption("--update-golden"):
+        return
+    skip = pytest.mark.skip(reason="corpus test: run with -m corpus")
+    for item in items:
+        if "corpus" in item.keywords:
+            item.add_marker(skip)
+
+
+@pytest.fixture(autouse=True)
+def _offline_env(monkeypatch):
+    # no Nominatim / Open-Meteo / AI calls from the test suite
+    monkeypatch.setenv("FLIGHTMD_OFFLINE", "1")
+    # and no topic cache unless a test turns it on; a cached parse would skip the
+    # parser (and its timeout) in the next test
+    monkeypatch.setenv("FLIGHTMD_CACHE", "0")
+
 
 @pytest.fixture
 def sample_metadata() -> FlightMetadata:
@@ -30,15 +49,13 @@ def sample_metadata() -> FlightMetadata:
         max_speed_ms=8.5,
         available_topics=[
             "vehicle_angular_velocity",
-            "sensor_accel_0",
+            "sensor_accel",
             "estimator_status",
             "battery_status",
             "vehicle_gps_position",
         ],
     )
 
-
-# ── Fixture: clean angular velocity DataFrame (no oscillation) ───────────────
 
 @pytest.fixture
 def clean_angular_velocity() -> pd.DataFrame:
@@ -53,8 +70,6 @@ def clean_angular_velocity() -> pd.DataFrame:
         "yawspeed":   noise * 0.5,
     })
 
-
-# ── Fixture: oscillating angular velocity DataFrame ──────────────────────────
 
 @pytest.fixture
 def oscillating_angular_velocity() -> pd.DataFrame:
@@ -72,8 +87,6 @@ def oscillating_angular_velocity() -> pd.DataFrame:
     })
 
 
-# ── Fixture: high-vibration IMU ──────────────────────────────────────────────
-
 @pytest.fixture
 def high_vibration_accel() -> pd.DataFrame:
     n = 2000
@@ -89,8 +102,6 @@ def high_vibration_accel() -> pd.DataFrame:
     })
 
 
-# ── Fixture: healthy battery DataFrame ──────────────────────────────────────
-
 @pytest.fixture
 def healthy_battery() -> pd.DataFrame:
     n = 3000
@@ -105,8 +116,6 @@ def healthy_battery() -> pd.DataFrame:
     })
 
 
-# ── Fixture: healthy GPS DataFrame ──────────────────────────────────────────
-
 @pytest.fixture
 def healthy_gps() -> pd.DataFrame:
     n = 1000
@@ -117,11 +126,9 @@ def healthy_gps() -> pd.DataFrame:
         "satellites_used": np.full(n, 14),
         "hdop":           np.full(n, 0.9),
         "jamming_indicator": np.zeros(n, dtype=int),
-        "spoofing_state": np.full(n, 2),
+        "spoofing_state": np.full(n, 1),  # PX4 sensor_gps: 1 = OK
     })
 
-
-# ── FastAPI test client ──────────────────────────────────────────────────────
 
 @pytest_asyncio.fixture
 async def api_client():
@@ -132,9 +139,6 @@ async def api_client():
         yield client
 
 
-# ── Minimal ULog magic bytes file ────────────────────────────────────────────
-
 @pytest.fixture
 def ulg_magic_bytes() -> bytes:
-    """Returns minimal valid ULog header magic bytes."""
-    return b"\x55\x4C\x6F\x67\x01\x00\x00\x00"
+    return b"ULog\x01\x12\x35\x01"

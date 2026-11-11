@@ -1,318 +1,265 @@
-import React, { useState } from "react";
-import { FlightMDReport, Finding } from "../../lib/types";
-import { askAI } from "../../lib/api";
-import { Search, Sparkles, AlertCircle, CheckCircle2, ArrowRight } from "lucide-react";
+"use client";
+
+import { useRef, useState } from "react";
+import { ArrowRight, Search, Sparkles } from "lucide-react";
+import { useTranslations } from "next-intl";
+import type { Category, Finding, FlightMDReport, ParamRecommendation } from "@/lib/types";
+import { ASK_MAX_CHARS, askAI } from "@/lib/api";
+import { fmtParam, fmtScore, type UnitSystem } from "@/lib/format";
+import type { Labels } from "@/lib/metricLabels";
+import { useLabels } from "@/lib/useLabels";
+import { useErrorText } from "@/lib/errors";
+import { useUnits } from "@/lib/units";
+import { cn, isAssessed } from "@/lib/utils";
+import { SeverityIcon } from "@/components/shared/SeverityBadge";
 
 interface QAAssistantProps {
   report: FlightMDReport;
 }
 
-interface QAResponse {
+interface QAEntry {
+  id: number;
   query: string;
   answer: string;
-  matchedFindings: Finding[];
-  matchedParams: any[];
-  aiPowered?: boolean;
+  lines?: string[];
+  findings: Finding[];
+  params: ParamRecommendation[];
+  source: "search" | "ai" | "error";
+}
+
+type Translate = (key: string, values?: Record<string, string | number>) => string;
+
+// keyword matching stays English for now: the words people type about drones mostly are
+const TOPICS: [Category, RegExp][] = [
+  ["oscillation", /oscillat|wobbl|shak|pid|tun/],
+  ["vibration", /vibrat|clip|imu|accel/],
+  ["ekf", /ekf|estimator|innovation/],
+  // before battery, which also matches "power"
+  ["power", /vcc|brownout|power supply|board volt/],
+  ["battery", /batter|voltage|sag|power|cell/],
+  ["gps", /gps|satellite|hdop|fix|jamm|spoof/],
+  ["motors", /motor|esc|rpm|prop/],
+];
+
+const PRESETS = ["vibration", "battery", "gps", "params"] as const;
+
+// Only says what the report itself contains: module score, findings, key_metrics.
+export function searchReport(
+  report: FlightMDReport,
+  text: string,
+  t: Translate,
+  labels: Labels,
+  units: UnitSystem = "metric"
+): Omit<QAEntry, "id" | "query" | "source"> {
+  const q = text.toLowerCase();
+
+  if (/param|change|recommend|setting/.test(q)) {
+    const params = report.param_change_sheet;
+    return { answer: t("answer.params", { count: params.length }), findings: [], params };
+  }
+
+  const topic = TOPICS.find(([, re]) => re.test(q))?.[0];
+  if (topic) {
+    const label = labels.module(topic);
+    const result = report.analyser_results.find((r) => r.analyser === topic);
+    const findings = report.findings.filter((f) => f.category === topic);
+    if (!result) return { answer: t("answer.noCheck", { label }), findings, params: [] };
+    if (!isAssessed(result)) {
+      return {
+        answer: result.skip_reason
+          ? t("answer.notAssessedBecause", { label, reason: result.skip_reason })
+          : t("answer.notAssessed", { label }),
+        findings: [],
+        params: [],
+      };
+    }
+    const lines = Object.entries(result.key_metrics).map(
+      ([k, v]) => `${labels.metric(`${topic}.${k}`, units).label}: ${labels.format(`${topic}.${k}`, v, units)}`
+    );
+    const answer = findings.length
+      ? t("answer.module", { label, score: fmtScore(result.health_score), count: findings.length })
+      : t("answer.moduleClean", { label, score: fmtScore(result.health_score) });
+    return { answer, lines, findings, params: [] };
+  }
+
+  const findings = report.findings.filter((f) =>
+    [f.title, f.plain_english, f.recommendation].some((s) => s.toLowerCase().includes(q))
+  );
+  const params = report.param_change_sheet.filter(
+    (p) => p.param_name.toLowerCase().includes(q) || p.reason.toLowerCase().includes(q)
+  );
+  return {
+    answer: findings.length || params.length ? t("answer.matches", { text }) : t("answer.nothing", { text }),
+    findings,
+    params,
+  };
 }
 
 export default function QAAssistant({ report }: QAAssistantProps) {
+  const t = useTranslations("qa");
+  const labels = useLabels();
+  const units = useUnits();
+  const errText = useErrorText();
   const [query, setQuery] = useState("");
-  const [history, setHistory] = useState<QAResponse[]>([]);
+  const [history, setHistory] = useState<QAEntry[]>([]);
   const [useAI, setUseAI] = useState(false);
   const [aiUnavailable, setAiUnavailable] = useState(false);
   const [thinking, setThinking] = useState(false);
+  const nextId = useRef(0);
 
-  const handleSearch = async (text: string) => {
-    if (!text.trim()) return;
+  const aiOn = useAI && !aiUnavailable;
 
-    if (useAI && !aiUnavailable) {
+  function push(entry: Omit<QAEntry, "id">) {
+    setHistory((prev) => [...prev, { ...entry, id: nextId.current++ }]);
+  }
+
+  async function ask(text: string) {
+    const q = text.trim();
+    if (!q) return;
+    setQuery("");
+
+    if (aiOn) {
       setThinking(true);
       try {
-        const result = await askAI(report.report_id, text);
-        if (!result.configured) {
-          // Backend has no AI key configured — fall back to local search
-          // for this and future questions in this session.
-          setAiUnavailable(true);
-        } else {
-          setHistory((prev) => [
-            ...prev,
-            {
-              query: text,
-              answer: result.answer || "The AI assistant did not return an answer.",
-              matchedFindings: [],
-              matchedParams: [],
-              aiPowered: true,
-            },
-          ]);
-          setQuery("");
-          setThinking(false);
+        const res = await askAI(report.report_id, q);
+        if (res.configured) {
+          push({ query: q, answer: res.answer || t("noAnswer"), findings: [], params: [], source: "ai" });
           return;
         }
-      } catch {
-        // Network/server error — fall back to local keyword search below.
+        // server has no AI key -> plain search for the rest of the session
         setAiUnavailable(true);
-      }
-      setThinking(false);
-    }
-
-    handleLocalSearch(text);
-  };
-
-  const handleLocalSearch = (text: string) => {
-    const lowerQuery = text.toLowerCase();
-    let answer = "";
-    let matchedFindings: Finding[] = [];
-    let matchedParams: any[] = [];
-
-    // Rule-based responses for PX4 domain
-    if (lowerQuery.includes("oscillation") || lowerQuery.includes("wobble") || lowerQuery.includes("shake")) {
-      const oscResult = report.analyser_results.find(r => r.analyser === "OscillationAnalyser");
-      matchedFindings = report.findings.filter(f => f.category === "oscillation");
-      const score = oscResult ? oscResult.health_score : 100;
-
-      answer = `Oscillation Analysis (Module Health: ${score}/100): `;
-      if (matchedFindings.length > 0) {
-        answer += `Detected active oscillations. Standard causes include loose airframe joints, incorrect PID gains (MC_ROLLRATE_P, MC_PITCHRATE_P), or excessive actuator lag.`;
-      } else {
-        answer += `No significant control loop oscillations detected in this flight. Control surfaces and gains appear stable.`;
-      }
-    } else if (lowerQuery.includes("battery") || lowerQuery.includes("voltage") || lowerQuery.includes("power") || lowerQuery.includes("sag")) {
-      const batResult = report.analyser_results.find(r => r.analyser === "BatteryAnalyser");
-      matchedFindings = report.findings.filter(f => f.category === "battery");
-      const score = batResult ? batResult.health_score : 100;
-
-      answer = `Battery & Power Analysis (Module Health: ${score}/100): `;
-      if (matchedFindings.length > 0) {
-        answer += `Identified power delivery or cell health issues. Check for voltage sag under load, potential high internal resistance, or capacity fade.`;
-      } else {
-        answer += `Battery performance is healthy. Nominal cell voltages and sag thresholds were respected.`;
-      }
-    } else if (lowerQuery.includes("vibration") || lowerQuery.includes("clip") || lowerQuery.includes("accel") || lowerQuery.includes("imu")) {
-      const vibResult = report.analyser_results.find(r => r.analyser === "VibrationAnalyser");
-      matchedFindings = report.findings.filter(f => f.category === "vibration");
-      const score = vibResult ? vibResult.health_score : 100;
-
-      answer = `Vibration & IMU Analysis (Module Health: ${score}/100): `;
-      if (matchedFindings.length > 0) {
-        answer += `Vibrations exceed safe limits. High high-frequency vibration causes sensor clipping, estimator drift (EKF failures), and motor overheating. Balance props and verify dampening.`;
-      } else {
-        answer += `IMU vibration levels are well within the acceptable threshold (under 30 m/s² peak). Dampening is excellent.`;
-      }
-    } else if (lowerQuery.includes("gps") || lowerQuery.includes("satellites") || lowerQuery.includes("jamming") || lowerQuery.includes("spoofing")) {
-      const gpsResult = report.analyser_results.find(r => r.analyser === "GPSAnalyser");
-      matchedFindings = report.findings.filter(f => f.category === "gps");
-      const score = gpsResult ? gpsResult.health_score : 100;
-
-      answer = `GPS & Jamming Analysis (Module Health: ${score}/100): `;
-      if (matchedFindings.length > 0) {
-        answer += `GPS anomalies found. Inspect satellite count drops, HDOP spikes, or jamming flags which indicate signal interference or antenna shielding.`;
-      } else {
-        answer += `GPS fix type was sustained at 3D/DGPS with stable satellite visibility and zero jamming/spoofing indicators.`;
-      }
-    } else if (lowerQuery.includes("param") || lowerQuery.includes("tune") || lowerQuery.includes("change") || lowerQuery.includes("recommend")) {
-      matchedParams = report.param_change_sheet;
-      answer = `Parameter Change Recommendations: `;
-      if (matchedParams.length > 0) {
-        answer += `Identified ${matchedParams.length} parameters requiring adjustments based on flight performance. Refer to the list below to update PX4 configurations.`;
-      } else {
-        answer += `No parameter adjustments recommended. All system configurations are aligned with observed flight characteristics.`;
-      }
-    } else {
-      // General text matching
-      matchedFindings = report.findings.filter(f =>
-        f.title.toLowerCase().includes(lowerQuery) ||
-        f.plain_english.toLowerCase().includes(lowerQuery) ||
-        f.recommendation.toLowerCase().includes(lowerQuery)
-      );
-
-      matchedParams = report.param_change_sheet.filter(p =>
-        p.param_name.toLowerCase().includes(lowerQuery) ||
-        p.reason.toLowerCase().includes(lowerQuery)
-      );
-
-      if (matchedFindings.length > 0 || matchedParams.length > 0) {
-        answer = `Found relevant flight records matching "${text}":`;
-      } else {
-        answer = `No specific matching findings or parameters found for "${text}". Try asking about "battery", "vibrations", "oscillations", or "gps".`;
+      } catch (e) {
+        // a one-off failure; the toggle stays usable
+        push({ query: q, answer: errText(e, "ask"), findings: [], params: [], source: "error" });
+        return;
+      } finally {
+        setThinking(false);
       }
     }
 
-    setHistory(prev => [
-      ...prev,
-      { query: text, answer, matchedFindings, matchedParams }
-    ]);
-    setQuery("");
-  };
-
-  const presets = [
-    "Check for oscillations",
-    "Analyze vibration levels",
-    "Show battery health status",
-    "List param change suggestions"
-  ];
+    push({ query: q, ...searchReport(report, q, t, labels, units), source: "search" });
+  }
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-      <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-        <div className="flex items-center space-x-2">
-          <div className="p-2 bg-gold-500/10 text-gold-500 rounded-lg">
-            <Sparkles className="w-5 h-5" />
-          </div>
-          <div>
-            <h3 className="font-semibold text-slate-100">Q&A Assistant</h3>
-            <p className="text-xs text-slate-400">
-              {useAI && !aiUnavailable
-                ? "AI-powered — grounded in this report's own data"
-                : "Local keyword search over findings & parameter recommendations"}
-            </p>
-          </div>
+    <section aria-labelledby="qa-h" className="no-print space-y-3">
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <h2 id="qa-h" className="flex items-center gap-2 text-base font-semibold">
+            {aiOn ? <Sparkles aria-hidden className="h-4 w-4 text-accent" /> : <Search aria-hidden className="h-4 w-4 text-accent" />}
+            {aiOn ? t("titleAI") : t("title")}
+          </h2>
+          <p className="text-xs text-fg-muted">
+            {t("scope")}
+            {aiOn ? ` ${t("scopeAI")}` : ""}
+          </p>
         </div>
-        <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer select-none">
-          <span>Ask AI</span>
+        <div className="flex items-center gap-2 text-xs text-fg-muted">
+          <span id="qa-ai-label">{t("useAI")}</span>
           <button
             type="button"
             role="switch"
-            aria-checked={useAI && !aiUnavailable}
+            aria-checked={aiOn}
+            aria-labelledby="qa-ai-label"
             disabled={aiUnavailable}
             onClick={() => setUseAI((v) => !v)}
-            className={`relative h-5 w-9 rounded-full transition-colors ${
-              useAI && !aiUnavailable ? "bg-gold-600" : "bg-slate-700"
-            } ${aiUnavailable ? "opacity-40 cursor-not-allowed" : ""}`}
-            title={aiUnavailable ? "AI assistant is not configured on this server" : ""}
+            title={aiUnavailable ? t("noProvider") : undefined}
+            className={cn(
+              "relative h-5 w-9 rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+              aiOn ? "border-accent-solid bg-accent-solid" : "bg-elevated"
+            )}
           >
             <span
-              className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
-                useAI && !aiUnavailable ? "translate-x-4.5" : "translate-x-0.5"
-              }`}
+              className={cn(
+                "absolute left-0.5 top-0.5 size-3.5 rounded-full bg-fg transition-transform",
+                aiOn && "translate-x-4 bg-on-accent"
+              )}
             />
           </button>
-        </label>
-      </div>
-
-      {aiUnavailable && (
-        <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2 text-xs text-amber-200">
-          <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-400" />
-          <span>
-            No AI provider is configured on this server (no Groq or Anthropic API key set), so the
-            &quot;Ask AI&quot; toggle is disabled and every question uses local keyword search instead.
-            This is expected without a key — it&apos;s not an error in your question.
-          </span>
         </div>
-      )}
-
-      {/* History */}
-      <div className="space-y-4 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
-        {history.length === 0 && !thinking ? (
-          <div className="text-center py-6 text-slate-500 text-sm">
-            Ask a question below or use a preset to analyze your flight log.
-          </div>
-        ) : (
-          history.map((item, idx) => (
-            <div key={idx} className="space-y-3 border-b border-slate-800/50 pb-4 last:border-0 last:pb-0">
-              <div className="flex justify-end">
-                <div className="bg-gold-600/90 text-white rounded-2xl rounded-tr-none px-4 py-2 text-sm max-w-[80%] shadow-md">
-                  {item.query}
-                </div>
-              </div>
-              <div className="flex justify-start">
-                <div className="bg-slate-850 border border-slate-800 text-slate-200 rounded-2xl rounded-tl-none px-4 py-3 text-sm max-w-[90%] shadow-sm space-y-3">
-                  <p>{item.answer}</p>
-                  
-                  {item.matchedFindings.length > 0 && (
-                    <div className="mt-2 space-y-2">
-                      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Related Findings</p>
-                      {item.matchedFindings.map((f, fIdx) => (
-                        <div key={fIdx} className="flex items-start space-x-2 bg-slate-900/50 p-2 rounded-lg border border-slate-800">
-                          <AlertCircle className={`w-4 h-4 mt-0.5 flex-shrink-0 ${
-                            f.severity === "critical" ? "text-rose-400" : "text-amber-400"
-                          }`} />
-                          <div>
-                            <p className="text-xs font-medium text-slate-200">{f.title}</p>
-                            <p className="text-xxs text-slate-400 line-clamp-2">{f.plain_english}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {item.matchedParams.length > 0 && (
-                    <div className="mt-2 space-y-2">
-                      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Parameter Recommendations</p>
-                      {item.matchedParams.map((p, pIdx) => (
-                        <div key={pIdx} className="bg-slate-900/50 p-2 rounded-lg border border-slate-800 flex items-center justify-between">
-                          <div>
-                            <span className="text-xs font-mono text-gold-500">{p.param_name}</span>
-                            <p className="text-xxs text-slate-400">{p.reason}</p>
-                          </div>
-                          <div className="text-right text-xs">
-                            <span className="text-slate-400">{p.current_value}</span>
-                            <ArrowRight className="w-3 h-3 inline mx-1 text-slate-500" />
-                            <span className="text-emerald-400 font-semibold">{p.suggested_value}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))
-        )}
-        {thinking && (
-          <div className="flex justify-start">
-            <div className="bg-slate-850 border border-slate-800 text-slate-400 rounded-2xl rounded-tl-none px-4 py-3 text-sm flex items-center gap-2">
-              <span className="flex gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-gold-500 animate-bounce [animation-delay:-0.3s]" />
-                <span className="w-1.5 h-1.5 rounded-full bg-gold-500 animate-bounce [animation-delay:-0.15s]" />
-                <span className="w-1.5 h-1.5 rounded-full bg-gold-500 animate-bounce" />
-              </span>
-              Thinking…
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* Presets */}
+      {aiUnavailable && <p className="text-xs text-fg-muted">{t("aiUnavailable")}</p>}
+
+      <div aria-live="polite" className="panel max-h-[420px] space-y-3 overflow-y-auto p-3">
+        {history.length === 0 && !thinking && (
+          <p className="py-4 text-center text-sm text-fg-muted">{t("empty")}</p>
+        )}
+        {history.map((item) => (
+          <div key={item.id} className="space-y-2 border-b pb-3 last:border-b-0 last:pb-0">
+            <p className="text-sm font-medium">
+              <span className="sr-only">{t("youAsked")} </span>
+              {item.query}
+            </p>
+            <div className="space-y-2 rounded bg-elevated p-3 text-sm">
+              {item.source === "ai" && <p className="label">{t("aiAnswer")}</p>}
+              <p className={cn("whitespace-pre-line", item.source === "error" && "text-critical")}>{item.answer}</p>
+              {item.lines && item.lines.length > 0 && (
+                <ul className="num space-y-0.5 text-xs text-fg-muted">
+                  {item.lines.map((l) => <li key={l}>{l}</li>)}
+                </ul>
+              )}
+              {item.findings.length > 0 && (
+                <ul className="space-y-1.5">
+                  {item.findings.map((f) => (
+                    <li key={f.id}>
+                      <a href={`#finding-${f.id}`} className="flex items-start gap-2 text-fg no-underline hover:underline">
+                        <SeverityIcon severity={f.severity} className={cn("mt-0.5", f.severity === "critical" ? "text-critical" : f.severity === "warning" ? "text-caution" : "text-fg-muted")} />
+                        <span className="text-xs">{f.title}</span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {item.params.length > 0 && (
+                <ul className="space-y-1">
+                  {item.params.map((p) => (
+                    <li key={p.param_name} className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <span className="num font-medium">{p.param_name}</span>
+                      <span className="num">
+                        <span className="text-fg-muted">{fmtParam(p.current_value)}</span>
+                        <ArrowRight aria-label={t("to")} className="mx-1 inline h-3 w-3" />
+                        <span className="font-semibold text-accent-text">{fmtParam(p.suggested_value)}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        ))}
+        {thinking && <p className="text-sm text-fg-muted">{t("asking")}</p>}
+      </div>
+
       <div className="flex flex-wrap gap-2">
-        {presets.map((preset, idx) => (
-          <button
-            key={idx}
-            disabled={thinking}
-            onClick={() => handleSearch(preset)}
-            className="text-xs bg-slate-800/60 hover:bg-gold-900/40 hover:text-gold-300 border border-slate-700/60 hover:border-gold-700/80 text-slate-300 rounded-full px-3 py-1.5 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {preset}
+        {PRESETS.map((p) => (
+          <button key={p} type="button" disabled={thinking} onClick={() => ask(t(`presets.${p}`))} className="btn text-xs">
+            {t(`presets.${p}`)}
           </button>
         ))}
       </div>
 
-      {/* Input */}
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          handleSearch(query);
+          ask(query);
         }}
-        className="flex items-center space-x-2"
+        className="flex gap-2"
       >
-        <div className="relative flex-1">
-          <input
-            type="text"
-            value={query}
-            disabled={thinking}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Ask about oscillations, vibration thresholds, battery cells..."
-            className="w-full bg-slate-950 border border-slate-800 focus:border-gold-500 focus:ring-1 focus:ring-gold-500 text-slate-200 rounded-xl px-4 py-3 pl-10 text-sm outline-none transition-all disabled:opacity-50"
-          />
-          <Search className="w-4 h-4 text-slate-500 absolute left-3 top-3.5" />
-        </div>
-        <button
-          type="submit"
+        <label htmlFor="qa-input" className="sr-only">{t("inputLabel")}</label>
+        <input
+          id="qa-input"
+          type="text"
+          value={query}
           disabled={thinking}
-          className="bg-gold-600 hover:bg-gold-500 text-white rounded-xl px-5 py-3 text-sm font-semibold transition-all duration-200 shadow-lg shadow-gold-600/20 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Send
+          maxLength={ASK_MAX_CHARS}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={aiOn ? t("placeholderAI") : t("placeholder")}
+          className="input min-w-0 flex-1"
+        />
+        <button type="submit" disabled={thinking || !query.trim()} className="btn-primary">
+          {aiOn ? t("ask") : t("search")}
         </button>
       </form>
-    </div>
+    </section>
   );
 }

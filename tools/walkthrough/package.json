@@ -1,0 +1,25 @@
+{
+  "name": "flightmd-walkthrough",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Renders the FlightMD walkthrough video and screenshots from the running app: Playwright drives it, Kokoro speaks, FFmpeg joins.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "setup": "playwright install chromium",
+    "walkthrough": "node record.mjs --story walkthrough",
+    "teaser": "node record.mjs --story teaser",
+    "stills": "node record.mjs --stills",
+    "draft": "node record.mjs --draft",
+    "scene": "node record.mjs --only",
+    "verify": "node verify.mjs"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "3.8.1",
+    "kokoro-js": "1.2.1",
+    "playwright": "1.64.0"
+  }
+}

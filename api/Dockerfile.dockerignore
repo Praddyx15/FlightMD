@@ -1,0 +1,22 @@
+# BuildKit reads this instead of a root .dockerignore when building api/Dockerfile
+.git
+.github
+**/__pycache__
+**/*.py[cod]
+.venv
+venv
+.env
+.env.*
+!.env.example
+api/data
+data
+node_modules
+**/.next
+frontend
+tests
+verification
+scripts
+*.ulg
+*.bin
+*.tlog
+*.pdf

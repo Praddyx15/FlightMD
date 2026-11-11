@@ -1,168 +1,57 @@
-"use client";
+import type { Metadata } from "next";
+import { notFound } from "next/navigation";
+import { cache } from "react";
+import { getTranslations } from "next-intl/server";
+import { fetchReportOnServer } from "@/lib/serverApi";
+import { fmtScore, fmtUtc, parseIsoDate } from "@/lib/format";
+import { isReportAssessed } from "@/lib/utils";
+import { ReportDone } from "@/components/report/ReportDone";
+import { ReportLive } from "@/components/report/ReportLive";
+import { FailedProblem } from "@/components/report/Problem";
 
-import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
-import useSWR from "swr";
-import { getStatus, getReport } from "@/lib/api";
-import type { FlightMDReport, StatusResponse } from "@/lib/types";
-import { ReportHeader } from "@/components/report/ReportHeader";
-import { FindingsList } from "@/components/report/FindingsList";
-import { ParamSheet } from "@/components/report/ParamSheet";
-import { ExportBar } from "@/components/report/ExportBar";
-import PathPlotter from "@/components/report/PathPlotter";
-import QAAssistant from "@/components/report/QAAssistant";
-import { Quantum } from "ldrs/react";
-import "ldrs/react/Quantum.css";
+export const dynamic = "force-dynamic";
 
-const STATUS_MESSAGES: Record<number, string> = {
-  0:  "Preparing analysis…",
-  5:  "Parsing flight log…",
-  20: "Analysing oscillation…",
-  35: "Checking IMU vibration…",
-  50: "Evaluating EKF health…",
-  62: "Assessing battery…",
-  72: "Reviewing GPS quality…",
-  80: "Inspecting parameters & motors…",
-  88: "Generating explanations…",
-  96: "Assembling report…",
-  100: "Complete!",
-};
-
-function progressMessage(progress: number, apiMessage?: string): string {
-  if (apiMessage) return apiMessage;
-  const thresholds = Object.keys(STATUS_MESSAGES)
-    .map(Number)
-    .sort((a, b) => b - a);
-  for (const t of thresholds) {
-    if (progress >= t) return STATUS_MESSAGES[t];
-  }
-  return "Processing…";
+interface Props {
+  params: { id: string };
 }
 
-export default function ReportPage() {
-  const params  = useParams();
-  const id      = params?.id as string;
-  const [report, setReport] = useState<FlightMDReport | null>(null);
-  const [fetchError, setFetchError] = useState<string | null>(null);
+// one API call per request, shared by the metadata and the page
+const loadReport = cache(fetchReportOnServer);
 
-  // Poll status every 2s while processing
-  const { data: status, error: statusError } = useSWR<StatusResponse>(
-    report ? null : id ? `/status/${id}` : null,
-    () => getStatus(id),
-    {
-      refreshInterval: (data) =>
-        data?.status === "processing" ? 2000 : 0,
-      onSuccess: async (data) => {
-        if (data.status === "complete") {
-          try {
-            const r = await getReport(id);
-            setReport(r);
-          } catch (e: unknown) {
-            setFetchError(e instanceof Error ? e.message : "Failed to load report.");
-          }
-        }
-      },
-    }
-  );
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const t = await getTranslations("meta.report");
+  const res = await loadReport(params.id);
+  const robots = { index: false, follow: false };
 
-  // ── Loading / error states ────────────────────────────────────────────────
-  if (!id) return <div className="p-8 text-white/50">Invalid report URL.</div>;
-
-  if (fetchError || statusError) {
-    return (
-      <div className="max-w-2xl mx-auto px-4 py-20 text-center">
-        <div className="text-red-400 text-xl mb-3">⚠️ Report Unavailable</div>
-        <p className="text-white/50">
-          {fetchError || "Could not load status. Reports expire after 1 hour."}
-        </p>
-        <a href="/" className="mt-6 inline-block text-sm underline" style={{ color: "#B89642" }}>
-          ← Analyse another log
-        </a>
-      </div>
-    );
+  if (res.kind !== "done") {
+    return { title: t(res.kind === "missing" ? "missingTitle" : "pendingTitle"), robots };
   }
 
-  if (status?.status === "failed") {
-    return (
-      <div className="max-w-2xl mx-auto px-4 py-20 text-center">
-        <div className="text-red-400 text-xl mb-3">❌ Analysis Failed</div>
-        <p className="text-white/50">{status.error || "Unknown error. The log may be corrupted."}</p>
-        <a href="/" className="mt-6 inline-block text-sm underline" style={{ color: "#B89642" }}>
-          ← Try again
-        </a>
-      </div>
-    );
-  }
+  const r = res.report;
+  const m = r.metadata;
+  const flown = parseIsoDate(m.log_start_utc);
+  const vehicle = [m.vehicle_type, m.airframe_name].filter(Boolean).join(" · ") || t("unknownVehicle");
+  const date = flown ? fmtUtc(flown) : t("unknownDate");
+  const description = isReportAssessed(r)
+    ? t("description", { score: fmtScore(r.overall_score), grade: r.letter_grade, vehicle, date })
+    : t("descriptionNotAssessed", { vehicle, date });
+  const title = `${r.file_name} · FlightMD`;
 
-  // ── Processing view ───────────────────────────────────────────────────────
-  if (!report) {
-    const progress = status?.progress ?? 0;
-    const message  = progressMessage(progress, status?.message);
-
-    return (
-      <div className="max-w-xl mx-auto px-4 py-24 text-center">
-        <div className="mb-6 flex justify-center">
-          <Quantum size="60" speed="1.75" color="#B89642" />
-        </div>
-        <h2 className="text-2xl font-bold mb-2" style={{ color: "#B89642" }}>
-          Analysing your flight log
-        </h2>
-        <p className="text-white/50 mb-8 text-sm">{message}</p>
-
-        {/* Progress bar */}
-        <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden mb-3">
-          <div
-            className="h-full rounded-full transition-all duration-500"
-            style={{
-              width: `${progress}%`,
-              background: "linear-gradient(90deg, #B89642, #E7C25B)",
-            }}
-          />
-        </div>
-        <div className="text-xs text-white/30 mono">{progress}%</div>
-
-        {/* Animated steps */}
-        <div className="mt-10 grid grid-cols-4 gap-2 text-xs text-white/30">
-          {STEP_LABELS.map((label, i) => (
-            <div
-              key={label}
-              className="flex flex-col items-center gap-1"
-              style={{ opacity: progress > i * 12 ? 1 : 0.3, transition: "opacity 0.5s" }}
-            >
-              <span className="text-lg">{STEP_ICONS[i]}</span>
-              <span>{label}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  // ── Full report ───────────────────────────────────────────────────────────
-  return (
-    <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
-      <ReportHeader report={report} />
-      <PathPlotter report={report} />
-      <FindingsList findings={report.findings} />
-      <QAAssistant report={report} />
-      {report.param_change_sheet.length > 0 && (
-        <ParamSheet params={report.param_change_sheet} />
-      )}
-      <ExportBar
-        reportId={id}
-        fileName={report.file_name}
-        hasGpsPath={!!report.metadata.gps_path && report.metadata.gps_path.length > 0}
-      />
-
-      {/* Back link */}
-      <div className="pb-4">
-        <a href="/" className="text-sm text-white/30 hover:text-white/60 transition-colors">
-          ← Analyse another log
-        </a>
-      </div>
-    </div>
-  );
+  return {
+    title: r.file_name,
+    description,
+    robots,
+    openGraph: { title, description, type: "article", siteName: "FlightMD" },
+    twitter: { card: "summary", title, description },
+  };
 }
 
-const STEP_LABELS = ["Parse", "Oscillation", "Vibration", "EKF", "Battery", "GPS", "Params", "Explain"];
-const STEP_ICONS  = ["📄", "〰️", "📳", "🔭", "🔋", "📡", "⚙️", "📝"];
+export default async function ReportPage({ params }: Props) {
+  const res = await loadReport(params.id);
+
+  if (res.kind === "missing") notFound();
+  if (res.kind === "done") return <ReportDone report={res.report} />;
+  if (res.kind === "failed") return <FailedProblem error={res.error} />;
+  // still running, or the server couldn't reach the API: the browser polls
+  return <ReportLive id={params.id} />;
+}

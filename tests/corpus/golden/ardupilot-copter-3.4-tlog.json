@@ -1,0 +1,49 @@
+{
+  "id": "ardupilot-copter-3.4-tlog",
+  "generated_with": "1.0.0",
+  "schema_version": "1.7",
+  "score_band": [
+    58.0,
+    68.0
+  ],
+  "score": 63.0,
+  "findings": [
+    "ekf.solution_invalid|warning",
+    "gps.hdop|warning",
+    "params.below_range|critical",
+    "vibration.clipping|warning",
+    "vibration.critical|critical"
+  ],
+  "assessed_modules": [
+    "battery",
+    "ekf",
+    "gps",
+    "parameters",
+    "power",
+    "vibration"
+  ],
+  "metrics": {
+    "battery.consumed_mah": 3482.1,
+    "battery.internal_resistance_mohm_per_cell": 18.65,
+    "battery.peak_c_rate": 19.78,
+    "battery.sag_per_cell_v": 0.4775,
+    "ekf.max_innovation_ratio": 0.7072,
+    "gps.max_hdop": 2.32,
+    "gps.min_satellites": 8.0,
+    "parameters.anomaly_count": 3.0,
+    "parameters.param_count": 491.0,
+    "power.min_vcc_v": 5.041,
+    "power.vcc_range_v": 0.192,
+    "vibration.max_imu_rms": 63.416,
+    "vibration.total_clip_count": 3508.0,
+    "vibration.vibration_vs_limit": 2.114
+  },
+  "metadata": {
+    "source_format": "mavlink_tlog",
+    "vehicle_type": "Copter",
+    "airframe_name": "QUAD",
+    "firmware_version": "APM:Copter V3.4-dev (bdddfae5)",
+    "px4_version": null,
+    "duration_seconds": 2443.88
+  }
+}
