@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Check, CheckCircle2, ClipboardList, Link2, Printer } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Check, CheckCircle2, ClipboardList, Link2, Printer, Radar } from "lucide-react";
 import { useTranslations } from "next-intl";
 import type { FlightMDReport } from "@/lib/types";
 import { ScoreCircle } from "@/components/shared/ScoreCircle";
@@ -10,6 +10,7 @@ import { FlightTime } from "@/components/shared/FlightTime";
 import { CopyText } from "@/components/shared/CopyText";
 import { fmtBytes, fmtDuration, fmtNum, isNum, parseIsoDate } from "@/lib/format";
 import { TONE_CLASSES, copyToClipboard, gradeTone, isAssessed, isReportAssessed } from "@/lib/utils";
+import { airbriefAuditUrl } from "@/lib/api";
 
 const num = (chunks: React.ReactNode) => <span className="num">{chunks}</span>;
 
@@ -23,6 +24,13 @@ export function ReportHeader({ report }: { report: FlightMDReport }) {
   const flown = parseIsoDate(m.log_start_utc);
   const vehicle = [m.vehicle_type, m.airframe_name, m.firmware_version].filter(Boolean).join(" · ");
   const warningsCount = m.parse_warnings?.length ?? 0;
+  // only a flight with a GPS track can be checked against airspace and terrain; the link needs
+  // this page's address, which the server render doesn't know
+  const [audit, setAudit] = useState<string | null>(null);
+  const hasTrack = Boolean(m.gps_path?.length);
+  useEffect(() => {
+    setAudit(hasTrack ? airbriefAuditUrl(report.report_id, window.location.origin) : null);
+  }, [hasTrack, report.report_id]);
 
   const modules = report.analyser_results;
   const assessedCount = modules.filter(isAssessed).length;
@@ -73,7 +81,13 @@ export function ReportHeader({ report }: { report: FlightMDReport }) {
             )}
           </dl>
         </div>
-        <div className="no-print flex gap-2">
+        <div className="no-print flex flex-wrap gap-2">
+          {audit && (
+            <a href={audit} target="_blank" rel="noopener noreferrer" className="btn no-underline" title={t("auditAirspaceHint")}>
+              <Radar aria-hidden className="h-4 w-4" />
+              {t("auditAirspace")}
+            </a>
+          )}
           <button type="button" onClick={() => window.print()} className="btn">
             <Printer aria-hidden className="h-4 w-4" />
             {t("print")}

@@ -8,7 +8,6 @@ import { getLocale, getMessages, getTranslations } from "next-intl/server";
 import { ThemeToggle } from "@/components/shared/ThemeToggle";
 import { UnitsToggle } from "@/components/shared/UnitsToggle";
 import { themeInitScript } from "@/lib/themeScript";
-import { SUITE_NAME } from "@/lib/suite";
 import "./tokens.css";
 import "./globals.css";
 
@@ -62,7 +61,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <Link href="/" className="flex items-center gap-2 font-medium text-fg no-underline">
                 <Activity aria-hidden className="h-5 w-5 text-accent" />
                 flightmd
-                <span className="hidden border-l pl-2 font-normal text-fg-muted sm:inline">{SUITE_NAME}</span>
               </Link>
               <div className="ml-auto flex items-center gap-1 text-sm">
                 <a href={REPO} className="btn border-transparent bg-transparent text-fg-muted hover:text-fg" rel="noopener noreferrer">
@@ -85,7 +83,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
           <footer className="no-print mt-16 border-t py-6 text-xs text-fg-muted">
             <div className="mx-auto flex max-w-5xl flex-col gap-1 px-4 sm:flex-row sm:flex-wrap sm:justify-between">
-              <p>{t("suite", { suite: SUITE_NAME })}</p>
               <p>{t("license")}</p>
             </div>
           </footer>

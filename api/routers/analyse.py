@@ -119,7 +119,7 @@ async def analyse_log(
     X-Airframe-Token header. `contribute_to_dataset` keeps the raw log and a
     stripped copy of the report (no filename, place name or GPS track); the
     response then carries `contribution_id`, which DELETE /dataset/{id} takes.
-    `planning_brief_sha256` is AeroAtlas's brief hash, copied into the report.
+    `planning_brief_sha256` is AirBrief's brief hash, copied into the report.
 
     The same bytes uploaded again within the hour (same airframe tag and brief
     hash) get the existing report back with `deduplicated: true`.

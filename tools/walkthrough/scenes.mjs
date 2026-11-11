@@ -320,8 +320,8 @@ export function buildScenes({ cta, label, logsDir }) {
     },
     {
       id: "end",
-      say: "FlightMD is free and open source, and part of the UAV suite. Run it on your own logs today.",
-      speak: "Flight M D is free and open source, and part of the U A V suite. Run it on your own logs today.",
+      say: "FlightMD is free and open source. Run it on your own logs today.",
+      speak: "Flight M D is free and open source. Run it on your own logs today.",
       tail: 2.0,
       prepare: async ({ s }) => {
         await s.goto("/");
@@ -333,7 +333,7 @@ export function buildScenes({ cta, label, logsDir }) {
           title: "Your drone flew badly. The log knows why.",
           chips: ["PX4", "ArduPilot", "MAVLink", "Betaflight", "DJI", "Tune, fly, verify", "PDF · JSON · GPX · KML"],
           cta,
-          footnote: "MIT licence. Part of the UAV suite: FlightMD · AeroAtlas · UAOP. The logs in this video are synthetic test flights, not real ones.",
+          footnote: "MIT licence. Works with AirBrief. The logs in this video are synthetic test flights, not real ones.",
           staggerMs: 70,
         });
       },

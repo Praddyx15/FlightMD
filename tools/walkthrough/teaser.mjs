@@ -84,7 +84,7 @@ export function buildScenes({ cta, label, logsDir }) {
           wordmark: "FlightMD",
           title: "Your drone flew badly. The log knows why.",
           cta,
-          footnote: "MIT licence. Part of the UAV suite. The log in this video is a synthetic test flight.",
+          footnote: "MIT licence. The log in this video is a synthetic test flight.",
           staggerMs: 80,
         });
       },

@@ -12,7 +12,7 @@ One command renders a whole video. The story lives in [`scenes.mjs`](scenes.mjs)
 walkthrough) and [`teaser.mjs`](teaser.mjs): one spoken line per scene, plus the steps that show
 it. Change a line or a step, render again, and everything else (timing, captions, sound) follows.
 
-The pipeline is adapted from the AeroAtlas demo video (same author, MIT). Nothing here costs money
+The pipeline is adapted from the AirBrief demo video (same author, MIT). Nothing here costs money
 or needs an account:
 
 | Tool | Licence |
@@ -42,7 +42,7 @@ About two and a half minutes (the length follows the voice):
 11. **Compare:** the two flights side by side.
 12. **Export and print:** the export buttons, then the page in print layout.
 13. **Units and theme:** imperial units and the light theme.
-14. **End card:** the repository link, MIT, the UAV suite, and a note that the logs are synthetic.
+14. **End card:** the repository link, MIT, AirBrief, and a note that the logs are synthetic.
 
 Every log is uploaded through the page, the way a user would. `sample_flawed.ulg` and
 `sample_clean.ulg` are synthetic flights from `tests/sample_logs/`, and the end card says so.

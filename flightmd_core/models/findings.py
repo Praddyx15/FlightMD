@@ -113,7 +113,7 @@ class AnalyserResult(BaseModel):
 
 class FlightMDReport(BaseModel):
     report_id: str
-    schema_version: str = "1.7"          # UAOP and AeroAtlas check this
+    schema_version: str = "1.7"          # UAOP and AirBrief check this
     overall_score: float                 # 0 when nothing could be assessed
     score_label: str                     # Excellent/Good/Caution/Warning/Critical, or "Not assessed"
     letter_grade: str                    # A-F, "-" when not assessed

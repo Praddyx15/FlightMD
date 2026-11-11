@@ -18,6 +18,10 @@ export const API_URL = (
   (typeof window !== "undefined" && window.location.protocol === "https:" ? "" : "http://localhost:8000")
 ).replace(/\/$/, "");
 
+// The AirBrief web app (airspace, terrain and ground-risk checks of the same flight). Without it
+// the report has no "Audit airspace in AirBrief" button.
+export const AIRBRIEF_URL = (process.env.NEXT_PUBLIC_AIRBRIEF_URL || "").replace(/\/+$/, "");
+
 const TIMEOUT_MS = 20_000;
 
 // `message` is the server's own text when it sent one. Otherwise `code` names our text,
@@ -109,7 +113,7 @@ const af = (label: string) => encodeURIComponent(label);
 export interface UploadOptions {
   airframeLabel?: string;
   contribute?: boolean;
-  planningBrief?: string; // AeroAtlas brief hash, 64 hex
+  planningBrief?: string; // AirBrief brief hash, 64 hex
   signal?: AbortSignal;
 }
 
@@ -205,6 +209,18 @@ export async function getReport(reportId: string, signal?: AbortSignal): Promise
   const res = await request(`/report/${encodeURIComponent(reportId)}`, { signal });
   if (res.status === 202) return null;
   return json(res, "report");
+}
+
+/**
+ * AirBrief's flight audit, opened with this report's share link (`<site>/report/<id>`) filled in.
+ * AirBrief fetches the report itself from the FlightMD API it is set up with (`FLIGHTMD_API_URL`),
+ * so nothing but the link leaves the browser, and its "Open in FlightMD" comes back to this page.
+ * Null when no AirBrief address is set.
+ */
+export function airbriefAuditUrl(reportId: string, site: string, airbrief = AIRBRIEF_URL): string | null {
+  if (!airbrief) return null;
+  const report = `${site}/report/${encodeURIComponent(reportId)}`;
+  return `${airbrief}/w/view?m=flight-audit&report_url=${encodeURIComponent(report)}`;
 }
 
 export function pdfExportUrl(reportId: string): string {

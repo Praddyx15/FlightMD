@@ -44,5 +44,5 @@ class FlightMetadata(BaseModel):
     log_sha256: Optional[str] = None
     # detector id: "px4_ulog", "ardupilot_bin", "mavlink_tlog", ...
     source_format: Optional[str] = None
-    # AeroAtlas planning brief this flight was flown against, set by the API
+    # AirBrief planning brief this flight was flown against, set by the API
     planning_brief_sha256: Optional[str] = None

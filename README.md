@@ -93,7 +93,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
 `API_URL` is the address the Next server itself uses to reach the API when it renders a report
 (in Compose that's `http://api:8000`). It falls back to `NEXT_PUBLIC_API_URL`.
 
-Colours come from `frontend/design/tokens.json`, the suite's shared token file; `app/tokens.css` is
+Colours come from `frontend/design/tokens.json`, shared with AirBrief and UAOP; `app/tokens.css` is
 generated from it on `dev` and `build`. UI text lives in `frontend/messages/en.json`.
 
 ### Command line
@@ -167,6 +167,7 @@ Everything is optional. [`.env.example`](.env.example) has the full list with co
 | `METRICS_TOKEN` | | Bearer token for `/metrics` (Prometheus) |
 | `CORS_ORIGINS` | localhost | Allowed browser origins |
 | `NEXT_PUBLIC_API_URL`, `API_URL` | | Where the browser and the Next server find the API |
+| `NEXT_PUBLIC_AIRBRIEF_URL` | | The AirBrief web app; reports with a GPS track get "Audit airspace in AirBrief" |
 | `NEXT_PUBLIC_TILE_URL`, `NEXT_PUBLIC_TILE_ATTRIBUTION` | OSM | Map tiles, if you self-host them |
 
 ## Privacy
@@ -244,12 +245,23 @@ from the repo root); the frontend on Vercel (`frontend/vercel.json`) or the Comp
 CI tests Python 3.11–3.13, the frontend, a Playwright smoke test and a bundle-size budget, and only
 then deploys. Tagging `vX.Y.Z` publishes `flightmd-core` to PyPI through Trusted Publishing.
 
-## Part of the UAV suite
+## Works with AirBrief and UAOP
 
-FlightMD · AeroAtlas (airspace and site planning) · [UAOP](https://github.com/Praddyx15/UAOP)
-(ground control station). All three share one design system and one token file. UAOP runs
-FlightMD as its flight-log engine, and AeroAtlas reads FlightMD reports for its flight audit; a
-report uploaded with an AeroAtlas brief hash links back to the plan it flew.
+[AirBrief](https://github.com/Praddyx15/AirBrief) gathers pre-flight evidence (airspace, terrain,
+ground risk) and [UAOP](https://github.com/Praddyx15/UAOP) is a ground control station. Both use
+FlightMD's design tokens, and UAOP runs FlightMD as its flight-log engine.
+
+FlightMD and AirBrief link both ways:
+
+- **Before the flight:** AirBrief's evidence brief has a SHA-256 hash. Paste it under **Link the
+  planning brief** when you upload the log, and the report carries it (`planning_brief_sha256`);
+  AirBrief's flight audit then names the brief the flight was planned with.
+- **After the flight:** with `NEXT_PUBLIC_AIRBRIEF_URL` set, a report with a GPS track has
+  **Audit airspace in AirBrief**. It opens AirBrief's flight audit with the report's share link
+  filled in. AirBrief reads share links through the FlightMD API it is set up with, so set
+  `FLIGHTMD_API_URL` on AirBrief to this API's address; it then checks the track against terrain,
+  airspace zones and population. With this web app's address as the FlightMD address in
+  AirBrief's Settings, its "Open in FlightMD" button comes back here.
 
 ## License
 

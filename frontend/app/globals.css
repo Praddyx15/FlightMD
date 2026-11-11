@@ -3,10 +3,10 @@
 @tailwind utilities;
 
 /*
- * The suite colour tokens (dark :root, light .light) are generated into app/tokens.css
+ * The shared colour tokens (dark :root, light .light) are generated into app/tokens.css
  * from design/tokens.json; the root layout imports that file first. Each colour has a
  * hex form (--x) for SVG/canvas and an rgb-channel form (--x-rgb) for Tailwind opacity
- * modifiers. Only what the suite file doesn't cover lives here.
+ * modifiers. Only what the token file doesn't cover lives here.
  */
 @layer base {
   :root {

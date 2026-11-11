@@ -54,6 +54,8 @@ services:
       args:
         # baked into the browser bundle, so it's the address the *browser* uses
         NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8000}
+        # empty: no "Audit airspace in AirBrief" button
+        NEXT_PUBLIC_AIRBRIEF_URL: ${NEXT_PUBLIC_AIRBRIEF_URL:-}
       dockerfile_inline: |
         FROM node:20-bookworm-slim AS deps
         WORKDIR /app
@@ -67,7 +69,8 @@ services:
         RUN rm -rf node_modules .next
         COPY --from=deps /app/node_modules ./node_modules
         ARG NEXT_PUBLIC_API_URL
-        ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL NEXT_TELEMETRY_DISABLED=1
+        ARG NEXT_PUBLIC_AIRBRIEF_URL
+        ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL NEXT_PUBLIC_AIRBRIEF_URL=$NEXT_PUBLIC_AIRBRIEF_URL NEXT_TELEMETRY_DISABLED=1
         RUN mkdir -p public && npm run build
 
         FROM node:20-bookworm-slim

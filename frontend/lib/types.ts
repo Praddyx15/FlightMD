@@ -87,7 +87,7 @@ export interface FlightMetadata {
   gps_path_t_s?: number[] | null; // same order as gps_path
   source_format?: string | null; // detector id, e.g. "px4_ulog"
   log_sha256?: string | null;
-  planning_brief_sha256?: string | null; // AeroAtlas brief the flight was planned with
+  planning_brief_sha256?: string | null; // AirBrief brief the flight was planned with
 }
 
 export interface FlightMDReport {

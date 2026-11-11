@@ -17,7 +17,6 @@
     "nav": "Site",
     "github": "GitHub",
     "apiDocs": "API docs",
-    "suite": "Part of {suite}: FlightMD · AeroAtlas · UAOP",
     "license": "MIT License · Pradum Behl · Untagged reports expire after 1 hour"
   },
   "common": {
@@ -133,10 +132,10 @@
     },
     "checksNote": "Rockets and balloons also get an ascent & recovery check, and logs with board voltage a power supply check; neither is scored. Checks the log has no data for are marked \"Not assessed\".",
     "scoringTitle": "How scoring works",
-    "briefSummary": "Planned in AeroAtlas? Link the planning brief",
+    "briefSummary": "Planned in AirBrief? Link the planning brief",
     "briefLabel": "Planning brief hash (SHA-256)",
     "briefPlaceholder": "64 hex characters",
-    "briefHelp": "Copy it from the brief in AeroAtlas. The report shows it so the flight can be traced back to its planning evidence.",
+    "briefHelp": "Copy it from the brief in AirBrief. The report shows it so the flight can be traced back to its planning evidence.",
     "badBrief": "The planning brief hash must be 64 hex characters (a SHA-256)."
   },
   "dropzone": {
@@ -227,6 +226,8 @@
     "duration": "Duration",
     "fileSize": "File size",
     "planningBrief": "Planning brief",
+    "auditAirspace": "Audit airspace in AirBrief",
+    "auditAirspaceHint": "Opens AirBrief's flight audit for this flight: height above the ground, airspace zones and the people under the track",
     "print": "Print",
     "copyLink": "Copy link",
     "linkCopied": "Link copied",

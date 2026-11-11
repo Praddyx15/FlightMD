@@ -33,7 +33,7 @@ are synthetic flights made for testing, not real recordings.
    - The size limit is shown on the drop zone (50 MB unless the server says otherwise).
 4. Leave **Contribute this log anonymously** off unless you want to share it (see
    [Privacy](#10-privacy)).
-5. Planned the flight in AeroAtlas? Open **Link the planning brief** and paste the brief's
+5. Planned the flight in AirBrief? Open **Link the planning brief** and paste the brief's
    SHA-256, so the report points back to its planning evidence.
 
 ![The progress screen while a log is analysed](walkthrough/02-processing.png)
