@@ -93,7 +93,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
 `API_URL` is the address the Next server itself uses to reach the API when it renders a report
 (in Compose that's `http://api:8000`). It falls back to `NEXT_PUBLIC_API_URL`.
 
-Colours come from `frontend/design/tokens.json`, shared with AirBrief and UAOP; `app/tokens.css` is
+Colours come from `frontend/design/tokens.json`, shared with AirBrief; `app/tokens.css` is
 generated from it on `dev` and `build`. UI text lives in `frontend/messages/en.json`.
 
 ### Command line
@@ -255,7 +255,9 @@ FlightMD and AirBrief link both ways:
 
 - **Before the flight:** AirBrief's evidence brief has a SHA-256 hash. Paste it under **Link the
   planning brief** when you upload the log, and the report carries it (`planning_brief_sha256`);
-  AirBrief's flight audit then names the brief the flight was planned with.
+  AirBrief's flight audit then names the brief the flight was planned with. With
+  `NEXT_PUBLIC_AIRBRIEF_URL` set, the report's **Open in AirBrief** goes back to the brief, in the
+  browser that made it (AirBrief keeps no briefs on its server).
 - **After the flight:** with `NEXT_PUBLIC_AIRBRIEF_URL` set, a report with a GPS track has
   **Audit airspace in AirBrief**. It opens AirBrief's flight audit with the report's share link
   filled in. AirBrief reads share links through the FlightMD API it is set up with, so set

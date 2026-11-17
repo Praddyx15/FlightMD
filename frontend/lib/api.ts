@@ -223,6 +223,12 @@ export function airbriefAuditUrl(reportId: string, site: string, airbrief = AIRB
   return `${airbrief}/w/view?m=flight-audit&report_url=${encodeURIComponent(report)}`;
 }
 
+// AirBrief keeps no briefs on its server: this opens only in the browser that made the brief.
+export function airbriefBriefUrl(sha256: string, airbrief = AIRBRIEF_URL): string | null {
+  if (!airbrief || !/^[0-9a-f]{64}$/i.test(sha256)) return null;
+  return `${airbrief}/w/report?brief=${sha256.toLowerCase()}`;
+}
+
 export function pdfExportUrl(reportId: string): string {
   return `${API_URL}/export/pdf/${reportId}`;
 }

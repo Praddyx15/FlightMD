@@ -10,13 +10,14 @@ import { FlightTime } from "@/components/shared/FlightTime";
 import { CopyText } from "@/components/shared/CopyText";
 import { fmtBytes, fmtDuration, fmtNum, isNum, parseIsoDate } from "@/lib/format";
 import { TONE_CLASSES, copyToClipboard, gradeTone, isAssessed, isReportAssessed } from "@/lib/utils";
-import { airbriefAuditUrl } from "@/lib/api";
+import { airbriefAuditUrl, airbriefBriefUrl } from "@/lib/api";
 
 const num = (chunks: React.ReactNode) => <span className="num">{chunks}</span>;
 
 export function ReportHeader({ report }: { report: FlightMDReport }) {
   const t = useTranslations("header");
   const m = report.metadata;
+  const briefUrl = m.planning_brief_sha256 ? airbriefBriefUrl(m.planning_brief_sha256) : null;
   const [copied, setCopied] = useState(false);
   const criticals = report.findings.filter((f) => f.severity === "critical").length;
   const warnings = report.findings.filter((f) => f.severity === "warning").length;
@@ -76,7 +77,19 @@ export function ReportHeader({ report }: { report: FlightMDReport }) {
                   <ClipboardList aria-hidden className="h-3.5 w-3.5" />
                   {t("planningBrief")}
                 </dt>
-                <dd><CopyText text={m.planning_brief_sha256} label={t("planningBrief")} /></dd>
+                <dd className="flex items-center gap-2">
+                  <CopyText text={m.planning_brief_sha256} label={t("planningBrief")} />
+                  {briefUrl && (
+                    <a
+                      href={briefUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={t("openBriefHint")}
+                    >
+                      {t("openBrief")}
+                    </a>
+                  )}
+                </dd>
               </div>
             )}
           </dl>

@@ -49,7 +49,7 @@ const config: Config = {
         sans: ["var(--font-geist-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
         mono: ["var(--font-geist-mono)", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
       },
-      // the suite type scale: 11/16, 12/18, 14/20, 16/24, 22/28, 32/36
+      // the shared type scale: 11/16, 12/18, 14/20, 16/24, 22/28, 32/36
       fontSize: {
         "2xs": ["11px", { lineHeight: "16px" }],
         xs: ["12px", { lineHeight: "18px" }],
