@@ -1,4 +1,4 @@
-// design/tokens.json (copy of the suite's SUITE_TOKENS.json) -> app/tokens.css.
+// design/tokens.json (shared with AirBrief) -> app/tokens.css.
 // Runs before dev and build; the generated file is committed too, so a fresh clone works
 // without it.
 import { readFileSync, writeFileSync } from "node:fs";
@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const tokens = JSON.parse(readFileSync(join(root, "design/tokens.json"), "utf8"));
 
-// app variable -> suite token. The app names predate the suite file and every
+// app variable -> shared token. The app names predate the shared file and every
 // component uses them, so they stay.
 const VARS = {
   bg: "bg0",

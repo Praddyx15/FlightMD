@@ -226,6 +226,8 @@
     "duration": "Duration",
     "fileSize": "File size",
     "planningBrief": "Planning brief",
+    "openBrief": "Open in AirBrief",
+    "openBriefHint": "Opens the brief in AirBrief; it is there only in the browser that made it",
     "auditAirspace": "Audit airspace in AirBrief",
     "auditAirspaceHint": "Opens AirBrief's flight audit for this flight: height above the ground, airspace zones and the people under the track",
     "print": "Print",

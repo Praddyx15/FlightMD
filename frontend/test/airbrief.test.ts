@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { airbriefAuditUrl } from "@/lib/api";
+import { airbriefAuditUrl, airbriefBriefUrl } from "@/lib/api";
 
 describe("airbriefAuditUrl", () => {
   it("opens AirBrief's flight audit with the report's share link", () => {
@@ -12,5 +12,18 @@ describe("airbriefAuditUrl", () => {
 
   it("is null when no AirBrief address is set", () => {
     expect(airbriefAuditUrl("r1", "https://flightmd.example", "")).toBeNull();
+  });
+});
+
+describe("airbriefBriefUrl", () => {
+  const sha = "AB".repeat(32);
+
+  it("opens the brief by its hash", () => {
+    expect(airbriefBriefUrl(sha, "https://airbrief.example")).toBe(`https://airbrief.example/w/report?brief=${"ab".repeat(32)}`);
+  });
+
+  it("is null without an AirBrief address or with something that is not a hash", () => {
+    expect(airbriefBriefUrl(sha, "")).toBeNull();
+    expect(airbriefBriefUrl("abc", "https://airbrief.example")).toBeNull();
   });
 });
