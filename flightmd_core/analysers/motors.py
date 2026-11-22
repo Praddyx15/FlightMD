@@ -40,12 +40,14 @@ _ESC_COL = re.compile(r"^esc\[(\d+)\]\.esc_(\w+)$")
 
 
 class MotorAnalyser(BaseAnalyser):
+    """@relation(LLR-ANL-055, scope=class)"""
     name            = "motors"
     display_name    = "Motor / ESC Analysis"
     required_topics = ["esc_status"]
     weight          = 5.0
 
     def analyse(self, topics, params):
+        """@relation(LLR-ANL-057, LLR-ANL-061, LLR-ANL-063, LLR-ANL-064, scope=function)"""
         df = topics["esc_status"]
         if "timestamp" not in df.columns:
             return self._skip("esc_status has no timestamps.")
@@ -68,6 +70,11 @@ class MotorAnalyser(BaseAnalyser):
         if not phases.known:
             # no arming data: "flying" = most motors clearly spinning
             in_air &= (np.nan_to_num(rpm) > SPINNING_RPM).mean(axis=1) > 0.5
+
+        has_temp = any(np.isfinite(df[c].to_numpy(float)).any() for _, c in temp_cols)
+        if not in_air.any() and not has_temp:
+            # no in-air rows: balance and dropouts have nothing to look at (PR-029)
+            return self._skip("No in-air ESC RPM samples and no ESC temperature.")
 
         findings: list[Finding] = []
         health_score = 100.0
@@ -119,7 +126,9 @@ class MotorAnalyser(BaseAnalyser):
         )
 
     def _motor_cols(self, df, field, esc_count) -> list[tuple[int, str]]:
-        """[(motor index, column)] for real ESCs, ordered by index."""
+        """[(motor index, column)] for real ESCs, ordered by index.
+
+        @relation(LLR-ANL-056, scope=function)"""
         found = []
         for col in df.columns:
             m = _ESC_COL.match(col)
@@ -138,6 +147,7 @@ class MotorAnalyser(BaseAnalyser):
                 if df[c].notna().any() and (df[c].fillna(0) != 0).any()]
 
     def _hover_mask(self, rpm, in_air):
+        """@relation(LLR-ANL-058, scope=function)"""
         valid = np.isfinite(rpm).all(axis=1) & (np.nan_to_num(rpm) > SPINNING_RPM).all(axis=1) & in_air
         if not valid.any():
             return valid
@@ -146,6 +156,7 @@ class MotorAnalyser(BaseAnalyser):
         return valid & (np.abs(mean - typical) <= HOVER_BAND * typical)
 
     def _balance(self, df, rpm, hover, ts, rpm_cols, curr_cols, key_metrics):
+        """@relation(LLR-ANL-059, LLR-ANL-060, scope=function)"""
         findings, penalty = [], 0.0
         per_motor = np.median(rpm[hover], axis=0)
         mean = float(per_motor.mean())
@@ -231,6 +242,7 @@ class MotorAnalyser(BaseAnalyser):
         return findings, penalty
 
     def _dropouts(self, rpm, in_air, ts, rpm_cols):
+        """@relation(LLR-ANL-062, scope=function)"""
         findings, penalty = [], 0.0
         n = rpm.shape[1]
         for k, (i, col) in enumerate(rpm_cols):

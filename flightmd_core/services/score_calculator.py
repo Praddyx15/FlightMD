@@ -7,6 +7,7 @@ are left out of the mean, and when none could be assessed the report is
 "Not assessed", never 100 / A.
 """
 
+import math
 from typing import Optional
 
 from flightmd_core.analysers.registry import module_weights
@@ -42,12 +43,15 @@ SCORE_LABELS = [(floor, label) for floor, label, _ in BANDS]
 
 class ScoreCalculator:
     def __init__(self, weights: Optional[dict[str, float]] = None):
+        """@relation(LLR-RPT-014, scope=function)"""
         self.weights = module_weights() if weights is None else weights
 
     def calculate(self, results: list[AnalyserResult]) -> tuple[float, str, str]:
         """(score 0-100, label, letter grade). Marks unassessed results
         (assessed=False) as a side effect. Nothing assessed gives
-        (0.0, "Not assessed", "-")."""
+        (0.0, "Not assessed", "-").
+
+        @relation(LLR-RPT-015, LLR-RPT-016, LLR-RPT-017, LLR-RPT-020, scope=function)"""
         total_weight = 0.0
         weighted_sum = 0.0
 
@@ -57,7 +61,8 @@ class ScoreCalculator:
             weight = self.weights.get(r.analyser, 0.0)
             if weight <= 0 or not r.assessed:
                 continue
-            r.health_score = max(0.0, min(100.0, r.health_score))
+            # min(100.0, nan) is 100.0, so a broken score would count as perfect
+            r.health_score = 0.0 if math.isnan(r.health_score) else max(0.0, min(100.0, r.health_score))
             weighted_sum += r.health_score * weight
             total_weight += weight
 
@@ -68,7 +73,9 @@ class ScoreCalculator:
         return overall, self._label(overall), self.get_letter_grade(overall)
 
     def assessed_fraction(self, results: list[AnalyserResult]) -> float:
-        """Share of the total weight that was actually assessed, 0-1."""
+        """Share of the total weight that was actually assessed, 0-1.
+
+        @relation(LLR-RPT-019, scope=function)"""
         total = sum(self.weights.values())
         if total <= 0:
             return 0.0
@@ -77,12 +84,14 @@ class ScoreCalculator:
         return round(done / total, 3)
 
     def get_letter_grade(self, score: float) -> str:
+        """@relation(LLR-RPT-018, scope=function)"""
         for floor, _, grade in BANDS:
             if score >= floor:
                 return grade
         return "F"
 
     def _label(self, score: float) -> str:
+        """@relation(LLR-RPT-018, scope=function)"""
         for floor, label, _ in BANDS:
             if score >= floor:
                 return label

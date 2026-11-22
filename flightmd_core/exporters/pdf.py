@@ -48,13 +48,13 @@ BASE_CSS = """
     size: A4;
     margin: 20mm 18mm 24mm 18mm;
     @bottom-center {
-        content: "FlightMD · Pradum Behl · Page " counter(page) " of " counter(pages);
+        content: "FlightMD · Page " counter(page) " of " counter(pages);
         font-size: 8pt;
         color: #666;
         font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     }
     @top-right {
-        content: "CONFIDENTIAL — " string(report-id);
+        content: "Report " string(report-id);
         font-size: 7pt;
         color: #999;
         font-family: monospace;
@@ -195,12 +195,14 @@ p  { margin-bottom: 8px; }
 
 
 def severity_colour(severity) -> str:
+    """@relation(LLR-RPT-059, scope=function)"""
     if hasattr(severity, "value"):
         severity = severity.value
     return SEVERITY_COLOURS.get(str(severity).lower(), "#888888")
 
 
 def score_colour(score) -> str:
+    """@relation(LLR-RPT-059, scope=function)"""
     if score is None:
         return "#888888"
     for threshold, colour in SCORE_COLOURS:
@@ -210,6 +212,7 @@ def score_colour(score) -> str:
 
 
 def format_ms(ms) -> str:
+    """@relation(LLR-RPT-060, scope=function)"""
     if ms is None:
         return "—"
     s = ms / 1000
@@ -219,6 +222,7 @@ def format_ms(ms) -> str:
 
 @lru_cache(maxsize=1)
 def template_env():
+    """@relation(LLR-RPT-061, scope=function)"""
     try:
         from jinja2 import Environment, FileSystemLoader, select_autoescape
     except ImportError as e:
@@ -234,10 +238,12 @@ def template_env():
 
 
 def _now() -> str:
+    """@relation(LLR-RPT-063, scope=function)"""
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 
 def _write_pdf(html: str) -> bytes:
+    """@relation(LLR-RPT-062, scope=function)"""
     try:
         # heavy import with system deps, only load when a PDF is asked for
         from weasyprint import CSS, HTML
@@ -249,10 +255,12 @@ def _write_pdf(html: str) -> bytes:
 
 
 def render_report_html(report) -> str:
+    """@relation(LLR-RPT-063, LLR-RPT-064, scope=function)"""
     return template_env().get_template("report.html").render(report=report, generated_at=_now())
 
 
 def render_report_pdf(report) -> bytes:
+    """@relation(LLR-RPT-063, scope=function)"""
     pdf = _write_pdf(render_report_html(report))
     logger.info(f"PDF for report {report.report_id}: {len(pdf)} bytes")
     return pdf
@@ -266,6 +274,7 @@ def render_airframe_record_html(
     hours_since_maintenance: float,
     maintenance_due: bool,
 ) -> str:
+    """@relation(LLR-RPT-065, scope=function)"""
     return template_env().get_template("airframe_record.html").render(
         airframe_label=airframe_label,
         flights=flights,
@@ -278,7 +287,9 @@ def render_airframe_record_html(
 
 
 def render_airframe_record_pdf(**kwargs) -> bytes:
-    """Same keyword arguments as render_airframe_record_html."""
+    """Same keyword arguments as render_airframe_record_html.
+
+    @relation(LLR-RPT-065, scope=function)"""
     pdf = _write_pdf(render_airframe_record_html(**kwargs))
     logger.info(f"airframe record PDF: {len(pdf)} bytes, {len(kwargs.get('flights') or [])} flights")
     return pdf

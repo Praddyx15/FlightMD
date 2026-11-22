@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from api.airframe_store import AirframeConfig, MaintenanceEntry
 from flightmd_core.exporters import pdf
-from flightmd_core.models.findings import FlightMDReport
+from flightmd_core.models.findings import AnalyserResult, FlightMDReport
 from flightmd_core.models.metadata import FlightMetadata
 
 
@@ -31,6 +31,7 @@ def render_airframe_record(config, flights, total_hours=10.0, hours_since=5.0, d
 
 
 class TestAirframeRecordTemplate:
+    # covers: HLR-RPT-019, LLR-RPT-065
     def test_renders_without_leftover_template_syntax(self):
         config = AirframeConfig(
             airframe_label="Quad-1",
@@ -51,6 +52,7 @@ class TestAirframeRecordTemplate:
         assert "Prop swap" in html
         assert "Check props" in html
 
+    # covers: HLR-RPT-019, LLR-RPT-065
     def test_empty_airframe_shows_placeholder_text(self):
         config = AirframeConfig(airframe_label="Empty-Drone")
         html = render_airframe_record(config, flights=[])
@@ -58,11 +60,13 @@ class TestAirframeRecordTemplate:
         assert "No flights logged" in html
         assert "No maintenance entries logged" in html
 
+    # covers: HLR-RPT-019, LLR-RPT-065
     def test_maintenance_due_flag_reflected_in_output(self):
         config = AirframeConfig(airframe_label="Quad-1", maintenance_interval_hours=10.0)
         html = render_airframe_record(config, flights=[], hours_since=15.0, due=True)
         assert "Maintenance Due" in html
 
+    # covers: HLR-RPT-019, LLR-RPT-065
     def test_disclaimer_present_not_a_certification(self):
         """This must never be framed as a compliance certification —
         it's the operator's own recordkeeping export."""
@@ -71,7 +75,19 @@ class TestAirframeRecordTemplate:
         assert "not a regulatory certification" in html
 
 
+def make_report(**kw):
+    fields = dict(
+        report_id="r1", overall_score=85.0, score_label="Good", letter_grade="B",
+        executive_summary="Summary", metadata=FlightMetadata(duration_seconds=60.0),
+        findings=[], param_change_sheet=[], analyser_results=[],
+        processing_time_ms=10, file_name="f.ulg", file_size_bytes=100,
+    )
+    fields.update(kw)
+    return FlightMDReport(**fields)
+
+
 class TestReportTemplate:
+    # covers: HLR-RPT-018, HLR-RPT-020, LLR-RPT-061, LLR-RPT-063
     def test_report_html_renders_from_the_package(self):
         report = FlightMDReport(
             report_id="r1", overall_score=85.0, score_label="Good", letter_grade="B",
@@ -83,6 +99,42 @@ class TestReportTemplate:
         assert "{{" not in html
         assert "<b>escaped</b>" not in html
 
+    # covers: HLR-RPT-018, LLR-RPT-064
+    def test_nothing_assessed_is_not_printed_as_clean(self):
+        """PR-004: a log no module could assess printed the green all-clear line and 100/100."""
+        report = make_report(
+            overall_score=0.0, score_label="Not assessed", letter_grade="-", assessed_fraction=0.0,
+            analyser_results=[AnalyserResult(analyser="gps", display_name="GPS", findings=[], assessed=False)],
+        )
+        html = pdf.render_report_html(report)
+        assert "No significant issues" not in html
+        assert "not a clean result" in html
+        assert "100/100" not in html
+        assert "Not assessed" in html
+        assert "✓ Ran" not in html
+
+    # covers: HLR-RPT-018, LLR-RPT-064
+    def test_partly_assessed_report_says_how_much_was_checked(self):
+        report = make_report(
+            assessed_fraction=0.35, metadata=FlightMetadata(duration_seconds=60.0, parse_warnings=["no GPS topic"]),
+            analyser_results=[
+                AnalyserResult(analyser="ekf", display_name="EKF", findings=[], health_score=90.0),
+                AnalyserResult(analyser="gps", display_name="GPS", findings=[], assessed=False),
+            ],
+        )
+        html = pdf.render_report_html(report)
+        assert "modules that could assess this log (35% of the scoring weight)" in html
+        assert "Grade B" in html
+        assert "no GPS topic" in html
+        assert html.count("/100") == 1   # the one assessed module
+
+    # covers: LLR-RPT-062
+    def test_page_furniture_names_no_person_and_no_marking(self):
+        """PR-018: the repository is public; the PDF said CONFIDENTIAL and carried a personal name."""
+        assert "CONFIDENTIAL" not in pdf.BASE_CSS
+        assert 'content: "FlightMD · Page " counter(page)' in pdf.BASE_CSS
+
+    # covers: HLR-RPT-018, HLR-RPT-020, LLR-RPT-061
     def test_templates_ship_inside_the_package(self):
         for name in ("report.html", "airframe_record.html"):
             assert os.path.isfile(os.path.join(pdf.TEMPLATE_DIR, name))

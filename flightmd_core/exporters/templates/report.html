@@ -21,14 +21,24 @@
       File: {{ report.file_name }} ({{ (report.file_size_bytes / 1024)|round(1) }} KB)
     </div>
   </div>
+  {% set nothing_assessed = report.letter_grade == "-" %}
   <div class="score-block">
+    {% if nothing_assessed %}
+    <div class="score-number" style="color:#888888">—</div>
+    <div class="score-label" style="color:#888888">{{ report.score_label }}</div>
+    <div style="font-size:7pt;color:#888;margin-top:2px;">No module could assess this log</div>
+    {% else %}
     <div class="score-number" style="color: {{ report.overall_score | score_colour }}">
       {{ report.overall_score | round(0) | int }}
     </div>
     <div class="score-label" style="color: {{ report.overall_score | score_colour }}">
-      {{ report.score_label }}
+      {{ report.score_label }} · Grade {{ report.letter_grade }}
     </div>
     <div style="font-size:7pt;color:#888;margin-top:2px;">Health Score / 100</div>
+    {% endif %}
+    {% if report.assessed_fraction is not none %}
+    <div style="font-size:7pt;color:#888;">Assessed: {{ (report.assessed_fraction * 100)|round(0)|int }}% of the scoring weight</div>
+    {% endif %}
   </div>
 </div>
 
@@ -95,7 +105,22 @@
 <h2>Findings ({{ report.findings|length }} total)</h2>
 
 {% if not report.findings %}
+  {% if nothing_assessed %}
+<p style="color:#888888;font-weight:600;">No findings, but no module could assess this log, so this is not a clean result.</p>
+  {% elif report.assessed_fraction is not none and report.assessed_fraction < 1 %}
+<p style="color:#0DD97C;font-weight:600;">✓ No significant issues detected in the modules that could assess this log ({{ (report.assessed_fraction * 100)|round(0)|int }}% of the scoring weight).</p>
+  {% else %}
 <p style="color:#0DD97C;font-weight:600;">✓ No significant issues detected in this flight log.</p>
+  {% endif %}
+{% endif %}
+
+{% if report.metadata.parse_warnings %}
+<h2>Parse Warnings</h2>
+<ul style="font-size:9pt;color:#555;margin:0 0 8px 16px;">
+  {% for w in report.metadata.parse_warnings %}
+  <li>{{ w }}</li>
+  {% endfor %}
+</ul>
 {% endif %}
 
 {% for finding in report.findings %}
@@ -204,12 +229,14 @@
       <td>
         {% if ar.skipped %}
           <span style="color:#888;">Skipped</span>
+        {% elif not ar.assessed %}
+          <span style="color:#888;">Not assessed</span>
         {% else %}
           <span style="color:#0DD97C;">✓ Ran</span>
         {% endif %}
       </td>
       <td>
-        {% if not ar.skipped %}
+        {% if ar.assessed and not ar.skipped %}
           <span style="color:{{ ar.health_score | score_colour }};font-weight:bold;">
             {{ ar.health_score|round(0)|int }}/100
           </span>

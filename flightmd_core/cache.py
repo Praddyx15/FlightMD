@@ -20,6 +20,7 @@ import pickle
 import re
 import tempfile
 import time
+import zlib
 from pathlib import Path
 from typing import Optional
 
@@ -37,6 +38,7 @@ _SUFFIX = f".v{CACHE_VERSION}.pkl.gz"
 
 
 def _env_float(name: str, default: float) -> float:
+    """@relation(LLR-INT-032, scope=function)"""
     try:
         return float(os.environ.get(name, default))
     except ValueError:
@@ -44,6 +46,7 @@ def _env_float(name: str, default: float) -> float:
 
 
 def _drop(p: Path) -> None:
+    """@relation(LLR-INT-029, scope=function)"""
     # on Windows a file another process has open can't be deleted; next prune gets it
     try:
         p.unlink(missing_ok=True)
@@ -52,6 +55,7 @@ def _drop(p: Path) -> None:
 
 
 def enabled() -> bool:
+    """@relation(LLR-INT-026, scope=function)"""
     flag = os.environ.get("FLIGHTMD_CACHE", "").strip().lower()
     if flag:
         return flag not in ("0", "false", "no", "off")
@@ -61,17 +65,22 @@ def enabled() -> bool:
 
 
 def cache_dir() -> Path:
+    """@relation(LLR-INT-027, scope=function)"""
     return Path(os.environ.get("FLIGHTMD_DATA_DIR") or "data") / "cache"
 
 
 def _path(sha256: str) -> Path:
+    """@relation(LLR-INT-027, scope=function)"""
     if not _SHA256.match(sha256 or ""):
         raise ValueError(f"not a sha256 hex digest: {sha256!r}")
     return cache_dir() / f"{sha256}{_SUFFIX}"
 
 
 def get(sha256: str) -> Optional[tuple[dict[str, pd.DataFrame], dict[str, float], FlightMetadata]]:
-    """(topics, params, metadata) as the parser returned them, or None."""
+    """(topics, params, metadata) as the parser returned them, or None.
+
+    @relation(LLR-INT-028, LLR-INT-029, scope=function)
+    """
     if not enabled():
         return None
     p = _path(sha256)
@@ -82,10 +91,13 @@ def get(sha256: str) -> Optional[tuple[dict[str, pd.DataFrame], dict[str, float]
             return None
         with gzip.open(p, "rb") as f:
             entry = pickle.load(f)
+        out = entry["topics"], entry["params"], FlightMetadata.model_validate(entry["metadata"])
     except FileNotFoundError:
         return None
-    except (OSError, EOFError, pickle.UnpicklingError, AttributeError, ImportError) as e:
-        # half-written by a crashed process, or from an older FlightMD
+    except (OSError, EOFError, zlib.error, pickle.UnpicklingError, AttributeError, ImportError,
+            KeyError, TypeError, ValueError) as e:
+        # half-written by a crashed process, or from an older FlightMD. a bad entry must
+        # never block the log, so drop it and parse again
         logger.warning(f"dropping unreadable cache entry {p.name}: {e}")
         _drop(p)
         return None
@@ -94,10 +106,11 @@ def get(sha256: str) -> Optional[tuple[dict[str, pd.DataFrame], dict[str, float]
         os.utime(p)
     except OSError:
         pass
-    return entry["topics"], entry["params"], FlightMetadata.model_validate(entry["metadata"])
+    return out
 
 
 def put(sha256: str, topics, params, metadata: FlightMetadata) -> None:
+    """@relation(LLR-INT-030, scope=function)"""
     if not enabled():
         return
     p = _path(sha256)
@@ -117,7 +130,10 @@ def put(sha256: str, topics, params, metadata: FlightMetadata) -> None:
 
 
 def prune() -> None:
-    """Drop expired entries, then the oldest until the total is under the cap."""
+    """Drop expired entries, then the oldest until the total is under the cap.
+
+    @relation(LLR-INT-031, scope=function)
+    """
     d = cache_dir()
     if not d.is_dir():
         return

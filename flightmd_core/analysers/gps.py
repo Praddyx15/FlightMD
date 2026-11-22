@@ -53,6 +53,7 @@ SPOOF_MULTIPLE = 3
 
 
 class GPSAnalyser(BaseAnalyser):
+    """@relation(LLR-ANL-029, scope=class)"""
     name            = "gps"
     display_name    = "GPS Analysis"
     required_topics = ["vehicle_gps_position"]
@@ -60,6 +61,7 @@ class GPSAnalyser(BaseAnalyser):
     optional_topics = ["vehicle_status", "vehicle_land_detected"]
 
     def analyse(self, topics, params):
+        """@relation(LLR-ANL-030, LLR-ANL-031, LLR-ANL-035, LLR-ANL-036, LLR-ANL-039, LLR-ANL-040, scope=function)"""
         df = topics["vehicle_gps_position"]
         if "timestamp" not in df.columns:
             return self._skip("GPS topic has no timestamps.")
@@ -83,6 +85,12 @@ class GPSAnalyser(BaseAnalyser):
         sustain_n = max(1, int(round(SUSTAIN_S * rate)))
         has_fix = (w[fix_col].to_numpy(float) >= 3) if fix_col else np.ones(len(w), bool)
         where = phases.describe()
+
+        # a frame no rule can read must not come out as a clean 100 (PR-027)
+        if len(w) < sustain_n:
+            return self._skip(f"Less than {SUSTAIN_S:.0f} s of GPS samples {where}.")
+        if not self._any_usable(w, fix_col):
+            return self._skip(f"No usable fix, satellite, HDOP, jamming or spoofing values {where}.")
 
         findings: list[Finding] = []
         penalty = 0.0
@@ -142,7 +150,25 @@ class GPSAnalyser(BaseAnalyser):
             key_metrics=key_metrics,
         )
 
+    def _any_usable(self, w, fix_col) -> bool:
+        """@relation(LLR-ANL-042, scope=function)"""
+        def vals(col):
+            return w[col].to_numpy(float) if col and col in w.columns else np.array([])
+
+        sats = vals("satellites_used")
+        hdop = vals(find_col(w, ["hdop", "eph"]))
+        checks = [
+            np.isfinite(vals(fix_col)),
+            (sats >= 0) & (sats <= SAT_MAX_VALID),
+            (hdop > 0) & (hdop < HDOP_UNKNOWN),
+            np.isfinite(vals("jamming_indicator")),
+            np.isfinite(vals("jamming_state")),
+            np.isfinite(vals("spoofing_state")),
+        ]
+        return any(c.any() for c in checks)
+
     def _fix(self, fix, ts, where):
+        """@relation(LLR-ANL-032, LLR-ANL-033, LLR-ANL-034, scope=function)"""
         bad = fix < 3
         if not bad.any():
             return [], 0.0
@@ -267,6 +293,7 @@ class GPSAnalyser(BaseAnalyser):
         )], penalty
 
     def _jamming(self, w, ts, sustain_n):
+        """@relation(LLR-ANL-037, scope=function)"""
         level = 0          # 0 none, 1 warning, 2 critical
         parts = []
         span = None
@@ -320,6 +347,7 @@ class GPSAnalyser(BaseAnalyser):
         )], 30.0 if level == 2 else 15.0
 
     def _spoofing(self, spoof, ts):
+        """@relation(LLR-ANL-038, scope=function)"""
         worst = int(np.nanmax(spoof)) if np.isfinite(spoof).any() else 0
         if worst >= SPOOF_MULTIPLE:
             sev, penalty, label = Severity.CRITICAL, 30.0, "Multiple Indications"
@@ -347,6 +375,7 @@ class GPSAnalyser(BaseAnalyser):
 
 
 def _rolling(x, n, how):
+    """@relation(LLR-ANL-041, scope=function)"""
     r = pd.Series(x).rolling(n, min_periods=n)
     return (r.median() if how == "median" else r.min()).to_numpy()
 
