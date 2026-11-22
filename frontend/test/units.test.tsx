@@ -7,6 +7,7 @@ import messages from "@/messages/en.json";
 import { renderWithIntl } from "./intl";
 
 describe("UnitsToggle", () => {
+  // covers: HLR-WEB-021, LLR-WEB-027, LLR-WEB-030, LLR-WEB-031, LLR-WEB-032
   it("starts metric and remembers the choice", async () => {
     renderWithIntl(<UnitsToggle />);
     const select = screen.getByRole("combobox", { name: /^Units/ });
@@ -17,12 +18,14 @@ describe("UnitsToggle", () => {
     expect(window.localStorage.getItem("flightmd.units")).toBe('"imperial"');
   });
 
+  // covers: HLR-WEB-021, LLR-WEB-027, LLR-WEB-030, LLR-WEB-031, LLR-WEB-032
   it("picks up a stored choice", () => {
     window.localStorage.setItem("flightmd.units", '"aviation"');
     renderWithIntl(<UnitsToggle />);
     expect(screen.getByRole("combobox", { name: /^Units/ })).toHaveValue("aviation");
   });
 
+  // covers: HLR-WEB-021, LLR-WEB-026, LLR-WEB-031, LLR-WEB-032
   it("ignores a stored value it doesn't know", () => {
     window.localStorage.setItem("flightmd.units", '"cubits"');
     renderWithIntl(<UnitsToggle />);
@@ -33,17 +36,20 @@ describe("UnitsToggle", () => {
 describe("metric labels", () => {
   const labels = makeLabels(messages);
 
+  // covers: HLR-WEB-011, HLR-WEB-016, LLR-WEB-054, LLR-WEB-055
   it("names modules and metrics from the messages", () => {
     expect(labels.module("ekf")).toBe("EKF Health");
     expect(labels.metric("gps.max_hdop").label).toBe("Max GPS HDOP");
     expect(labels.format("battery.sag_per_cell_v", 0.4567)).toBe("0.46 V");
   });
 
+  // covers: HLR-WEB-011, HLR-WEB-016, LLR-WEB-054, LLR-WEB-055
   it("humanises a metric it has never seen", () => {
     expect(labels.metric("motors.esc_temp_max_c")).toEqual({ label: "Esc temp max c", unit: "", digits: 2 });
     expect(labels.module("new_module")).toBe("new_module");
   });
 
+  // covers: HLR-WEB-021, LLR-WEB-056
   it("converts altitudes with the unit preference", () => {
     expect(labels.metric("ascent_profile.apogee_altitude_m", "imperial").unit).toBe("ft AGL");
     expect(labels.format("ascent_profile.apogee_altitude_m", 100, "imperial")).toBe("328 ft AGL");

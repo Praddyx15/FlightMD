@@ -43,6 +43,7 @@ def counting(payload=b"data"):
 
 
 class TestExportCache:
+    # covers: HLR-API-013, LLR-API-082
     def test_built_once(self, database):
         build, calls = counting()
         report = make_report()
@@ -50,6 +51,7 @@ class TestExportCache:
         assert export_cache.get_or_build(report, "report.pdf", build) == b"data"
         assert calls == ["r1"]
 
+    # covers: HLR-API-013, LLR-API-081
     def test_kinds_and_reports_are_separate(self, database):
         build, calls = counting()
         export_cache.get_or_build(make_report("r1"), "track.gpx", build)
@@ -57,12 +59,14 @@ class TestExportCache:
         export_cache.get_or_build(make_report("r2"), "track.gpx", build)
         assert calls == ["r1", "r1", "r2"]
 
+    # covers: HLR-API-013, LLR-API-081
     def test_new_schema_version_rebuilds(self, database):
         build, calls = counting()
         export_cache.get_or_build(make_report(schema_version="1.7"), "report.json", build)
         export_cache.get_or_build(make_report(schema_version="1.8"), "report.json", build)
         assert len(calls) == 2
 
+    # covers: HLR-API-013, LLR-API-081
     def test_new_app_version_rebuilds(self, database, monkeypatch):
         from api.config import get_settings
         build, calls = counting()
@@ -71,6 +75,7 @@ class TestExportCache:
         export_cache.get_or_build(make_report(), "report.pdf", build)
         assert len(calls) == 2
 
+    # covers: HLR-API-013, LLR-API-083
     def test_drop_removes_the_reports_exports(self, database):
         build, calls = counting()
         export_cache.get_or_build(make_report(), "report.pdf", build)
@@ -79,6 +84,7 @@ class TestExportCache:
         export_cache.get_or_build(make_report(), "report.pdf", build)
         assert len(calls) == 2
 
+    # covers: HLR-API-013, LLR-API-082
     def test_unwritable_cache_still_returns_the_export(self, database, monkeypatch):
         def broken(path, data):
             raise OSError("read-only fs")
@@ -86,11 +92,13 @@ class TestExportCache:
         build, calls = counting()
         assert export_cache.get_or_build(make_report(), "report.pdf", build) == b"data"
 
+    # covers: HLR-API-013, LLR-API-081
     def test_odd_report_ids_never_reach_the_disk(self, database):
         build, _ = counting()
         with pytest.raises(ValueError):
             export_cache.get_or_build(make_report("../../etc"), "report.pdf", build)
 
+    # covers: HLR-API-010, HLR-API-013, LLR-API-007, LLR-API-083
     def test_expiry_sweep_drops_exports(self, database):
         import time
         import api.main as main
@@ -108,6 +116,7 @@ class TestExportCache:
 
 
 class TestAtomicWrites:
+    # covers: HLR-API-013, LLR-API-112
     def test_failed_replace_keeps_the_old_file_and_leaves_no_temp(self, tmp_path, monkeypatch):
         path = str(tmp_path / "r.json")
         fs.write_json_atomic(path, {"v": 1})

@@ -34,15 +34,18 @@ def build(findings, results=None, metadata=None, score=(90.0, "Excellent", "A"))
     )
 
 
+# covers: HLR-RPT-001, LLR-RPT-010
 def test_schema_version_is_current():
     assert build([]).schema_version == "1.7"
 
 
+# covers: HLR-RPT-001, LLR-RPT-027
 def test_generated_at_is_utc_iso():
     stamp = build([]).generated_at
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", stamp)
 
 
+# covers: LLR-RPT-007, LLR-RPT-022
 def test_params_list_includes_param_changes():
     f = finding(Severity.WARNING, [rec("MC_ROLLRATE_D", 0.004, 0.0034, "decrease")])
     f.params = ["IMU_DGYRO_CUTOFF"]
@@ -50,6 +53,7 @@ def test_params_list_includes_param_changes():
     assert out.params == ["IMU_DGYRO_CUTOFF", "MC_ROLLRATE_D"]
 
 
+# covers: LLR-RPT-022
 def test_change_appended_after_construction_reaches_params():
     f = finding(Severity.WARNING)
     f.param_changes.append(rec("MPC_XY_P", 1.8, 0.95, "decrease"))
@@ -57,6 +61,7 @@ def test_change_appended_after_construction_reaches_params():
     assert out.params == ["MPC_XY_P"]
 
 
+# covers: HLR-RPT-012, LLR-RPT-025, LLR-RPT-026
 def test_conflicting_directions_keep_the_more_severe_and_say_so():
     warn = finding(Severity.WARNING, [rec("MC_ROLLRATE_P", 0.2, 0.17, "decrease")], title="Roll oscillation")
     info = finding(Severity.INFO, [rec("MC_ROLLRATE_P", 0.2, 0.3, "increase")], title="Below range")
@@ -67,6 +72,7 @@ def test_conflicting_directions_keep_the_more_severe_and_say_so():
     assert "increase to 0.3" in sheet[0].reason
 
 
+# covers: HLR-RPT-012, LLR-RPT-025
 def test_same_direction_keeps_first_without_note():
     a = finding(Severity.CRITICAL, [rec("BAT_LOW_THR", 0.05, 0.15, "increase", "inverted")])
     b = finding(Severity.WARNING, [rec("BAT_LOW_THR", 0.05, 0.12, "increase", "below range")])
@@ -74,6 +80,7 @@ def test_same_direction_keeps_first_without_note():
     assert [(r.suggested_value, r.reason) for r in sheet] == [(0.15, "inverted")]
 
 
+# covers: HLR-RPT-012, LLR-RPT-025
 def test_dedupe_does_not_mutate_finding_cards():
     warn = finding(Severity.WARNING, [rec("X", 1, 0.5, "decrease", "orig")])
     info = finding(Severity.INFO, [rec("X", 1, 2, "increase")])
@@ -81,6 +88,7 @@ def test_dedupe_does_not_mutate_finding_cards():
     assert warn.param_changes[0].reason == "orig"
 
 
+# covers: HLR-RPT-013, LLR-RPT-021, LLR-RPT-022, LLR-RPT-023
 def test_nan_never_reaches_json():
     chart = {"timestamps": [0.0, 1.0], "hdop": [1.0, float("nan")], "peak": float("inf")}
     f = finding(Severity.WARNING, chart=chart)
@@ -100,11 +108,13 @@ def test_nan_never_reaches_json():
     assert report.metadata.gps_path_hdop == [1.0, None]
 
 
+# covers: HLR-RPT-002, LLR-RPT-004, LLR-RPT-005
 def test_nan_confidence_becomes_zero():
     f = finding(Severity.INFO, confidence=float("nan"))
     assert f.confidence == 0.0 and f.confidence_level == "low"
 
 
+# covers: HLR-RPT-011, LLR-RPT-024
 def test_findings_sorted_by_severity_then_confidence():
     a = finding(Severity.INFO, title="a")
     b = finding(Severity.CRITICAL, title="b", confidence=0.5)
@@ -112,6 +122,7 @@ def test_findings_sorted_by_severity_then_confidence():
     assert [f.title for f in build([a, b, c]).findings] == ["c", "b", "a"]
 
 
+# covers: HLR-RPT-007, LLR-RPT-027
 def test_assessed_fraction_and_not_assessed_score():
     results = [AnalyserResult(analyser="oscillation", display_name="O", findings=[], skipped=True)]
     report = build([], results=results, score=(0.0, "Not assessed", "-"))
@@ -120,6 +131,7 @@ def test_assessed_fraction_and_not_assessed_score():
     assert not math.isnan(report.overall_score)
 
 
+# covers: HLR-RPT-002, LLR-RPT-006, HLR-ANL-009
 def test_time_window_fields_filled_from_ms():
     f = Finding(category=Category.GPS, severity=Severity.WARNING, title="t", technical_summary="x",
                 plain_english="x", recommendation="x", confidence=0.5,

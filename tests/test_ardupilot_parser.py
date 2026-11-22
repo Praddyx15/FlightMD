@@ -49,6 +49,7 @@ def parse(monkeypatch, path, messages, params=None):
     return ArduPilotBinParser().parse(path)
 
 
+# covers: HLR-PRS-003, HLR-PRS-010, LLR-PRS-020, LLR-PRS-022, LLR-PRS-035
 def test_imu_maps_to_gyro_and_accel_topics(monkeypatch, tmp_bin_path):
     messages = [
         FakeDFMessage("IMU", 1000.0, I=0, GyrX=0.1, GyrY=0.2, GyrZ=0.3, AccX=1.0, AccY=2.0, AccZ=9.8),
@@ -68,6 +69,7 @@ def test_imu_maps_to_gyro_and_accel_topics(monkeypatch, tmp_bin_path):
     assert list(accel["timestamp"]) == [0, 100_000]
 
 
+# covers: HLR-PRS-004, LLR-PRS-036
 def test_imu_instances_are_not_duplicated(monkeypatch, tmp_bin_path):
     messages = []
     for k in range(3):
@@ -84,6 +86,7 @@ def test_imu_instances_are_not_duplicated(monkeypatch, tmp_bin_path):
     assert list(topics["sensor_accel_1"]["x"]) == [1, 1, 1]
 
 
+# covers: HLR-PRS-003, HLR-PRS-010, LLR-PRS-035
 def test_pre_4_0_imu2_messages_are_their_own_instance(monkeypatch, tmp_bin_path):
     messages = [
         FakeDFMessage("IMU", 10.0, GyrX=0, GyrY=0, GyrZ=0, AccX=0, AccY=0, AccZ=-9.8),
@@ -95,6 +98,7 @@ def test_pre_4_0_imu2_messages_are_their_own_instance(monkeypatch, tmp_bin_path)
     assert topics["sensor_accel_1"]["x"].iloc[0] == 5
 
 
+# covers: HLR-PRS-003, HLR-PRS-010, LLR-PRS-037
 def test_bat_maps_to_battery_status(monkeypatch, tmp_bin_path):
     messages = [
         FakeDFMessage("BAT", 1000.0, Inst=0, Volt=16.8, Curr=2.0, Temp=25.0, CurrTot=0),
@@ -112,12 +116,14 @@ def test_bat_maps_to_battery_status(monkeypatch, tmp_bin_path):
     assert "remaining" not in bat.columns
 
 
+# covers: HLR-PRS-003, HLR-PRS-010, LLR-PRS-037
 def test_bat_remaining_from_rempct(monkeypatch, tmp_bin_path):
     messages = [FakeDFMessage("BAT", 1000.0, Inst=0, Volt=16.8, Curr=2.0, RemPct=87)]
     topics, _, _ = parse(monkeypatch, tmp_bin_path, messages)
     assert topics["battery_status"]["remaining"].iloc[0] == pytest.approx(0.87)
 
 
+# covers: HLR-PRS-004, LLR-PRS-036
 def test_second_battery_kept_separate(monkeypatch, tmp_bin_path):
     messages = [
         FakeDFMessage("BAT", 1000.0, Inst=0, Volt=16.8, Curr=2.0),
@@ -128,6 +134,7 @@ def test_second_battery_kept_separate(monkeypatch, tmp_bin_path):
     assert topics["battery_status_1"]["voltage_v"].iloc[0] == pytest.approx(25.2)
 
 
+# covers: HLR-PRS-003, HLR-PRS-010, LLR-PRS-039
 def test_gps_lat_lon_scaled_to_px4_fixed_point(monkeypatch, tmp_bin_path):
     messages = [
         FakeDFMessage("GPS", 1000.0, I=0, Lat=37.7749, Lng=-122.4194, Alt=100.0, NSats=12, HDop=0.9, Status=3),
@@ -144,6 +151,7 @@ def test_gps_lat_lon_scaled_to_px4_fixed_point(monkeypatch, tmp_bin_path):
     assert "spoofing_state" not in gps.columns
 
 
+# covers: HLR-PRS-004, LLR-PRS-036
 def test_gps_receivers_not_interleaved(monkeypatch, tmp_bin_path):
     messages = [
         FakeDFMessage("GPS", 1000.0, I=0, Lat=1.0, Lng=1.0, Alt=1.0, NSats=14, HDop=0.8, Status=3),
@@ -156,6 +164,7 @@ def test_gps_receivers_not_interleaved(monkeypatch, tmp_bin_path):
     assert list(topics["vehicle_gps_position_1"]["satellites_used"]) == [6, 6]
 
 
+# covers: HLR-PRS-003, HLR-PRS-010, LLR-PRS-039
 def test_gps_rows_without_status_dropped(monkeypatch, tmp_bin_path):
     messages = [
         FakeDFMessage("GPS", 1000.0, Lat=1.0, Lng=1.0, Alt=1.0, NSats=10, HDop=1.0),
@@ -168,6 +177,7 @@ def test_gps_rows_without_status_dropped(monkeypatch, tmp_bin_path):
     assert gps["fix_type"].notna().all()
 
 
+# covers: HLR-PRS-012, LLR-PRS-041
 def test_log_start_utc_from_gps_week(monkeypatch, tmp_bin_path):
     messages = [
         FakeDFMessage("IMU", 100.0, I=0, GyrX=0, GyrY=0, GyrZ=0, AccX=0, AccY=0, AccZ=-9.8),
@@ -182,6 +192,7 @@ def test_log_start_utc_from_gps_week(monkeypatch, tmp_bin_path):
     assert metadata.log_start_utc == expected.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+# covers: HLR-PRS-010, LLR-PRS-042
 def test_esc_instances_binned_onto_one_time_base(monkeypatch, tmp_bin_path):
     # four ESCs at 10 Hz, each a few ms after the previous one, like a real ArduCopter log
     messages = []
@@ -201,6 +212,7 @@ def test_esc_instances_binned_onto_one_time_base(monkeypatch, tmp_bin_path):
     assert not (esc.filter(like="esc_rpm") == 0).any().any()
 
 
+# covers: HLR-PRS-010, LLR-PRS-042
 def test_esc_missing_values_stay_nan(monkeypatch, tmp_bin_path):
     messages = []
     for k in range(10):
@@ -215,6 +227,7 @@ def test_esc_missing_values_stay_nan(monkeypatch, tmp_bin_path):
     assert topics["esc_status"]["esc[0].esc_temperature"].isna().all()
 
 
+# covers: HLR-PRS-010, LLR-PRS-042
 def test_esc_rows_start_once_every_esc_reported(monkeypatch, tmp_bin_path):
     messages = [FakeDFMessage("ESC", 50.0 + k * 0.1, Instance=0, RPM=1.0) for k in range(10)]
     messages += [FakeDFMessage("ESC", 50.5 + k * 0.1, Instance=1, RPM=2.0) for k in range(5)]
@@ -225,6 +238,7 @@ def test_esc_rows_start_once_every_esc_reported(monkeypatch, tmp_bin_path):
     assert esc["esc[1].esc_rpm"].notna().all()
 
 
+# covers: HLR-PRS-010, LLR-PRS-042
 def test_old_numbered_esc_messages(monkeypatch, tmp_bin_path):
     messages = [
         FakeDFMessage("ESC1", 50.0, RPM=100.0),
@@ -238,6 +252,7 @@ def test_old_numbered_esc_messages(monkeypatch, tmp_bin_path):
     assert esc["esc_count"].iloc[0] == 2
 
 
+# covers: HLR-PRS-003, HLR-PRS-011, LLR-PRS-030, LLR-PRS-031
 def test_arming_from_ev_events(monkeypatch, tmp_bin_path):
     messages = [
         FakeDFMessage("MODE", 100.0, Mode=0, ModeNum=0),
@@ -257,6 +272,7 @@ def test_arming_from_ev_events(monkeypatch, tmp_bin_path):
     assert topics["vehicle_land_detected"]["landed"].tolist() == [True]
 
 
+# covers: HLR-PRS-011, LLR-PRS-030
 def test_arm_messages_preferred_over_ev(monkeypatch, tmp_bin_path):
     messages = [
         FakeDFMessage("ARM", 100.0, ArmState=1),
@@ -270,12 +286,14 @@ def test_arm_messages_preferred_over_ev(monkeypatch, tmp_bin_path):
     assert topics["vehicle_status"]["arming_state"].tolist() == [1, 2, 1]
 
 
+# covers: HLR-PRS-003, HLR-PRS-011, LLR-PRS-031
 def test_no_arming_state_without_arm_info(monkeypatch, tmp_bin_path):
     messages = [FakeDFMessage("MODE", 100.0, Mode=3, ModeNum=3)]
     topics, _, _ = parse(monkeypatch, tmp_bin_path, messages)
     assert "arming_state" not in topics["vehicle_status"].columns
 
 
+# covers: HLR-PRS-013, HLR-PRS-014, LLR-PRS-048
 def test_estimator_status_not_synthesized(monkeypatch, tmp_bin_path):
     messages = [
         FakeDFMessage("GPS", 1000.0, Lat=1.0, Lng=1.0, Alt=1.0, NSats=10, HDop=1.0, Status=3),
@@ -284,11 +302,13 @@ def test_estimator_status_not_synthesized(monkeypatch, tmp_bin_path):
     assert "estimator_status" not in topics
 
 
+# covers: HLR-PRS-001, HLR-PRS-010, LLR-PRS-019
 def test_missing_file_raises():
     with pytest.raises(FileNotFoundError):
         ArduPilotBinParser().parse("/no/such/file.bin")
 
 
+# covers: HLR-PRS-012, LLR-PRS-028, LLR-PRS-029
 def test_vehicle_type_derived_from_startup_message(monkeypatch, tmp_bin_path):
     messages = [FakeDFMessage("MSG", 1000.0, Message="ArduCopter V4.3.5 (02ff7ea3)")]
     _, _, metadata = parse(monkeypatch, tmp_bin_path, messages)
@@ -297,6 +317,7 @@ def test_vehicle_type_derived_from_startup_message(monkeypatch, tmp_bin_path):
     assert metadata.vehicle_type == "Copter"
 
 
+# covers: HLR-PRS-012, LLR-PRS-028
 def test_random_status_text_is_not_the_firmware(monkeypatch, tmp_bin_path):
     messages = [
         FakeDFMessage("MSG", 1000.0, Message="Vibration compensation ON"),
@@ -306,6 +327,7 @@ def test_random_status_text_is_not_the_firmware(monkeypatch, tmp_bin_path):
     assert metadata.firmware_version == "ArduPlane V4.5.1 (1234abcd)"
 
 
+# covers: HLR-PRS-012, LLR-PRS-029
 def test_vehicle_type_none_when_no_startup_message(monkeypatch, tmp_bin_path):
     messages = [
         FakeDFMessage("GPS", 1000.0, Lat=1.0, Lng=1.0, Alt=1.0, NSats=10, HDop=1.0, Status=3),
@@ -314,6 +336,7 @@ def test_vehicle_type_none_when_no_startup_message(monkeypatch, tmp_bin_path):
     assert metadata.vehicle_type is None
 
 
+# covers: HLR-PRS-010, LLR-PRS-043
 def test_vibe_per_imu_with_clip_counters(monkeypatch, tmp_bin_path):
     messages = []
     for k in range(3):
@@ -332,6 +355,7 @@ def test_vibe_per_imu_with_clip_counters(monkeypatch, tmp_bin_path):
     assert topics["vibration_1"]["vibration_z"].tolist() == [20.0, 20.0, 20.0]
 
 
+# covers: HLR-PRS-010, LLR-PRS-043
 def test_old_vibe_clip0_to_clip2(monkeypatch, tmp_bin_path):
     messages = [FakeDFMessage("VIBE", 100.0, VibeX=1.0, VibeY=2.0, VibeZ=3.0, Clip0=4, Clip1=5, Clip2=6)]
     topics, _, _ = parse(monkeypatch, tmp_bin_path, messages)
@@ -340,6 +364,7 @@ def test_old_vibe_clip0_to_clip2(monkeypatch, tmp_bin_path):
     assert "vibration_1" not in topics
 
 
+# covers: HLR-PRS-014, LLR-PRS-044
 def test_xkf4_test_ratios_squared_and_primary_core_on_bare_name(monkeypatch, tmp_bin_path):
     messages = []
     for k in range(4):
@@ -358,6 +383,7 @@ def test_xkf4_test_ratios_squared_and_primary_core_on_bare_name(monkeypatch, tmp
     assert "estimator_status" not in topics
 
 
+# covers: HLR-PRS-014, LLR-PRS-044
 def test_nkf4_used_when_ekf2_is_active(monkeypatch, tmp_bin_path):
     messages = [
         FakeDFMessage("NKF4", 100.0, SV=0.4, SP=0.1, SH=0.1, SM=0.1, SVT=0.0, FS=0, TS=0, SS=0, GPS=0, PI=0),
@@ -367,6 +393,7 @@ def test_nkf4_used_when_ekf2_is_active(monkeypatch, tmp_bin_path):
     assert topics["ekf_test_ratios"]["vel_test_ratio"].iloc[0] == pytest.approx(0.16)
 
 
+# covers: HLR-PRS-010, LLR-PRS-040
 def test_gpa_accuracy_merged_into_gps(monkeypatch, tmp_bin_path):
     messages = [
         FakeDFMessage("GPS", 100.0, I=0, Lat=1.0, Lng=1.0, Alt=1.0, NSats=12, HDop=0.8, Status=3),
@@ -379,6 +406,7 @@ def test_gpa_accuracy_merged_into_gps(monkeypatch, tmp_bin_path):
     assert gps["s_variance_m_s"].iloc[0] == pytest.approx(0.3)
 
 
+# covers: HLR-PRS-003, HLR-PRS-010, LLR-PRS-038
 def test_bcl_cells_and_battery_resistance(monkeypatch, tmp_bin_path):
     cells = {f"V{k}": (4100 if k <= 4 else 65535) for k in range(1, 13)}
     messages = [
@@ -393,6 +421,7 @@ def test_bcl_cells_and_battery_resistance(monkeypatch, tmp_bin_path):
     assert bat["internal_resistance_estimate"].iloc[0] == pytest.approx(0.012)
 
 
+# covers: HLR-PRS-003, HLR-PRS-010, LLR-PRS-045
 def test_rate_desired_to_rates_setpoint_in_rad_s(monkeypatch, tmp_bin_path):
     messages = [FakeDFMessage("RATE", 100.0, RDes=90.0, R=80.0, PDes=-45.0, P=0.0, YDes=0.0, Y=0.0)]
     topics, _, _ = parse(monkeypatch, tmp_bin_path, messages)
@@ -401,6 +430,7 @@ def test_rate_desired_to_rates_setpoint_in_rad_s(monkeypatch, tmp_bin_path):
     assert sp["pitch"].iloc[0] == pytest.approx(-np.pi / 4)
 
 
+# covers: HLR-PRS-010, LLR-PRS-046
 def test_powr_to_system_power(monkeypatch, tmp_bin_path):
     messages = [FakeDFMessage("POWR", 100.0, Vcc=5.1, VServo=5.3, Flags=3)]
     topics, _, _ = parse(monkeypatch, tmp_bin_path, messages)
@@ -410,6 +440,7 @@ def test_powr_to_system_power(monkeypatch, tmp_bin_path):
     assert power["power_flags"].iloc[0] == 3
 
 
+# covers: HLR-PRS-012, LLR-PRS-028, LLR-PRS-047
 def test_board_and_airframe_from_startup_messages(monkeypatch, tmp_bin_path):
     messages = [
         FakeDFMessage("MSG", 1.0, Message="ArduCopter V4.5.7 (2a3dc4b7)"),
@@ -423,6 +454,7 @@ def test_board_and_airframe_from_startup_messages(monkeypatch, tmp_bin_path):
     assert metadata.airframe_name == "Quad X"
 
 
+# covers: HLR-PRS-012, LLR-PRS-047
 def test_frame_banner_used_without_frame_params(monkeypatch, tmp_bin_path):
     messages = [
         FakeDFMessage("MSG", 1.0, Message="ArduCopter V4.5.7 (2a3dc4b7)"),
@@ -432,6 +464,7 @@ def test_frame_banner_used_without_frame_params(monkeypatch, tmp_bin_path):
     assert metadata.airframe_name == "HEXA/X"
 
 
+# covers: HLR-PRS-005, LLR-PRS-021
 def test_progress_reported_through_the_index_and_the_read(monkeypatch, tmp_bin_path):
     from pymavlink import DFReader
     from flightmd_core.services import ardupilot_parser

@@ -95,6 +95,7 @@ def summarise(report) -> dict:
     }
 
 
+# covers: HLR-INT-026
 @pytest.mark.corpus
 @pytest.mark.asyncio
 @pytest.mark.parametrize("entry", MANIFEST["logs"], ids=lambda e: e["id"])
@@ -143,6 +144,7 @@ async def test_corpus_log_matches_golden(entry, request):
             assert got["metadata"][key] == expected, key
 
 
+# covers: HLR-INT-026
 def test_manifest_is_well_formed():
     ids = [e["id"] for e in MANIFEST["logs"]]
     assert len(ids) == len(set(ids))

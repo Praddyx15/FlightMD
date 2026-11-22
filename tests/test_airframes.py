@@ -10,14 +10,17 @@ from flightmd_core.services.airframes import ardupilot_frame, px4_airframe
     (2100, "Generic Standard Plane"),
     (50000, "Generic Rover Differential"),
 ])
+# covers: HLR-RPT-027, LLR-RPT-056
 def test_px4_known_ids(autostart, name):
     assert px4_airframe(autostart)[0] == name
 
 
+# covers: HLR-RPT-027, LLR-RPT-057
 def test_px4_frame_type_comes_along():
     assert px4_airframe(4001) == ("Generic Quadcopter", "Quadrotor x")
 
 
+# covers: HLR-RPT-027, LLR-RPT-056
 @pytest.mark.parametrize("autostart", [None, 0, 999999, "abc"])
 def test_px4_unknown_ids(autostart):
     assert px4_airframe(autostart) == (None, None)
@@ -37,10 +40,12 @@ def test_px4_unknown_ids(autostart):
     ({"FRAME_CLASS": 1, "CRUISE_SPEED": 2.0}, None, "Rover"),
     ({"FRAME_CONFIG": 1}, "Sub", "Vectored"),
 ])
+# covers: HLR-RPT-027, LLR-RPT-058
 def test_ardupilot_frames(params, vehicle, name):
     assert ardupilot_frame(params, vehicle) == name
 
 
+# covers: HLR-RPT-027, LLR-RPT-058
 def test_ardupilot_no_frame_params():
     assert ardupilot_frame({}, "Copter") is None
     assert ardupilot_frame({"FRAME_CLASS": 0}, "Copter") is None

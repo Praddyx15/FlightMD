@@ -78,6 +78,7 @@ def gps_raw(t, fix=3, sats=11, lat=377749000, lon=-1224194000):
                           eph=150, epv=200, vel=500, cog=0, satellites_visible=sats)
 
 
+# covers: HLR-PRS-001, HLR-PRS-003, HLR-PRS-004, HLR-PRS-017, LLR-PRS-050, LLR-PRS-054
 def test_attitude_maps_to_angular_velocity(monkeypatch, tmp_tlog_path):
     messages = [attitude(T0, 0, 0.1), attitude(T0 + 0.1, 100, 0.15)]
     topics, _, _ = parse(monkeypatch, tmp_tlog_path, messages)
@@ -87,6 +88,7 @@ def test_attitude_maps_to_angular_velocity(monkeypatch, tmp_tlog_path):
     assert list(gyro["yawspeed"]) == pytest.approx([0.3, 0.3])
 
 
+# covers: HLR-PRS-002, HLR-PRS-016, LLR-PRS-053
 def test_timestamps_are_vehicle_time_not_receive_time(monkeypatch, tmp_tlog_path):
     # a radio burst: three samples 50 ms apart on the vehicle arrive together
     messages = [
@@ -99,6 +101,7 @@ def test_timestamps_are_vehicle_time_not_receive_time(monkeypatch, tmp_tlog_path
     assert list(topics["vehicle_angular_velocity"]["timestamp"]) == [0, 50_000, 100_000, 150_000]
 
 
+# covers: HLR-PRS-003, HLR-PRS-004, HLR-PRS-017, LLR-PRS-054
 def test_raw_imu_accel_converted_to_ms2(monkeypatch, tmp_tlog_path):
     # mG; 1000 mG = 9.80665 m/s^2
     messages = [
@@ -111,6 +114,7 @@ def test_raw_imu_accel_converted_to_ms2(monkeypatch, tmp_tlog_path):
     assert "sensor_accel_0" not in topics
 
 
+# covers: HLR-PRS-003, HLR-PRS-004, HLR-PRS-017, LLR-PRS-054
 def test_imu_instances_and_source_priority(monkeypatch, tmp_tlog_path):
     imu = dict(xgyro=0, ygyro=0, zgyro=0, xmag=0, ymag=0, zmag=0)
     messages = [
@@ -124,6 +128,7 @@ def test_imu_instances_and_source_priority(monkeypatch, tmp_tlog_path):
     assert topics["sensor_accel_1"]["y"].iloc[0] == pytest.approx(9.80665)
 
 
+# covers: HLR-PRS-003, HLR-PRS-017, LLR-PRS-056
 def test_gps_raw_int_maps_to_vehicle_gps_position(monkeypatch, tmp_tlog_path):
     topics, _, _ = parse(monkeypatch, tmp_tlog_path, [gps_raw(T0)])
 
@@ -135,11 +140,13 @@ def test_gps_raw_int_maps_to_vehicle_gps_position(monkeypatch, tmp_tlog_path):
     assert "jamming_indicator" not in gps.columns
 
 
+# covers: HLR-PRS-003, HLR-PRS-017, LLR-PRS-056
 def test_unknown_satellite_count_is_nan(monkeypatch, tmp_tlog_path):
     topics, _, _ = parse(monkeypatch, tmp_tlog_path, [gps_raw(T0, fix=0, sats=255, lat=0, lon=0)])
     assert np.isnan(topics["vehicle_gps_position"]["satellites_used"].iloc[0])
 
 
+# covers: HLR-PRS-003, HLR-PRS-017, LLR-PRS-056
 def test_global_position_int_kept_out_of_gps_topic(monkeypatch, tmp_tlog_path):
     # the QGC tlog case that crashed the GPS analyser: GLOBAL_POSITION_INT rows have no fix_type
     messages = []
@@ -160,6 +167,7 @@ def test_global_position_int_kept_out_of_gps_topic(monkeypatch, tmp_tlog_path):
     assert gpos["alt"].iloc[0] == pytest.approx(100.0)
 
 
+# covers: HLR-PRS-003, HLR-PRS-017, LLR-PRS-056
 def test_global_position_only_gives_no_gps_topic(monkeypatch, tmp_tlog_path):
     messages = [
         FakeMavMessage("GLOBAL_POSITION_INT", T0, time_boot_ms=0, lat=377749000, lon=-1224194000,
@@ -170,6 +178,7 @@ def test_global_position_only_gives_no_gps_topic(monkeypatch, tmp_tlog_path):
     assert "vehicle_global_position" in topics
 
 
+# covers: HLR-PRS-003, HLR-PRS-017, LLR-PRS-055
 def test_sys_status_maps_to_battery_status(monkeypatch, tmp_tlog_path):
     messages = [
         FakeMavMessage("SYS_STATUS", T0,
@@ -192,6 +201,7 @@ def battery_status(t, voltages, current=1500, bid=0):
                           energy_consumed=-1, battery_remaining=70)
 
 
+# covers: HLR-PRS-003, HLR-PRS-017, LLR-PRS-055
 def test_battery_status_preferred_over_sys_status(monkeypatch, tmp_tlog_path):
     cells = [4200, 4200, 4200, 4200] + [65535] * 6
     messages = []
@@ -208,6 +218,7 @@ def test_battery_status_preferred_over_sys_status(monkeypatch, tmp_tlog_path):
     assert bat["current_consumed_mah"].iloc[0] == 120
 
 
+# covers: HLR-PRS-003, HLR-PRS-017, LLR-PRS-055
 def test_battery_status_unmeasured_sentinels_treated_as_missing(monkeypatch, tmp_tlog_path):
     messages = [
         FakeMavMessage("BATTERY_STATUS", T0, id=0, battery_function=0, type=0,
@@ -218,6 +229,7 @@ def test_battery_status_unmeasured_sentinels_treated_as_missing(monkeypatch, tmp
     assert "battery_status" not in topics
 
 
+# covers: HLR-PRS-018, LLR-PRS-060
 def test_arming_from_heartbeat(monkeypatch, tmp_tlog_path):
     messages = [
         heartbeat(T0, armed=False),
@@ -232,6 +244,7 @@ def test_arming_from_heartbeat(monkeypatch, tmp_tlog_path):
     assert metadata.arm_count == 2
 
 
+# covers: HLR-PRS-018, LLR-PRS-060
 def test_px4_custom_mode_to_nav_state(monkeypatch, tmp_tlog_path):
     posctl = 3 << 16
     mission = (4 << 16) | (4 << 24)
@@ -245,6 +258,7 @@ def test_px4_custom_mode_to_nav_state(monkeypatch, tmp_tlog_path):
     assert metadata.flight_modes_used == ["Auto Mission", "Position Control"]
 
 
+# covers: HLR-PRS-018, LLR-PRS-060, HLR-PRS-011, LLR-PRS-032
 def test_ardupilot_mode_to_nav_state(monkeypatch, tmp_tlog_path):
     topics, _, metadata = parse(monkeypatch, tmp_tlog_path, [heartbeat(T0, custom_mode=5)])  # copter LOITER
     assert topics["vehicle_status"]["nav_state"].tolist() == [2]
@@ -252,6 +266,7 @@ def test_ardupilot_mode_to_nav_state(monkeypatch, tmp_tlog_path):
     assert metadata.vehicle_type == "Copter"
 
 
+# covers: HLR-PRS-015, LLR-PRS-052
 def test_other_systems_ignored(monkeypatch, tmp_tlog_path):
     messages = [
         heartbeat(T0),
@@ -267,6 +282,7 @@ def test_other_systems_ignored(monkeypatch, tmp_tlog_path):
     assert any("other systems" in w for w in metadata.parse_warnings)
 
 
+# covers: HLR-PRS-018, LLR-PRS-060
 def test_landed_state(monkeypatch, tmp_tlog_path):
     messages = [
         FakeMavMessage("EXTENDED_SYS_STATE", T0, vtol_state=0, landed_state=1),
@@ -277,6 +293,7 @@ def test_landed_state(monkeypatch, tmp_tlog_path):
     assert topics["vehicle_land_detected"]["landed"].tolist() == [True, False]
 
 
+# covers: HLR-PRS-018, LLR-PRS-061
 def test_px4_int_params_decoded_bytewise(monkeypatch, tmp_tlog_path):
     as_float = struct.unpack("<f", struct.pack("<i", 4001))[0]
     messages = [
@@ -292,6 +309,7 @@ def test_px4_int_params_decoded_bytewise(monkeypatch, tmp_tlog_path):
     assert params["MC_ROLLRATE_P"] == pytest.approx(0.15)
 
 
+# covers: HLR-PRS-018, LLR-PRS-061
 def test_ardupilot_int_params_are_plain_floats(monkeypatch, tmp_tlog_path):
     messages = [
         heartbeat(T0, autopilot=3),
@@ -302,17 +320,20 @@ def test_ardupilot_int_params_are_plain_floats(monkeypatch, tmp_tlog_path):
     assert params["FRAME_CLASS"] == 1.0
 
 
+# covers: HLR-PRS-019, LLR-PRS-063
 def test_bad_data_reported(monkeypatch, tmp_tlog_path):
     messages = [FakeMavMessage("BAD_DATA", T0), FakeMavMessage("BAD_DATA", T0), attitude(T0, 0)]
     _, _, metadata = parse(monkeypatch, tmp_tlog_path, messages)
     assert any(w.startswith("2 unreadable") for w in metadata.parse_warnings)
 
 
+# covers: HLR-PRS-018, LLR-PRS-062
 def test_log_start_from_receive_clock(monkeypatch, tmp_tlog_path):
     _, _, metadata = parse(monkeypatch, tmp_tlog_path, [heartbeat(T0), attitude(T0 + 1, 1000)])
     assert metadata.log_start_utc == "2023-11-14T22:13:20Z"
 
 
+# covers: HLR-PRS-014, HLR-PRS-017, LLR-PRS-058
 def test_estimator_status_not_synthesized(monkeypatch, tmp_tlog_path):
     messages = [
         FakeMavMessage("EKF_STATUS_REPORT", T0, flags=3, velocity_variance=0.1, pos_horiz_variance=0.1,
@@ -322,6 +343,7 @@ def test_estimator_status_not_synthesized(monkeypatch, tmp_tlog_path):
     assert "estimator_status" not in topics
 
 
+# covers: HLR-PRS-001, HLR-PRS-017, LLR-PRS-050
 def test_missing_file_raises():
     with pytest.raises(FileNotFoundError):
         MavlinkTelemetryParser().parse("/no/such/file.tlog")
@@ -338,6 +360,7 @@ def esc_info(t, index, count, temps, boot_us):
                           temperature=temps)
 
 
+# covers: HLR-PRS-017, LLR-PRS-057
 def test_esc_status_trimmed_to_esc_info_count(monkeypatch, tmp_tlog_path):
     messages = [heartbeat(T0, autopilot=12)]
     for k in range(5):
@@ -356,6 +379,7 @@ def test_esc_status_trimmed_to_esc_info_count(monkeypatch, tmp_tlog_path):
     assert esc["esc[0].esc_temperature"].iloc[-1] == pytest.approx(45.0)
 
 
+# covers: HLR-PRS-017, LLR-PRS-057
 def test_ardupilot_esc_telemetry_without_count(monkeypatch, tmp_tlog_path):
     messages = [heartbeat(T0)]
     for k in range(5):
@@ -382,6 +406,7 @@ def vibration(t, boot_us, x=1.0, y=2.0, z=3.0, clips=(0, 0, 0)):
                           vibration_z=z, clipping_0=clips[0], clipping_1=clips[1], clipping_2=clips[2])
 
 
+# covers: HLR-PRS-014, HLR-PRS-017, LLR-PRS-058
 def test_ardupilot_vibration_topic(monkeypatch, tmp_tlog_path):
     messages = [heartbeat(T0), vibration(T0, 1_000_000, clips=(5, 0, 0)),
                 vibration(T0 + 1, 2_000_000, clips=(7, 0, 0))]
@@ -392,6 +417,7 @@ def test_ardupilot_vibration_topic(monkeypatch, tmp_tlog_path):
     assert "vehicle_imu_status" not in topics
 
 
+# covers: HLR-PRS-014, HLR-PRS-017, LLR-PRS-058
 def test_px4_vibration_goes_to_vehicle_imu_status(monkeypatch, tmp_tlog_path):
     messages = [heartbeat(T0, autopilot=12), vibration(T0, 1_000_000, x=0.01, y=0.02, z=4.5)]
     topics, _, _ = parse(monkeypatch, tmp_tlog_path, messages)
@@ -402,6 +428,7 @@ def test_px4_vibration_goes_to_vehicle_imu_status(monkeypatch, tmp_tlog_path):
     assert "vibration" not in topics
 
 
+# covers: HLR-PRS-014, HLR-PRS-017, LLR-PRS-058
 def test_ekf_status_report_squared_to_test_ratios(monkeypatch, tmp_tlog_path):
     messages = [
         heartbeat(T0),
@@ -416,6 +443,7 @@ def test_ekf_status_report_squared_to_test_ratios(monkeypatch, tmp_tlog_path):
     assert "tas_test_ratio" not in ekf.columns
 
 
+# covers: HLR-PRS-014, HLR-PRS-017, LLR-PRS-058
 def test_px4_estimator_status_ratios_kept_as_is(monkeypatch, tmp_tlog_path):
     messages = [
         heartbeat(T0, autopilot=12),
@@ -428,6 +456,7 @@ def test_px4_estimator_status_ratios_kept_as_is(monkeypatch, tmp_tlog_path):
     assert "estimator_status" not in topics
 
 
+# covers: HLR-PRS-003, HLR-PRS-017, LLR-PRS-055
 def test_battery_cells(monkeypatch, tmp_tlog_path):
     cells = [3900, 3910, 3920, 3930, 3940, 3950] + [65535] * 4
     topics, _, _ = parse(monkeypatch, tmp_tlog_path, [battery_status(T0, cells)])
@@ -438,6 +467,7 @@ def test_battery_cells(monkeypatch, tmp_tlog_path):
     assert bat["voltage_v"].iloc[0] == pytest.approx(23.55)
 
 
+# covers: HLR-PRS-018, LLR-PRS-062
 def test_firmware_board_and_airframe_ardupilot(monkeypatch, tmp_tlog_path):
     messages = [
         heartbeat(T0),
@@ -455,6 +485,7 @@ def test_firmware_board_and_airframe_ardupilot(monkeypatch, tmp_tlog_path):
     assert metadata.px4_version is None
 
 
+# covers: HLR-PRS-018, LLR-PRS-062
 def test_px4_firmware_from_autopilot_version(monkeypatch, tmp_tlog_path):
     as_float = struct.unpack("<f", struct.pack("<i", 4001))[0]
     messages = [
@@ -470,6 +501,7 @@ def test_px4_firmware_from_autopilot_version(monkeypatch, tmp_tlog_path):
     assert metadata.airframe_name == "Generic Quadcopter"
 
 
+# covers: HLR-PRS-003, HLR-PRS-004, HLR-PRS-017, LLR-PRS-054
 def test_attitude_quaternion_rates_used_without_attitude(monkeypatch, tmp_tlog_path):
     messages = [FakeMavMessage("ATTITUDE_QUATERNION", T0, time_boot_ms=0, q1=1, q2=0, q3=0, q4=0,
                                rollspeed=0.4, pitchspeed=0.5, yawspeed=0.6)]
@@ -477,6 +509,7 @@ def test_attitude_quaternion_rates_used_without_attitude(monkeypatch, tmp_tlog_p
     assert topics["vehicle_angular_velocity"]["rollspeed"].iloc[0] == pytest.approx(0.4)
 
 
+# covers: HLR-PRS-003, HLR-PRS-004, HLR-PRS-017, LLR-PRS-054
 def test_attitude_wins_over_attitude_quaternion(monkeypatch, tmp_tlog_path):
     messages = [
         attitude(T0, 0, 0.1),
@@ -487,6 +520,7 @@ def test_attitude_wins_over_attitude_quaternion(monkeypatch, tmp_tlog_path):
     assert topics["vehicle_angular_velocity"]["rollspeed"].tolist() == [0.1]
 
 
+# covers: HLR-PRS-017, LLR-PRS-059
 def test_power_status_preferred_over_hwstatus(monkeypatch, tmp_tlog_path):
     messages = [
         FakeMavMessage("POWER_STATUS", T0, Vcc=5050, Vservo=5200, flags=1),
@@ -499,6 +533,7 @@ def test_power_status_preferred_over_hwstatus(monkeypatch, tmp_tlog_path):
     assert power["power_flags"].iloc[0] == 1
 
 
+# covers: HLR-PRS-005, LLR-PRS-051
 def test_progress_from_reader_percent(monkeypatch, tmp_tlog_path):
     from pymavlink import mavutil
     from flightmd_core.services import mavlink_telemetry_parser

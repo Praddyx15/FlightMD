@@ -5,6 +5,7 @@ const SAMPLE = path.resolve(__dirname, "../../tests/sample_logs/sample_flawed.ul
 
 test.use({ permissions: ["clipboard-read", "clipboard-write"] });
 
+// covers: HLR-WEB-001, HLR-WEB-002, HLR-WEB-003, HLR-WEB-004, HLR-WEB-006, HLR-WEB-009
 test("upload a log, read the report, copy the parameter changes", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Find out why your drone flew badly");

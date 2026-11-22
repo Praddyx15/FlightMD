@@ -10,10 +10,12 @@ import {
 } from "@/components/three/flightPathGeometry";
 
 describe("sampleIndices", () => {
+  // covers: HLR-WEB-008, LLR-WEB-058
   it("keeps short paths whole", () => {
     expect(sampleIndices(5)).toEqual([0, 1, 2, 3, 4]);
   });
 
+  // covers: HLR-WEB-008, LLR-WEB-058
   it("caps long paths and keeps the first and last point", () => {
     const idx = sampleIndices(10_001, 1000);
     expect(idx).toHaveLength(1000);
@@ -23,10 +25,12 @@ describe("sampleIndices", () => {
 });
 
 describe("buildFlightPathScene", () => {
+  // covers: HLR-WEB-008, LLR-WEB-059
   it("returns null without points", () => {
     expect(buildFlightPathScene([])).toBeNull();
   });
 
+  // covers: HLR-WEB-008, LLR-WEB-059
   it("scales the longest horizontal axis to the scene span and centres it", () => {
     const scene = buildFlightPathScene([
       [47.0, 8.0, 400],
@@ -42,16 +46,19 @@ describe("buildFlightPathScene", () => {
 });
 
 describe("colour ramps", () => {
+  // covers: HLR-WEB-008, LLR-WEB-059
   it("finds min and max", () => {
     expect(minMax([3, -1, 7])).toEqual([-1, 7]);
   });
 
+  // covers: HLR-WEB-008, LLR-WEB-060
   it("normalises values and keeps gaps", () => {
     expect(normaliseValues([null, 0, 5, 10])).toEqual([null, 0, 0.5, 1]);
     expect(normaliseValues([null, undefined])).toBeNull();
     expect(normaliseValues(null)).toBeNull();
   });
 
+  // covers: HLR-WEB-008, LLR-WEB-060
   it("has no colours in standard mode and grey for gaps", () => {
     expect(buildPathColors("standard", [1, 2])).toBeNull();
     const cols = buildPathColors("wind", [0, null, 10]);
@@ -60,6 +67,7 @@ describe("colour ramps", () => {
     expect(cols?.[2]).toEqual(rampColour(1));
   });
 
+  // covers: HLR-WEB-008, LLR-WEB-060
   it("clamps the ramp and writes css colours", () => {
     expect(rampColour(-1)).toEqual(rampColour(0));
     expect(rgbCss([1, 0, 0.5])).toBe("rgb(255, 0, 128)");

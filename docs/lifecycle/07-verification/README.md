@@ -25,7 +25,7 @@ Run on 2026-11-22 on the branch of this issue, on one Windows machine (Python
 
 | Check | Result |
 |---|---|
-| `pytest` (whole suite, default markers; includes `tests/test_trace.py`) | 1053 passed, 26 skipped (corpus logs not downloaded and tests that need optional system libraries) |
+| `pytest` (whole suite, no marker filter; includes `tests/test_trace.py`) | 1053 passed, 26 skipped: 18 corpus tests (need `-m corpus`) and 8 DJI version 13 tests that need the optional `cryptography` package. With `cryptography` installed, `tests/test_dji_parser.py` and `tests/test_new_formats.py` were run again: 40 passed |
 | `ruff check` with the configuration in `pyproject.toml` | No findings |
 | `python tools/trace.py --check` | No problems |
 | `python tools/trace.py --html` (StrictDoc 0.31.0 export of every `.sdoc` file) | Completed; StrictDoc reported no grammar or parse error |
@@ -34,9 +34,11 @@ Run on 2026-11-22 on the branch of this issue, on one Windows machine (Python
 | `npm run typecheck` (`tsc --noEmit`) | No errors |
 | `npm test` (Vitest) | 84 of 84 passed with `NODE_OPTIONS=--no-experimental-webstorage`; without it 56 fail on Node 26 because Node's own `localStorage` hides the test DOM's (OI-017). CI uses Node 20 |
 
-Not run locally: the Playwright smoke test, the integration marker
-(`pytest -m integration`), the corpus (`pytest -m corpus`), the web build and
-the bundle budget. CI runs them on the pull request.
+The local `pytest` run has no marker filter, so it includes the integration
+tests on the sample logs, which CI leaves out. Not run locally: the Playwright
+smoke test, the corpus (`pytest -m corpus`, weekly in CI), the web build and
+the bundle budget; CI runs the smoke test, the build and the budget on the
+pull request.
 
 Each fixed problem report has a regression test that failed on the old code;
 for PR-003 the failure on the old code was checked by running the new test
@@ -80,6 +82,8 @@ application's coverage are not measured.
 - The corpus comparison is loose and can pass having compared nothing
   (PR-016); no review of the golden files is recorded.
 - The integration tier is not in CI.
+- CI installs neither the `dji` extra nor `cryptography`, so the 8 DJI version 13 tests
+  (LLR-PRS-085, 087) skip there; they ran only locally for issue 1.
 - The false-clean cases of PR-027 to PR-030 now have tests; the other checks have not been
   searched for the same pattern (FMEA AN-02).
 - No test of determinism as such (two runs compared field by field).

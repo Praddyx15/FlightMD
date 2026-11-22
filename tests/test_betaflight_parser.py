@@ -24,19 +24,23 @@ ARM, ANGLE = 1 << 0, 1 << 1
     (b"\x01", 1), (b"\x2a", 42), (b"\x7f", 127), (b"\x80\x01", 128),
     (b"\x81\x01", 129), (b"\xa0\xb7\x01", 23456), (b"\xff\xff\xff\xff\x0f", 0xFFFFFFFF),
 ])
+# covers: HLR-PRS-020, LLR-PRS-066
 def test_unsigned_vb(data, value):
     assert bp.read_uvb(data, 0) == (value, len(data))
 
 
+# covers: HLR-PRS-020, LLR-PRS-066
 def test_unsigned_vb_reads_from_offset():
     assert bp.read_uvb(b"\x00\x80\x01\x05", 1) == (128, 3)
 
 
+# covers: HLR-PRS-020, LLR-PRS-066
 def test_unsigned_vb_longer_than_32_bits_is_corrupt():
     with pytest.raises(bp.BlackboxError):
         bp.read_uvb(b"\xff\xff\xff\xff\xff\x01", 0)
 
 
+# covers: HLR-PRS-020, LLR-PRS-066
 def test_unsigned_vb_cut_off():
     with pytest.raises(bp._Truncated):
         bp.read_uvb(b"\x80\x80", 0)
@@ -45,17 +49,20 @@ def test_unsigned_vb_cut_off():
 @pytest.mark.parametrize("value, folded", [
     (0, 0), (-1, 1), (1, 2), (-2, 3), (2147483647, 4294967294), (-2147483648, 4294967295),
 ])
+# covers: HLR-PRS-020, LLR-PRS-066
 def test_zigzag(value, folded):
     assert bp.zigzag_decode(folded) == value
     assert bw.zigzag(value) == folded
 
 
+# covers: HLR-PRS-020, LLR-PRS-066
 @pytest.mark.parametrize("value", [0, 1, -1, 63, -64, 64, 1000, -1000, 2**31 - 1, -(2**31)])
 def test_signed_vb_round_trip(value):
     data = bw.svb(value)
     assert bp.read_svb(data, 0) == (value, len(data))
 
 
+# covers: HLR-PRS-020, LLR-PRS-066
 def test_signed_vb_spec_example():
     # motor deltas 205, 1, -1, 42 from the format description
     data = bytes([0x9A, 0x03, 0x02, 0x01, 0x54])
@@ -70,22 +77,26 @@ def test_signed_vb_spec_example():
     (0b11, 2, -1), (0b01, 2, 1), (0xF, 4, -1), (0x7, 4, 7), (0x20, 6, -32),
     (0x80, 8, -128), (0x7FFF, 16, 32767), (0x8000, 16, -32768), (0x800000, 24, -8388608),
 ])
+# covers: HLR-PRS-020, LLR-PRS-066
 def test_sign_extend(v, bits, expected):
     assert bp.sign_extend(v, bits) == expected
 
 
+# covers: HLR-PRS-020, LLR-PRS-066
 @pytest.mark.parametrize("value", [0, -1, -5, -200, 100])
 def test_neg_14bit(value):
     data = bw.neg14(value)
     assert bp.read_neg_14bit(data, 0) == (value, len(data))
 
 
+# covers: HLR-PRS-020, LLR-PRS-066
 def test_tag8_8svb_group():
     data = bw.tag8_8svb([0, 0, 4, 0, 8])
     assert data[0] == 0b00010100
     assert bp.read_tag8_8svb(data, 0, 5) == ([0, 0, 4, 0, 8], len(data))
 
 
+# covers: HLR-PRS-020, LLR-PRS-066
 def test_tag8_8svb_single_field_has_no_header():
     assert bw.tag8_8svb([-3]) == bw.svb(-3)
     assert bp.read_tag8_8svb(bw.svb(-3), 0, 1) == ([-3], 1)
@@ -99,6 +110,7 @@ def test_tag8_8svb_single_field_has_no_header():
     ([300, -2, 70000], 1 + 2 + 1 + 3),
     ([2**31 - 1, -(2**31), 0], 1 + 4 + 4 + 1),
 ])
+# covers: HLR-PRS-020, LLR-PRS-066
 def test_tag2_3s32(values, nbytes):
     data = bw.tag2_3s32(values)
     assert len(data) == nbytes
@@ -111,12 +123,14 @@ def test_tag2_3s32(values, nbytes):
     ([-128, 63, -64], 3),      # 8, 7, 7 bits
     ([1000, 0, 0], 1 + 2 + 1 + 1),
 ])
+# covers: HLR-PRS-020, LLR-PRS-066
 def test_tag2_3svariable(values, nbytes):
     data = bw.tag2_3svariable(values)
     assert len(data) == nbytes
     assert bp.read_tag2_3svariable(data, 0) == (values, nbytes)
 
 
+# covers: HLR-PRS-020, LLR-PRS-066
 def test_tag8_4s16_spec_example():
     data = bytes([0b01010010, 0x0D, 0x42])
     assert bp.read_tag8_4s16(data, 0) == ([13, 0, 4, 2], 3)
@@ -126,17 +140,20 @@ def test_tag8_4s16_spec_example():
     [0, 0, 0, 0], [-8, 7, 0, 1], [3, -100, 0, 0], [5, 1000, -3, 0],   # 8 and 16 bits off a nibble
     [-32768, 32767, -1, 127], [0, 0, 0, -32768],
 ])
+# covers: HLR-PRS-020, LLR-PRS-066
 def test_tag8_4s16_round_trip(values):
     data = bw.tag8_4s16(values)
     assert bp.read_tag8_4s16(data, 0) == (values, len(data))
 
 
+# covers: HLR-PRS-020, LLR-PRS-066
 def test_tag8_4s16_data_version_1():
     # v1: two 4-bit fields share a byte (low nibble first), 16-bit is little endian
     data = bytes([0b11_10_01_01, 0x2F, 0x80, 0x34, 0x12])
     assert bp.read_tag8_4s16(data, 0, version=1) == ([-1, 2, -128, 0x1234], 5)
 
 
+# covers: HLR-PRS-020, LLR-PRS-066
 def test_random_round_trips():
     rng = random.Random(7)
     for _ in range(3000):
@@ -148,6 +165,7 @@ def test_random_round_trips():
         assert bp.read_tag8_4s16(bw.tag8_4s16(v4), 0)[0] == v4
 
 
+# covers: HLR-PRS-020, LLR-PRS-065
 def test_header_and_field_defs():
     w = bw.BlackboxWriter().header()
     headers, pos = bp.parse_header(w.bytes(), 0)
@@ -159,6 +177,7 @@ def test_header_and_field_defs():
     assert defs["P"].encoding[defs["I"].index["loopIteration"]] == bp.ENC_NULL
 
 
+# covers: HLR-PRS-020, LLR-PRS-065
 def test_header_without_fields_is_rejected():
     with pytest.raises(bp.BlackboxError):
         bp.frame_defs({"Data version": "2"})
@@ -212,6 +231,7 @@ def parse(tmp_path, data, name="flight.bbl"):
     return BetaflightParser().parse(str(p))
 
 
+# covers: HLR-PRS-022, LLR-PRS-069, LLR-PRS-070
 def test_topics_and_units(tmp_path):
     data, logged = build()
     topics, params, meta = parse(tmp_path, data)
@@ -239,6 +259,7 @@ def test_topics_and_units(tmp_path):
     np.testing.assert_allclose(esc["esc[1].esc_rpm"], [v["eRPM[1]"] * 100 / 7 for _, _, v in logged])
 
 
+# covers: HLR-PRS-022, LLR-PRS-072
 def test_battery(tmp_path):
     data, logged = build()
     topics, _, _ = parse(tmp_path, data)
@@ -251,6 +272,7 @@ def test_battery(tmp_path):
     assert bat["current_a"].iloc[0] == pytest.approx(first["amperageLatest"] / 100)
 
 
+# covers: HLR-PRS-022, LLR-PRS-073
 def test_gps(tmp_path):
     data, logged = build()
     topics, _, _ = parse(tmp_path, data)
@@ -267,6 +289,7 @@ def test_gps(tmp_path):
     assert gps["lat"].dtype == np.int64
 
 
+# covers: HLR-PRS-023, LLR-PRS-074
 def test_arming_from_slow_frames_and_events(tmp_path):
     data, logged = build()
     topics, _, meta = parse(tmp_path, data)
@@ -279,6 +302,7 @@ def test_arming_from_slow_frames_and_events(tmp_path):
     assert meta.flight_modes_used == ["Angle / Horizon"]
 
 
+# covers: HLR-PRS-023, LLR-PRS-075
 def test_params_and_metadata(tmp_path):
     data, logged = build()
     _, params, meta = parse(tmp_path, data)
@@ -296,12 +320,14 @@ def test_params_and_metadata(tmp_path):
     assert "vehicle_angular_velocity" in meta.available_topics
 
 
+# covers: HLR-PRS-023, LLR-PRS-075
 def test_no_clock_on_the_board(tmp_path):
     data, _ = build(headers={"Log start datetime": "0000-01-01T00:00:00.000+00:00"})
     _, _, meta = parse(tmp_path, data)
     assert meta.log_start_utc is None
 
 
+# covers: HLR-PRS-002, HLR-PRS-021, LLR-PRS-067
 def test_skipped_p_frames(tmp_path):
     # P interval 1/4: only every 4th loop iteration is logged
     data, logged = build(p_denom=4)
@@ -312,6 +338,7 @@ def test_skipped_p_frames(tmp_path):
     np.testing.assert_allclose(gyro["rollspeed"], [v["gyroADC[0]"] * math.pi / 180 for _, _, v in logged])
 
 
+# covers: HLR-PRS-002, HLR-PRS-021, LLR-PRS-067
 def test_time_rollover(tmp_path):
     # uptime in us wraps at 2^32 (71 minutes)
     data, logged = build(start_time=2**32 - 20_000)
@@ -321,6 +348,7 @@ def test_time_rollover(tmp_path):
     assert (np.diff(ts) == 500).all()
 
 
+# covers: HLR-PRS-022, LLR-PRS-069
 def test_high_resolution_gyro(tmp_path):
     data, logged = build(headers={"blackbox_high_resolution": "1"})
     topics, _, _ = parse(tmp_path, data)
@@ -328,6 +356,7 @@ def test_high_resolution_gyro(tmp_path):
     assert topics["vehicle_angular_velocity"]["rollspeed"].iloc[5] == pytest.approx(want)
 
 
+# covers: HLR-PRS-021, HLR-PRS-022, LLR-PRS-068, LLR-PRS-070
 def test_missing_acc_1g_skips_accel(tmp_path):
     w = bw.BlackboxWriter()
     del w.headers["acc_1G"]
@@ -337,6 +366,7 @@ def test_missing_acc_1g_skips_accel(tmp_path):
     assert any("acc_1G" in m for m in meta.parse_warnings)
 
 
+# covers: HLR-PRS-022, LLR-PRS-071
 def test_rpm_from_debug_fields(tmp_path):
     fields = [f for f in bw.DEFAULT_FIELDS if not f[0].startswith("eRPM")]
     fields += [(f"debug[{i}]", 1, bw.P_ZERO, bw.E_SVB, bw.P_AVG2, bw.E_SVB) for i in range(4)]
@@ -354,6 +384,7 @@ def test_rpm_from_debug_fields(tmp_path):
     np.testing.assert_allclose(esc["esc[2].esc_rpm"], [v["debug[2]"] * 100 / 6 for v in rows])
 
 
+# covers: HLR-PRS-022, LLR-PRS-071
 def test_debug_fields_in_another_mode_are_not_rpm(tmp_path):
     fields = [f for f in bw.DEFAULT_FIELDS if not f[0].startswith("eRPM")]
     fields += [(f"debug[{i}]", 1, bw.P_ZERO, bw.E_SVB, bw.P_AVG2, bw.E_SVB) for i in range(4)]
@@ -367,6 +398,7 @@ def test_debug_fields_in_another_mode_are_not_rpm(tmp_path):
     assert "esc_status" not in topics
 
 
+# covers: HLR-PRS-023, LLR-PRS-074, LLR-PRS-075
 def test_inav_names_and_no_arming(tmp_path):
     fields = [(("vbat" if f[0] == "vbatLatest" else "amperage" if f[0] == "amperageLatest" else f[0]), *f[1:])
               for f in bw.DEFAULT_FIELDS]
@@ -382,6 +414,7 @@ def test_inav_names_and_no_arming(tmp_path):
     assert "vehicle_status" not in topics
 
 
+# covers: HLR-PRS-001, HLR-PRS-020, HLR-PRS-021, LLR-PRS-064
 def test_largest_of_several_logs_is_analysed(tmp_path):
     short, _ = build(n=64, gps=False)
     long_, logged = build(n=300)
@@ -390,12 +423,14 @@ def test_largest_of_several_logs_is_analysed(tmp_path):
     assert any("2 blackbox logs" in m and "log 2" in m for m in meta.parse_warnings)
 
 
+# covers: HLR-PRS-001, HLR-PRS-020, HLR-PRS-021, LLR-PRS-064
 def test_junk_before_the_log_is_ignored(tmp_path):
     data, logged = build()
     topics, _, _ = parse(tmp_path, b"\x00\xffMSP junk" * 10 + data, name="LOG00001.TXT")
     assert len(topics["vehicle_angular_velocity"]) == len(logged)
 
 
+# covers: HLR-PRS-002, HLR-PRS-021, LLR-PRS-067, LLR-PRS-068
 def test_damaged_frames_are_skipped(tmp_path):
     clean, _, _ = parse(tmp_path, build()[0])
     # a stray byte after frame 100: that frame can't be trusted, and the P frames
@@ -409,6 +444,7 @@ def test_damaged_frames_are_skipped(tmp_path):
     assert ref["timestamp"].iloc[150] in set(gyro["timestamp"])
 
 
+# covers: HLR-PRS-002, HLR-PRS-021, LLR-PRS-067
 def test_recovers_after_a_long_dropout(tmp_path):
     # 5800 loop iterations missing: more than one frame-to-frame jump may be, so the
     # first I frame after the gap is held back until the next one confirms it
@@ -422,6 +458,7 @@ def test_recovers_after_a_long_dropout(tmp_path):
     assert any("damaged" in m for m in meta.parse_warnings)
 
 
+# covers: HLR-PRS-002, HLR-PRS-021, LLR-PRS-067
 def test_padding_after_end_of_log(tmp_path):
     data, logged = build()
     topics, _, meta = parse(tmp_path, data + b"\x00" * 64 + b"\xff" * 64)
@@ -429,28 +466,33 @@ def test_padding_after_end_of_log(tmp_path):
     assert meta.parse_warnings == []
 
 
+# covers: HLR-PRS-002, HLR-PRS-021, LLR-PRS-067
 def test_truncated_file(tmp_path):
     data, logged = build(end=False)
     topics, _, _ = parse(tmp_path, data[:-4])
     assert len(logged) - 2 <= len(topics["vehicle_angular_velocity"]) <= len(logged)
 
 
+# covers: HLR-PRS-001, HLR-PRS-020, HLR-PRS-021, LLR-PRS-064
 def test_not_a_blackbox_log(tmp_path):
     with pytest.raises(ValueError, match="blackbox"):
         parse(tmp_path, b"just text\n" * 20)
 
 
+# covers: HLR-PRS-001, HLR-PRS-020, HLR-PRS-021, LLR-PRS-064
 def test_header_only(tmp_path):
     w = bw.BlackboxWriter().header()
     with pytest.raises(ValueError, match="no decodable frames"):
         parse(tmp_path, w.bytes())
 
 
+# covers: HLR-PRS-001, HLR-PRS-020, HLR-PRS-021, LLR-PRS-064
 def test_missing_file():
     with pytest.raises(FileNotFoundError):
         BetaflightParser().parse("does/not/exist.bbl")
 
 
+# covers: HLR-PRS-001, HLR-PRS-020, HLR-PRS-021, LLR-PRS-064
 def test_checked_in_sample():
     path = os.path.join(os.path.dirname(__file__), "sample_logs", "sample_betaflight.bbl")
     topics, params, meta = BetaflightParser().parse(path)

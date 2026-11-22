@@ -57,16 +57,19 @@ def plugins(monkeypatch):
     return eps
 
 
+# covers: HLR-ANL-004, LLR-ANL-007
 def test_builtins_without_plugins(plugins):
     names = [a.name for a in registry.load_analysers()]
     assert names == [c.name for c in registry.BUILTINS]
     assert len(set(names)) == len(names)
 
 
+# covers: HLR-ANL-006, LLR-ANL-011
 def test_builtin_weights_sum_to_100(plugins):
     assert sum(registry.module_weights().values()) == 100.0
 
 
+# covers: HLR-ANL-004, HLR-ANL-005, LLR-ANL-008, LLR-ANL-010
 def test_plugin_is_loaded_with_metadata(plugins):
     plugins.append(FakeEntryPoint("prop_strike", PropStrikeAnalyser))
     meta = FlightMetadata(duration_seconds=10.0, firmware_version="v1.14.0")
@@ -77,6 +80,7 @@ def test_plugin_is_loaded_with_metadata(plugins):
     assert all(a.metadata is meta for a in analysers)
 
 
+# covers: HLR-ANL-006, LLR-ANL-011
 def test_plugin_weight_counts_in_the_score(plugins):
     plugins.append(FakeEntryPoint("prop_strike", PropStrikeAnalyser))
     assert registry.module_weights()["prop_strike"] == 10.0
@@ -94,6 +98,7 @@ def test_plugin_weight_counts_in_the_score(plugins):
     FakeEntryPoint("not_a_class", obj=lambda: None),
     FakeEntryPoint("clash", obj=Clash),
 ])
+# covers: HLR-ANL-004, HLR-ANL-005, LLR-ANL-008
 def test_bad_plugins_are_left_out(plugins, caplog, ep):
     plugins.append(ep)
     with caplog.at_level(logging.WARNING):
@@ -102,6 +107,7 @@ def test_bad_plugins_are_left_out(plugins, caplog, ep):
     assert ep.name in caplog.text
 
 
+# covers: HLR-ANL-002, LLR-ANL-003, LLR-ANL-005
 def test_missing_topic_skips_with_reason():
     result = PropStrikeAnalyser().safe_analyse({}, {})
     assert result.skipped
@@ -109,6 +115,7 @@ def test_missing_topic_skips_with_reason():
     assert not PropStrikeAnalyser().is_applicable(set())
 
 
+# covers: HLR-ANL-002, LLR-ANL-003
 def test_missing_column_skips_with_reason():
     df = pd.DataFrame({"timestamp": np.arange(10), "esc_count": 4})
     result = PropStrikeAnalyser().safe_analyse({"esc_status": df}, {})
@@ -116,6 +123,7 @@ def test_missing_column_skips_with_reason():
     assert "esc[0].esc_rpm" in result.skip_reason
 
 
+# covers: HLR-ANL-001, HLR-ANL-002, LLR-ANL-001, LLR-ANL-005
 def test_inputs_present_runs():
     df = pd.DataFrame({"timestamp": np.arange(10), "esc[0].esc_rpm": 5000.0})
     result = PropStrikeAnalyser().safe_analyse({"esc_status": df}, {})
@@ -123,6 +131,7 @@ def test_inputs_present_runs():
     assert result.health_score == 50.0
 
 
+# covers: HLR-ANL-001, HLR-ANL-002, LLR-ANL-002
 def test_format_restriction():
     class TlogOnly(PropStrikeAnalyser):
         formats = ["mavlink_tlog"]
@@ -135,10 +144,12 @@ def test_format_restriction():
     assert "px4_ulog" in result.skip_reason
 
 
+# covers: HLR-ANL-002, LLR-ANL-004
 def test_skip_result_names_what_is_missing():
     assert "esc_status" in PropStrikeAnalyser().skip_result({"sensor_accel"}).skip_reason
 
 
+# covers: HLR-ANL-002, LLR-ANL-003
 def test_one_of_topics():
     from flightmd_core.analysers.vibration import VibrationAnalyser
     a = VibrationAnalyser()

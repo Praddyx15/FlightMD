@@ -20,6 +20,7 @@ def run(topics):
     return PowerAnalyser().safe_analyse(topics, {})
 
 
+# covers: HLR-ANL-011, HLR-ANL-012, HLR-ANL-019, LLR-ANL-067, LLR-ANL-069
 def test_steady_supply_is_clean():
     result = run({"system_power": power()})
     assert not result.skipped
@@ -27,6 +28,7 @@ def test_steady_supply_is_clean():
     assert result.key_metrics["min_vcc_v"] == 5.1
 
 
+# covers: HLR-ANL-019, LLR-ANL-067
 def test_brownout_dip_is_critical():
     vcc = np.full(300, 5.1)
     vcc[100:105] = 4.1
@@ -36,6 +38,7 @@ def test_brownout_dip_is_critical():
     assert f.t_start_s == 10.0
 
 
+# covers: HLR-ANL-019, LLR-ANL-066
 def test_usb_bench_time_is_ignored():
     vcc = np.full(300, 5.1)
     vcc[:50] = 4.0
@@ -51,11 +54,13 @@ def test_mavlink_power_flags():
     assert f.kind == "power.overcurrent"
 
 
+# covers: HLR-ANL-019, LLR-ANL-066
 def test_usb_flag_hides_low_voltage():
     flags = np.full(300, 4)
     assert run({"system_power": power(vcc=4.0, power_flags=flags)}).findings == []
 
 
+# covers: HLR-ANL-019, LLR-ANL-065
 def test_only_armed_time_counts():
     vcc = np.full(300, 5.1)
     vcc[:20] = 4.0
@@ -63,10 +68,12 @@ def test_only_armed_time_counts():
     assert run({"system_power": power(vcc=vcc), "vehicle_status": status}).findings == []
 
 
+# covers: HLR-ANL-011, HLR-ANL-012, HLR-ANL-019, LLR-ANL-065, LLR-ANL-069
 def test_unweighted():
     assert PowerAnalyser.weight == 0.0
 
 
+# covers: HLR-ANL-019, LLR-ANL-065
 def test_missing_topic_skips():
     result = run({})
     assert result.skipped

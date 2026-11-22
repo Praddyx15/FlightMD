@@ -39,23 +39,27 @@ def run(topics):
 
 class TestEKFAnalyser:
 
+    # covers: HLR-DYN-018, LLR-DYN-051
     def test_healthy_log_no_findings(self):
         result = run({"estimator_status": make_healthy_estimator_status()})
         assert not result.skipped
         assert len(result.findings) == 0
         assert result.health_score == 100.0
 
+    # covers: HLR-DYN-014, LLR-DYN-042
     def test_sustained_innovation_flag_raises_warning(self):
         """200 samples at 50 Hz = 4 s, above the 0.5 s threshold."""
         result = run({"estimator_status": make_flagged_estimator_status(flag_bit=7)})
         assert any(f.severity == Severity.WARNING for f in result.findings)
 
+    # covers: HLR-DYN-014, LLR-DYN-042
     def test_brief_innovation_flag_is_info(self):
         df = make_healthy_estimator_status()
         df.loc[100:104, "innovation_check_flags"] = (1 << 3)   # 0.1 s
         result = run({"estimator_status": df})
         assert any(f.severity == Severity.INFO for f in result.findings)
 
+    # covers: HLR-DYN-014, LLR-DYN-042
     def test_innovation_bit_map_matches_px4(self):
         # PX4 innovation_fault_status: 3 = ver_pos, 4 = mag_x, 7 = yaw
         expected = {3: "Vertical Position", 4: "Magnetometer X", 7: "Yaw", 0: "Horizontal Velocity"}
@@ -64,10 +68,12 @@ class TestEKFAnalyser:
             titles = [f.title for f in result.findings]
             assert titles == [f"EKF Innovation Failure: {label}"], (bit, titles)
 
+    # covers: HLR-DYN-014, HLR-DYN-019, LLR-DYN-042, LLR-DYN-052
     def test_mag_rejection_points_at_compass(self):
         result = run({"estimator_status": make_flagged_estimator_status(flag_bit=5)})
         assert "compass" in result.findings[0].recommendation.lower()
 
+    # covers: HLR-DYN-015, LLR-DYN-043
     def test_solution_flag_lost_mid_flight_raises_warning(self):
         df = make_healthy_estimator_status()
         flags = df["solution_status_flags"].to_numpy().copy()
@@ -76,6 +82,7 @@ class TestEKFAnalyser:
         result = run({"estimator_status": df})
         assert any(f.kind == "ekf.solution_invalid" for f in result.findings)
 
+    # covers: HLR-DYN-015, LLR-DYN-043
     def test_aiding_not_yet_available_is_not_flagged(self):
         """Horizontal velocity/position are only valid once GPS is in use;
         their absence at the start of the log isn't a fault."""
@@ -86,12 +93,14 @@ class TestEKFAnalyser:
         result = run({"estimator_status": df})
         assert result.findings == []
 
+    # covers: HLR-DYN-013, LLR-DYN-039
     def test_pre_init_zero_flags_ignored_without_arming_data(self):
         df = make_healthy_estimator_status()
         df.loc[:150, "solution_status_flags"] = 0
         result = run({"estimator_status": df})
         assert result.findings == []
 
+    # covers: HLR-DYN-013, LLR-DYN-039
     def test_only_armed_time_counts(self):
         df = make_healthy_estimator_status()
         df.loc[:150, "solution_status_flags"] = 0b1    # only attitude valid before arming
@@ -99,6 +108,7 @@ class TestEKFAnalyser:
         result = run({"estimator_status": df, "vehicle_status": status})
         assert result.findings == []
 
+    # covers: HLR-DYN-015, LLR-DYN-044
     def test_gps_glitch_and_accel_error_bits(self):
         df = make_healthy_estimator_status()
         flags = df["solution_status_flags"].to_numpy().copy()
@@ -110,26 +120,31 @@ class TestEKFAnalyser:
         assert kinds["ekf.gps_glitch"] == Severity.WARNING
         assert kinds["ekf.accel_error"] == Severity.CRITICAL
 
+    # covers: HLR-DYN-017, LLR-DYN-050
     def test_wind_jump_detected(self):
         df = make_healthy_estimator_status()
         df.loc[500, "wind_vel_n"] = 12.0
         result = run({"estimator_status": df})
         assert any("wind" in f.title.lower() for f in result.findings)
 
+    # covers: HLR-DYN-013, HLR-DYN-014, LLR-DYN-038, LLR-DYN-041
     def test_missing_topic_skipped(self):
         assert not EKFAnalyser().is_applicable(set())
 
+    # covers: HLR-DYN-013, LLR-DYN-038
     def test_category_is_ekf(self):
         result = run({"estimator_status": make_flagged_estimator_status(flag_bit=5)})
         assert result.findings
         for f in result.findings:
             assert f.category == Category.EKF
 
+    # covers: HLR-DYN-018, LLR-DYN-051
     def test_health_score_decreases_on_findings(self):
         result = run({"estimator_status": make_flagged_estimator_status(flag_bit=8)})
         assert result.findings
         assert result.health_score < 100.0
 
+    # covers: HLR-DYN-013, HLR-DYN-014, LLR-DYN-041
     def test_innovation_ratios_topic_used(self):
         n = 1000
         ts = np.arange(n) * 20_000
@@ -149,6 +164,7 @@ class TestEKFAnalyser:
         assert ratio[0].severity == Severity.WARNING
         assert result.key_metrics["max_innovation_ratio"] == 1.5
 
+    # covers: HLR-DYN-014, LLR-DYN-047
     def test_timestamp_sample_is_not_a_ratio(self):
         """PX4 >= 1.12 logs timestamp_sample in the ratio topic; it's a time
         in µs, not a test ratio."""
@@ -166,6 +182,7 @@ class TestEKFAnalyser:
         assert result.findings == []
         assert result.key_metrics["max_innovation_ratio"] == 0.3
 
+    # covers: HLR-DYN-014, LLR-DYN-047
     def test_unknown_ratio_field_names_are_ignored(self):
         n = 100
         ratio_df = pd.DataFrame({
@@ -178,6 +195,7 @@ class TestEKFAnalyser:
         })
         assert result.findings == []
 
+    # covers: HLR-DYN-018, LLR-DYN-053
     def test_chart_lengths_match(self):
         n = 3000
         ts = np.arange(n) * 10_000
@@ -189,6 +207,7 @@ class TestEKFAnalyser:
         chart = result.findings[0].chart_data
         assert len(chart["timestamps"]) == len(chart["ratio"]) <= 500
 
+    # covers: HLR-DYN-018, LLR-DYN-054, HLR-ANL-009
     def test_confidence_bounded(self):
         result = run({"estimator_status": make_flagged_estimator_status(flag_bit=3)})
         for f in result.findings:
@@ -231,6 +250,7 @@ def window(n, start, stop, on, off):
 
 class TestArduPilotEKF:
 
+    # covers: HLR-DYN-013, HLR-DYN-014, LLR-DYN-041
     def test_ekf_test_ratios_alone_is_enough(self):
         assert EKFAnalyser().is_applicable({"ekf_test_ratios"})
 
@@ -240,6 +260,7 @@ class TestArduPilotEKF:
         assert result.findings == []
         assert result.key_metrics["max_innovation_ratio"] == 0.1
 
+    # covers: HLR-DYN-014, LLR-DYN-048
     def test_rejected_mag_ratio(self):
         result = run_ap(ap_ratios(mag_test_ratio=window(1000, 200, 400, 1.5, 0.1)))
         [f] = result.findings
@@ -248,6 +269,7 @@ class TestArduPilotEKF:
         assert f.title == "EKF Innovation Ratio Exceeded: Magnetometer"
         assert "compass" in f.recommendation.lower()
 
+    # covers: HLR-DYN-014, LLR-DYN-049
     def test_sustained_near_limit_warns(self):
         """0.7 squared-scale = 0.84 in Mission Planner, over its 0.8."""
         result = run_ap(ap_ratios(vel_test_ratio=window(1000, 200, 350, 0.7, 0.1)))
@@ -255,32 +277,39 @@ class TestArduPilotEKF:
         assert f.kind == "ekf.innovation_ratio_high"
         assert f.severity == Severity.WARNING
 
+    # covers: HLR-DYN-014, LLR-DYN-049
     def test_brief_near_limit_is_ignored(self):
         assert run_ap(ap_ratios(vel_test_ratio=window(1000, 200, 250, 0.7, 0.1))).findings == []
 
+    # covers: HLR-DYN-015, LLR-DYN-044
     def test_gps_glitch_is_bit_14(self):
         sol = window(1000, 300, 340, GOOD | (1 << 14), GOOD)
         [f] = run_ap(ap_ratios(solution_status=sol)).findings
         assert f.kind == "ekf.gps_glitch"
 
+    # covers: HLR-DYN-015, LLR-DYN-044
     def test_takeoff_detected_bit_is_not_a_glitch(self):
         """nav_filter_status bit 10 is takeoff_detected, PX4's bit 10 is gps_glitch."""
         assert run_ap(ap_ratios(solution_status=np.full(1000, GOOD | (1 << 10)))).findings == []
 
+    # covers: HLR-DYN-016, LLR-DYN-045
     def test_nan_fault_is_critical(self):
         [f] = run_ap(ap_ratios(fault_status=window(1000, 500, 510, 1, 0))).findings
         assert f.kind == "ekf.filter_fault"
         assert f.severity == Severity.CRITICAL
 
+    # covers: HLR-DYN-016, LLR-DYN-046
     def test_position_timeout_after_it_was_fine(self):
         tmo = window(1000, 400, 500, 0b110001, 0b110000)
         [f] = run_ap(ap_ratios(timeout_status=tmo)).findings
         assert f.kind == "ekf.sensor_timeout"
         assert "position" in f.technical_summary
 
+    # covers: HLR-DYN-016, LLR-DYN-046
     def test_no_gps_at_all_is_not_a_timeout(self):
         assert run_ap(ap_ratios(timeout_status=np.full(1000, 0b110011))).findings == []
 
+    # covers: HLR-DYN-015, LLR-DYN-044
     def test_ardupilot_tlog_flags(self):
         df = ap_ratios().drop(columns=["solution_status", "fault_status", "timeout_status"])
         df["flags"] = GOOD & 0xFFFF | (1 << 10)       # EKF_UNINITIALIZED, not a glitch
@@ -288,11 +317,13 @@ class TestArduPilotEKF:
         df["flags"] = window(1000, 300, 340, 0b111111 | (1 << 15), 0b111111)
         assert [f.kind for f in run_ap(df).findings] == ["ekf.gps_glitch"]
 
+    # covers: HLR-DYN-015, LLR-DYN-044
     def test_px4_tlog_flags_glitch_is_bit_10(self):
         df = ap_ratios().drop(columns=["solution_status", "fault_status", "timeout_status"])
         df["flags"] = window(1000, 300, 340, 0b111111 | (1 << 10), 0b111111)
         assert [f.kind for f in run_ap(df, PX4).findings] == ["ekf.gps_glitch"]
 
+    # covers: HLR-DYN-014, LLR-DYN-049
     def test_estimator_status_ratios_share_the_near_limit(self):
         """PX4's estimator_status ratio is the same innov²/(gate²·var) as the
         squared ArduPilot values, so 0.64 applies to both."""
@@ -302,6 +333,7 @@ class TestArduPilotEKF:
         df["vel_test_ratio"] = window(1000, 200, 350, 0.7, 0.1)
         assert [f.kind for f in run({"estimator_status": df}).findings] == ["ekf.innovation_ratio_high"]
 
+    # covers: HLR-DYN-019, LLR-DYN-052
     def test_px4_gps_advice_names_the_delay_param(self):
         df = make_flagged_estimator_status(flag_bit=2)
         [f] = EKFAnalyser().safe_analyse({"estimator_status": df}, PX4).findings

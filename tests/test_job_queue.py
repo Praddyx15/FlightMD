@@ -29,6 +29,7 @@ def database(tmp_path, monkeypatch):
 
 
 class TestLocalQueue:
+    # covers: HLR-API-004, LLR-API-053
     @pytest.mark.asyncio
     async def test_runs_every_job_with_at_most_n_at_once(self, monkeypatch):
         running = 0
@@ -53,6 +54,7 @@ class TestLocalQueue:
         assert sorted(done) == [f"r{i}" for i in range(6)]
         assert peak == 2
 
+    # covers: HLR-API-004, LLR-API-053
     @pytest.mark.asyncio
     async def test_a_crashing_job_does_not_kill_the_worker(self, monkeypatch):
         done = []
@@ -70,10 +72,12 @@ class TestLocalQueue:
         await q.stop()
         assert done == ["good"]
 
+    # covers: HLR-API-004, LLR-API-053
     @pytest.mark.asyncio
     async def test_zero_workers_still_means_one(self):
         assert job_queue.LocalQueue(workers=0).workers == 1
 
+    # covers: HLR-API-004, LLR-API-053
     @pytest.mark.asyncio
     async def test_depth(self, monkeypatch):
         gate = asyncio.Event()
@@ -93,6 +97,7 @@ class TestLocalQueue:
 
 
 class TestQueueChoice:
+    # covers: HLR-API-031, LLR-API-056
     def test_in_process_by_default(self, monkeypatch):
         from api.config import get_settings
         monkeypatch.setattr(get_settings(), "flightmd_redis_url", "")
@@ -100,6 +105,7 @@ class TestQueueChoice:
         assert isinstance(job_queue.get_queue(), job_queue.LocalQueue)
         assert job_queue.uses_redis() is False
 
+    # covers: HLR-API-031, LLR-API-056
     def test_redis_when_configured(self, monkeypatch):
         from api.config import get_settings
         monkeypatch.setattr(get_settings(), "flightmd_redis_url", "redis://localhost:6379")
@@ -107,6 +113,7 @@ class TestQueueChoice:
         assert isinstance(job_queue.get_queue(), job_queue.RedisQueue)
         assert job_queue.uses_redis() is True
 
+    # covers: HLR-API-031, LLR-API-054
     @pytest.mark.asyncio
     async def test_redis_without_arq_says_what_to_install(self, monkeypatch):
         monkeypatch.setitem(sys.modules, "arq", None)
@@ -115,6 +122,7 @@ class TestQueueChoice:
 
 
 class TestStartup:
+    # covers: HLR-API-011, LLR-API-006
     def test_running_jobs_fail_as_interrupted_and_finished_ones_stay(self, database, monkeypatch):
         import api.main as main
         from api.config import get_settings
@@ -140,6 +148,7 @@ class TestStartup:
         assert status["error"].startswith("interrupted")
         assert job_store.get("was-done").status == JobStatus.COMPLETE
 
+    # covers: HLR-API-011, LLR-API-006
     def test_with_redis_the_workers_keep_their_jobs(self, database, monkeypatch):
         import api.main as main
         from api.config import get_settings
@@ -153,6 +162,7 @@ class TestStartup:
 
         assert job_store.get("in-a-worker").status == JobStatus.PROCESSING
 
+    # covers: HLR-API-011, LLR-API-006
     def test_orphaned_uploads_are_removed(self, database, monkeypatch):
         import os
         import api.main as main
