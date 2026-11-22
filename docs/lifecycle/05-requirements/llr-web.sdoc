@@ -1,0 +1,1289 @@
+[DOCUMENT]
+TITLE: Web application low-level requirements
+UID: FMD-LLR-WEB
+VERSION: Issue 1
+DATE: 2026-11-22
+OPTIONS:
+  MARKUP: Markdown
+
+[GRAMMAR]
+IMPORT_FROM_FILE: @flightmd
+
+[TEXT]
+STATEMENT: >>>
+Low-level requirements of the web application item, written from the code as built: every module in
+`frontend/lib/`, `frontend/i18n/request.ts`, and the components that the unit tests in `frontend/test/` exercise
+(`components/shared/DeltaBadge.tsx`, `components/shared/UnitsToggle.tsx`,
+`components/three/flightPathGeometry.ts`). Pages and the other components are verified at HLR level in this issue
+(decision D-10, open item OI-012). Parents are in `hlr-web.sdoc`. The design is
+`docs/lifecycle/06-design/lld-web.md`; the interface is `docs/lifecycle/03-system/icd/icd-web-ui.md`. Where the
+code does less than its HLR asks, or differs from it, the COMMENT says so and `lld-web.md` section 6 lists it.
+<<<
+
+[[SECTION]]
+TITLE: API client (frontend/lib/api.ts)
+
+[REQUIREMENT]
+UID: LLR-WEB-001
+STATUS: Active
+TITLE: API address in the browser
+STATEMENT: >>>
+`API_URL` is `NEXT_PUBLIC_API_URL` when that build-time variable is set and not empty; otherwise the empty string
+(the page's own origin) when the code runs in a browser on an `https:` page, and `http://localhost:8000` in every
+other case (an `http:` page, or the server render). One trailing `/` is removed. Every browser call of this module
+goes to `<API_URL><path>`.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test sets the environment or the page protocol; the tests only use the resolved value to address their mock
+server. A review reads the `API_URL` expression.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-027
+
+[REQUIREMENT]
+UID: LLR-WEB-002
+STATUS: Active
+TITLE: Request time limit and connection failure
+STATEMENT: >>>
+`request(path, init, timeout)` calls `fetch` with its own abort signal and aborts it after `timeout` ms (default
+20,000 ms; 60,000 ms for downloads and AI questions). An abort of the caller's own signal aborts the request too.
+When `fetch` rejects: if the caller's signal was aborted the original error is re-thrown; if the time limit fired
+it throws `ApiError` with status 0 and code `timeout`; otherwise `ApiError` with status 0 and code `network`. The
+timer covers the wait for the response headers only; it is cleared once `fetch` resolves.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+The polling test drives a refused connection through this function but checks only the poller's end state, not
+the error code; no test runs into the time limit. A review reads `request`.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-024
+
+[REQUIREMENT]
+UID: LLR-WEB-003
+STATUS: Active
+TITLE: Error object and the server's detail text
+STATEMENT: >>>
+`ApiError(status, message, code)` has the message `message` when that is not empty, else `code`, else
+`HTTP <status>`, and keeps `code` only when there is no server message. For a response that is not ok the client
+throws `ApiError(status, detail, fallback)`, where `fallback` is the call's key under `errors` in
+`messages/en.json` and `detail` is: the body's `detail` when it is a string; the `msg` of the first element when
+`detail` is a list; otherwise (including a body that is not JSON) null. An ok response returns its parsed JSON
+body.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The polling test checks that a 422 with a string `detail` reaches the caller as the error text. The list form and
+the non-JSON body are checked by reading `detail` and `ApiError`.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-024
+
+[REQUIREMENT]
+UID: LLR-WEB-004
+STATUS: Active
+TITLE: Airframe-scoped requests carry and keep the token
+STATEMENT: >>>
+`airframeRequest` sends the token stored for the label (LLR-WEB-029), when there is one, in the request header
+`X-Airframe-Token`, and never in the address; the label is URL-encoded in the path. An answer 401 throws
+`AirframeAuthError` with code `airframeNeedsToken`, an answer 403 with code `airframeWrongToken`, each with the
+server's detail text when given; `unclaimed` is true when that text matches `not claimed` (case ignored). Any other
+failure throws `ApiError` with the call's fallback code. On success a non-empty string `airframe_token` in the body
+is stored for the label.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test exercises airframe calls. A review reads `airframeHeaders`, `keepToken` and `airframeRequest`.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-017
+
+[REQUIREMENT]
+UID: LLR-WEB-005
+STATUS: Active
+TITLE: Airframe calls
+STATEMENT: >>>
+Through `airframeRequest` (20 s limit), with `<label>` URL-encoded: `getTrends` is `GET /trends/<label>` (fallback
+code `trends`); `getAirframeConfig` is `GET /airframe/<label>/config` (`airframeConfig`); `updateAirframeConfig` is
+`PUT /airframe/<label>/config` with a JSON body of any of `checklist_items`, `maintenance_interval_hours`,
+`alert_rules`, `webhook_url` (`airframeUpdate`); `addMaintenanceEntry` is `POST /airframe/<label>/maintenance`
+with `date`, `maintenance_type` and optional `notes` (`maintenance`); `recordAppliedChanges` is `POST
+/airframe/<label>/changes` with the change record as given (`changesSave`); `getAppliedChanges` is `GET
+/airframe/<label>/changes` (`changes`). The bodies are sent as `Content-Type: application/json`.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test calls these functions. A review reads them against the API's interface.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-010
+- TYPE: Parent
+  VALUE: HLR-WEB-016
+- TYPE: Parent
+  VALUE: HLR-WEB-018
+- TYPE: Parent
+  VALUE: HLR-WEB-019
+- TYPE: Parent
+  VALUE: HLR-WEB-020
+
+[REQUIREMENT]
+UID: LLR-WEB-006
+STATUS: Active
+TITLE: Upload request
+STATEMENT: >>>
+`uploadLog(file, onProgress, options)` sends one `XMLHttpRequest` `POST <API_URL>/analyse` with a multipart body:
+`file`; `airframe_label` with the trimmed label when that is not empty; `contribute_to_dataset` = `true` only when
+`contribute` is set; `planning_brief_sha256` lower-cased when a brief hash is given (this function does not check
+its form). When the label is not empty and a token is stored for it, the token goes in the header
+`X-Airframe-Token`. The time limit is 600,000 ms. On each upload progress event with a known length it calls
+`onProgress` with the percentage sent, rounded to a whole number. An abort of `options.signal` aborts the request.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No unit test runs an upload; the end-to-end smoke test sends one file through it but checks only the page that
+follows. A review reads `uploadLog`.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-002
+
+[REQUIREMENT]
+UID: LLR-WEB-007
+STATUS: Active
+TITLE: Upload answers and failures
+STATEMENT: >>>
+`uploadLog` resolves with the parsed body on status 200 or 202 and then stores an `airframe_token` in it for the
+label; a body that is not JSON rejects with code `invalidResponse`. It rejects: on 401 or 403 with
+`AirframeAuthError` code `airframeBelongs`; on 413 with code `tooLarge`; on 429 with `uploadLimit`; on 503 with
+`busy` and no server text, whatever the server sent; on any other status with `server`. Except for 503 the
+server's string `detail`, when present, is the message. A connection error rejects with `network`, the time limit
+with `uploadTimeout`, an abort with `uploadCancelled`, each with status 0.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test exercises the failure branches. A review reads the `load`, `error`, `timeout` and `abort` handlers.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-002
+
+[REQUIREMENT]
+UID: LLR-WEB-008
+STATUS: Active
+TITLE: Status and report calls
+STATEMENT: >>>
+`getStatus(id)` is `GET /status/<id>` and returns the body (fallback code `status`). `getReport(id)` is `GET
+/report/<id>`; it returns null on 202 (report not yet written), the report on any other ok status, and throws
+`ApiError` with fallback code `report` otherwise. Both URL-encode the id, use the 20 s limit and pass the caller's
+abort signal.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-003
+
+[REQUIREMENT]
+UID: LLR-WEB-009
+STATUS: Active
+TITLE: Export downloads
+STATEMENT: >>>
+The export addresses are `<API_URL>/export/pdf/<id>`, `/export/json/<id>`, `/export/gpx/<id>` and
+`/export/kml/<id>`, with the report id not URL-encoded. `downloadFile(url, fileName, headers)` fetches the address
+(60 s limit), throws `ApiError` with fallback code `download` when the answer is not ok, and otherwise saves the
+body as a file named `fileName` through a temporary link, releasing the object URL after 1,000 ms.
+`downloadAirframeRecord(label)` fetches `GET /export/airframe/<label>/pdf` with the stored token (60 s limit),
+throws `AirframeAuthError` code `airframeNeedsToken` on 401 or 403, `ApiError` code `download` on another
+failure, and saves the body as `flightmd_<label>_record.pdf`.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test downloads a file. A review reads the four address functions, `downloadFile`, `saveBlob` and
+`downloadAirframeRecord`.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-013
+- TYPE: Parent
+  VALUE: HLR-WEB-018
+
+[REQUIREMENT]
+UID: LLR-WEB-010
+STATUS: Active
+TITLE: Comparison call
+STATEMENT: >>>
+`getDiff(a, b)` is `GET /diff?a=<a>&b=<b>` with both ids URL-encoded (20 s limit). A 404 throws `ApiError` with
+code `diffNotFound` and no server text, whatever the server sent; another failure throws with fallback code
+`diff`; an ok answer returns the body.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test calls `getDiff`. A review reads it.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-015
+
+[REQUIREMENT]
+UID: LLR-WEB-011
+STATUS: Active
+TITLE: AI question call
+STATEMENT: >>>
+`askAI(id, question)` is `POST /ask/<id>` (id URL-encoded) with the JSON body `{"question": ...}` holding the first
+500 characters of the question (`ASK_MAX_CHARS`), with a 60 s limit. A 429 throws `ApiError` with code `askLimit`
+and no server text; another failure throws with fallback code `ask`; an ok answer returns `configured` (boolean)
+and `answer` (string or null).
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test calls `askAI`. A review reads it.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-012
+
+[REQUIREMENT]
+UID: LLR-WEB-012
+STATUS: Active
+TITLE: Dataset calls
+STATEMENT: >>>
+`withdrawContribution(id)` is `DELETE /dataset/<id>` (id URL-encoded); it resolves on an ok answer and on 404, and
+throws `ApiError` with fallback code `withdraw` otherwise. `getDatasetStats()` is `GET /dataset/stats` and returns
+`contributed_logs` and `total_bytes` (fallback code `datasetStats`).
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test calls either function. A review reads them.
+<<<
+ALLOCATION: web
+COMMENT: >>>
+`getDatasetStats` is not called by any page or component in this issue. Problem report PR-041.
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-014
+
+[REQUIREMENT]
+UID: LLR-WEB-013
+STATUS: Active
+TITLE: AirBrief addresses
+STATEMENT: >>>
+`AIRBRIEF_URL` is `NEXT_PUBLIC_AIRBRIEF_URL` with every trailing `/` removed, or empty when unset.
+`airbriefAuditUrl(id, site, airbrief)` is null when `airbrief` is empty, else
+`<airbrief>/w/view?m=flight-audit&report_url=<R>` where `R` is `<site>/report/<id URL-encoded>`, URL-encoded as a
+whole. `airbriefBriefUrl(hash, airbrief)` is null when `airbrief` is empty or `hash` is not exactly 64 hexadecimal
+characters (case ignored), else `<airbrief>/w/report?brief=<hash in lower case>`.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-023
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Server-side report fetch (frontend/lib/serverApi.ts)
+
+[REQUIREMENT]
+UID: LLR-WEB-014
+STATUS: Active
+TITLE: Report fetch on the Next server
+STATEMENT: >>>
+The server address is `API_URL`, else `NEXT_PUBLIC_API_URL`, else `http://localhost:8000`, with one trailing `/`
+removed. `fetchReportOnServer(id)` calls `GET <server>/report/<id URL-encoded>` with `cache: "no-store"` and an
+8,000 ms limit and returns: `done` with the report on 200 with a JSON body; `missing` on 404; `failed` on 422 with
+the body's string `detail` or null; `pending` on any other status, on a 200 body that is not JSON, and when the
+call throws (no connection, time limit).
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test runs the server render. A review reads `fetchReportOnServer`.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-003
+- TYPE: Parent
+  VALUE: HLR-WEB-027
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Report polling (frontend/lib/useReport.ts)
+
+[REQUIREMENT]
+UID: LLR-WEB-015
+STATUS: Active
+TITLE: Poll sequence and back-off
+STATEMENT: >>>
+`pollReport(id, signal, onState, options)` asks `getStatus` at once, then after each answer waits `firstDelay`
+(default 1,000 ms) and multiplies the wait by 1.5 (rounded to whole ms) up to `maxDelay` (default 5,000 ms). A
+successful status call resets the count of failed calls. For a status other than `complete` or `failed` it reports
+`queued` when `progress` is 0 or less and `processing` otherwise, with `progress`, `message` and `eta` (the
+`eta_seconds` when it is a number of 0 or more, else null). For `complete` it calls `getReport`: a report gives
+`done` with the report and ends; null (202) keeps polling with no state reported.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+COMMENT: >>>
+HLR-WEB-003 says the browser polls first after 1 s. The poller asks at once when it starts (the server render has
+just asked once); the first wait of 1 s comes after that first answer. Problem report PR-038.
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-003
+
+[REQUIREMENT]
+UID: LLR-WEB-016
+STATUS: Active
+TITLE: Poll end states
+STATEMENT: >>>
+`pollReport` ends with exactly one final state: `failed` with the status's `error` (null when empty) when the
+status is `failed`; `expired` when a call answers 404; `failed` when a call answers 422 or 500, with the server's
+text or null when the server sent none; `error` after 5 failed calls in a row of any other kind (no connection,
+time limit, another status); `stopped` when more than `maxWaitMs` (default 600,000 ms) has passed since the start,
+checked before each status call. When `signal` is aborted it returns without reporting a state.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-003
+
+[REQUIREMENT]
+UID: LLR-WEB-017
+STATUS: Active
+TITLE: useReport hook
+STATEMENT: >>>
+`useReport(id)` starts in `queued` with progress 0, an empty message and no time estimate. When `id` is given it
+runs `pollReport` with a new abort signal, and again from `queued` whenever `id` changes or `retry()` is called; the
+previous run is aborted then and when the component unmounts, and states that arrive after an abort are dropped.
+Polling goes on while the browser tab is hidden.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+The tests drive `pollReport` only; no test renders the hook. A review reads `useReport`.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-003
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Error text (frontend/lib/errors.ts)
+
+[REQUIREMENT]
+UID: LLR-WEB-018
+STATUS: Active
+TITLE: Error text for the page
+STATEMENT: >>>
+`useErrorText()` returns a function of `(error, fallback = "generic")` that gives: for an `ApiError` with a code,
+the message `errors.<code>` from `messages/en.json` with `status` filled in; else, for any `Error` with a message,
+that message (the server's own text); else the message `errors.<fallback>` with status 0.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test renders a component that uses it. A review reads `useErrorText` and the `errors` block of
+`messages/en.json`.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-024
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Numbers, times and units (frontend/lib/format.ts)
+
+[REQUIREMENT]
+UID: LLR-WEB-019
+STATUS: Active
+TITLE: Missing values and plain numbers
+STATEMENT: >>>
+`DASH` is the long dash (U+2014). `isNum(v)` is true only for a finite number. `fmtNum(v, digits = 1, unit)` writes
+`v` in the `en` number format with thousands separators and at most `digits` decimals, followed by a space and the
+unit when one is given; `fmtFixed(v, digits, unit)` writes exactly `digits` decimals; `fmtInt(v, unit)` rounds to a
+whole number first. Each returns `DASH` for null, undefined, NaN or an infinite value, never `0`.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-025
+
+[REQUIREMENT]
+UID: LLR-WEB-020
+STATUS: Active
+TITLE: Scores and changes
+STATEMENT: >>>
+`fmtScore(v)` is `<v rounded to a whole number> / 100`. `fmtDelta(v, digits = 1, unit)` is `+` for a positive
+value, the minus sign U+2212 for a negative one and `±` for 0, followed by `fmtNum` of the absolute value. Both
+return `DASH` for a missing value.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-025
+
+[REQUIREMENT]
+UID: LLR-WEB-021
+STATUS: Active
+TITLE: Log positions and durations
+STATEMENT: >>>
+`fmtClock(s, decimals = 0)` writes a position in the log as `m:ss` below one hour and `h:mm:ss` from one hour, with
+the seconds floored, or written with `decimals` decimals when that is above 0, and a leading `-` for a negative
+value. `fmtDuration(s)` rounds to whole seconds and writes `<s> s` below one minute, `<m> min <ss> s` below one hour
+and `<h> h <mm> min` from one hour. Both return `DASH` for a missing value.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-025
+
+[REQUIREMENT]
+UID: LLR-WEB-022
+STATUS: Active
+TITLE: File sizes
+STATEMENT: >>>
+`fmtBytes(n)` is `<n> B` below 1,024, `fmtNum(n / 1024, 1, "KB")` below 1,048,576 and `fmtNum(n / 1048576, 1,
+"MB")` from there, and `DASH` for a missing value.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-025
+- TYPE: Parent
+  VALUE: HLR-WEB-004
+
+[REQUIREMENT]
+UID: LLR-WEB-023
+STATUS: Active
+TITLE: Dates from the report and UTC display
+STATEMENT: >>>
+`parseIsoDate(s)` returns a `Date` only when `s` starts with `YYYY-MM-DDT` (four, two and two digits and `T`) and
+parses to a valid date, and null otherwise. `fmtUtc(d)` writes `YYYY-MM-DD HH:MM UTC` from the date's UTC time, and
+`DASH` for no date.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-025
+
+[REQUIREMENT]
+UID: LLR-WEB-024
+STATUS: Active
+TITLE: Local dates
+STATEMENT: >>>
+`fmtDateTime(d)` writes the date and time in the viewer's locale and time zone (numeric year, short month, day,
+two-digit hour and minute, short zone name); `fmtDate(d)` writes the numeric year, short month and day; both give
+`DASH` for no date. `localIsoDate(d = now)` writes `YYYY-MM-DD` in the viewer's time zone.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test calls these three functions; their output depends on the test machine's locale and zone. A review reads
+them.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-025
+- TYPE: Parent
+  VALUE: HLR-WEB-004
+- TYPE: Parent
+  VALUE: HLR-WEB-018
+
+[REQUIREMENT]
+UID: LLR-WEB-025
+STATUS: Active
+TITLE: Parameter values
+STATEMENT: >>>
+`fmtParam(v)` writes a value that is not a finite number as `String(v)`, a whole number in full, and any other
+value as the shortest decimal of `v` rounded to 7 significant digits. When that text would use exponent notation
+it writes `v` with 10 decimals instead, without trailing zeros or a trailing point.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+COMMENT: >>>
+HLR-WEB-025 asks for at most 7 significant digits and no exponent. A whole number is written with all its digits
+(more than 7 when it has them), and a value below 1e-6 is written with 10 decimals, so it keeps fewer than 7
+significant digits and one below 5e-11 is written as `0`. Problem report PR-039.
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-025
+- TYPE: Parent
+  VALUE: HLR-WEB-009
+
+[REQUIREMENT]
+UID: LLR-WEB-026
+STATUS: Active
+TITLE: Unit systems and conversion
+STATEMENT: >>>
+The unit systems are `metric`, `imperial` and `aviation` (`UNIT_SYSTEMS`, in that order); `isUnitSystem(v)` is
+true only for one of these strings. `toUnit(v, quantity, system)` returns the value and unit: metric leaves the
+value and gives `m` (altitude, distance), `m/s` (speed), `°C` (temperature); imperial gives feet (m / 0.3048),
+`mph` (m/s x 3600 / 1609.344) and `°F` (°C x 9 / 5 + 32); aviation gives feet, `kt` (m/s x 3600 / 1852) and
+`°C`. `fmtQty(v, quantity, system, digits = 1)` is `fmtNum` of the converted value with its unit, and `DASH` for a
+missing value.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-021
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Browser storage (frontend/lib/storage.ts)
+
+[REQUIREMENT]
+UID: LLR-WEB-027
+STATUS: Active
+TITLE: Storage access never breaks the page
+STATEMENT: >>>
+Every read of `localStorage` through this module parses the stored text as JSON and returns the caller's default
+when the key is absent or empty, when the text is not JSON, or when storage access throws. Every write stores the
+value as JSON text and ignores an exception (storage full or blocked).
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The unit selector tests write and read the stored choice through this module. No test blocks storage or stores
+text that is not JSON; those paths are checked by reading `read` and `write`.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-014
+- TYPE: Parent
+  VALUE: HLR-WEB-017
+- TYPE: Parent
+  VALUE: HLR-WEB-021
+
+[REQUIREMENT]
+UID: LLR-WEB-028
+STATUS: Active
+TITLE: Recent reports list
+STATEMENT: >>>
+The recent list is kept under `flightmd.recent` as a JSON array of entries with `id`, `fileName`, `uploadedAt` (ms
+since 1970) and the optional `airframeLabel`, `score`, `grade`, `scoreLabel`, `flightStart`, `vehicle`,
+`firmware`, `deduplicated`, `contributionId`. `getRecentReports` returns an empty list when the stored value is not
+an array and drops entries without a string `id`. `addRecentReport` puts the entry first, removes an older entry
+with the same id and keeps at most 20. `updateRecentReport(id, patch)` merges the patch into the entry with that id
+and does nothing when there is none. `removeRecentReport(id)` removes it; `clearRecentReports` stores an empty list.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test exercises the recent list. A review reads the five functions.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-014
+
+[REQUIREMENT]
+UID: LLR-WEB-029
+STATUS: Active
+TITLE: Airframe tokens in the browser
+STATEMENT: >>>
+Airframe tokens are kept under `flightmd.airframeTokens` as one JSON object from label to token, keyed by the label
+trimmed and in lower case. `setAirframeToken` stores the token trimmed; `getAirframeToken` returns it or null;
+`forgetAirframeToken` removes it.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test exercises the token store. A review reads the three functions.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-017
+
+[REQUIREMENT]
+UID: LLR-WEB-030
+STATUS: Active
+TITLE: Stored unit choice
+STATEMENT: >>>
+The unit choice is kept under `flightmd.units` as a JSON string. `getUnitSystem` returns the stored value or null;
+`setUnitSystem` stores the value given. Neither checks that the value is a unit system.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-021
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Unit preference (frontend/lib/units.ts, frontend/components/shared/UnitsToggle.tsx)
+
+[REQUIREMENT]
+UID: LLR-WEB-031
+STATUS: Active
+TITLE: Unit preference hook
+STATEMENT: >>>
+`useUnits()` returns `metric` on the server render and the first browser render; after mount it returns the stored
+choice when that is a unit system and `metric` otherwise, and reads it again on each window event
+`flightmd-units`. `setUnits(system)` stores the choice and sends that event, so every `useUnits` on the page
+follows.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-021
+
+[REQUIREMENT]
+UID: LLR-WEB-032
+STATUS: Active
+TITLE: Unit selector
+STATEMENT: >>>
+`UnitsToggle` is a select element named by the message `units.label` with one option per unit system in the order
+of `UNIT_SYSTEMS`, labelled by `units.<system>`. Its value is `useUnits()`; choosing an option calls `setUnits`
+only when the value is a unit system.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-021
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Theme (frontend/lib/themeScript.ts, frontend/lib/theme.ts)
+
+[REQUIREMENT]
+UID: LLR-WEB-033
+STATUS: Active
+TITLE: Theme set before first paint
+STATEMENT: >>>
+`themeInitScript` is a script text that the root layout puts inline in the page head. It reads `flightmd.theme`
+from `localStorage`; when that is neither `light` nor `dark` it takes `light` when the browser matches
+`(prefers-color-scheme: light)` and `dark` otherwise; for `light` it adds the class `light` to the root element.
+Any exception leaves the page dark.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test runs the script. A review reads `themeInitScript` and its use in `app/layout.tsx`.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-022
+
+[REQUIREMENT]
+UID: LLR-WEB-034
+STATUS: Active
+TITLE: Theme switch
+STATEMENT: >>>
+`currentTheme()` is `light` when the root element has the class `light` and `dark` otherwise. `setTheme(theme)`
+sets or removes that class, stores the plain text `light` or `dark` under `flightmd.theme` (an exception is
+ignored) and sends the window event `flightmd-theme`. `useTheme()` returns `dark` on the first render and then
+`currentTheme()` after mount and after each such event.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test switches the theme. A review reads the three functions.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-022
+
+[REQUIREMENT]
+UID: LLR-WEB-035
+STATUS: Active
+TITLE: Theme colours for canvas drawing
+STATEMENT: >>>
+`useCssVars(names)` returns, for each name, the trimmed computed value of the CSS custom property `--<name>` on the
+root element. It is empty on the first render and is computed again when the theme or the list of names changes.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test renders the 3D view that uses it. A review reads `useCssVars`.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-022
+- TYPE: Parent
+  VALUE: HLR-WEB-008
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Display helpers (frontend/lib/utils.ts)
+
+[REQUIREMENT]
+UID: LLR-WEB-036
+STATUS: Active
+TITLE: Severity tones and order
+STATEMENT: >>>
+Severity maps to a tone: `critical` to critical, `warning` to caution, `info` to advisory, `good` to ok. Each tone
+has a text colour `var(--<tone>)`, a fill colour `var(--<tone>-fill)` and fixed class lists for badges and card
+edges. The severity order is critical 0, warning 1, info 2, good 3.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The grouping test relies on the order to find the worst severity. The tone maps are checked by reading `utils.ts`.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-006
+- TYPE: Parent
+  VALUE: HLR-WEB-022
+
+[REQUIREMENT]
+UID: LLR-WEB-037
+STATUS: Active
+TITLE: Score and grade tones
+STATEMENT: >>>
+`scoreTone(score)` is ok from 80, caution from 50 to below 80 and critical below 50; `scoreColour` is that tone's
+text colour. `gradeTone(grade)` is ok for `A` and `B`, caution for `C`, `D` and `E`, and critical for any other
+grade, `-` included; `gradeColour` is that tone's text colour.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test calls these functions. A review reads them.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-004
+- TYPE: Parent
+  VALUE: HLR-WEB-015
+- TYPE: Parent
+  VALUE: HLR-WEB-016
+
+[REQUIREMENT]
+UID: LLR-WEB-038
+STATUS: Active
+TITLE: Assessed or not
+STATEMENT: >>>
+`isAssessed(result)` is false when the module result has `skipped` true or `assessed` false, and true otherwise
+(a result without `assessed` counts as assessed). `isReportAssessed(report)` is false when `assessed_fraction` is
+0, when `letter_grade` is `-` or when `score_label` contains `not assessed` (case ignored), and true otherwise.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test calls these functions. A review reads them.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-005
+
+[REQUIREMENT]
+UID: LLR-WEB-039
+STATUS: Active
+TITLE: Finding time window
+STATEMENT: >>>
+`findingStart(f)` is `t_start_s` when that is a finite number, else `timestamp_start_ms / 1000` when that is a
+finite number, else null; `findingEnd(f)` does the same with `t_end_s` and `timestamp_end_ms`. Both are seconds
+from the start of the log.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test calls these functions. A review reads them.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-006
+- TYPE: Parent
+  VALUE: HLR-WEB-007
+
+[REQUIREMENT]
+UID: LLR-WEB-040
+STATUS: Active
+TITLE: Copy to the clipboard
+STATEMENT: >>>
+`copyToClipboard(text)` uses the browser clipboard API when it exists and the page is a secure context; otherwise
+it puts the text in a hidden read-only text area, selects it, runs the browser's copy command and removes the
+area. The fallback resolves without checking that the copy worked.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No unit test copies; the end-to-end smoke test copies through the clipboard API only. A review reads
+`copyToClipboard`.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-004
+- TYPE: Parent
+  VALUE: HLR-WEB-009
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Finding groups (frontend/lib/groupFindings.ts)
+
+[REQUIREMENT]
+UID: LLR-WEB-041
+STATUS: Active
+TITLE: Grouping repeated checks
+STATEMENT: >>>
+`groupFindings(findings)` splits each title at the first `: ` when that occurs after the first character, else at
+the first ` — ` (space, U+2014, space) when that occurs after the first character. Findings of one category with
+the same text before the split form one bucket; a finding without a split is alone. The output keeps the order in
+which each bucket first appears: a bucket of one is the finding itself; a bucket of two or more is a group with
+`groupTitle` (the text before the split), the category, `worstSeverity` (lowest in the severity order) and the
+findings in their input order.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-006
+
+[REQUIREMENT]
+UID: LLR-WEB-042
+STATUS: Active
+TITLE: Row label in a group
+STATEMENT: >>>
+`groupItemLabel(f)` is the part of the title after the split of LLR-WEB-041, or the whole title when it has no
+split.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-006
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Parameter files (frontend/lib/paramFile.ts)
+
+[REQUIREMENT]
+UID: LLR-WEB-043
+STATUS: Active
+TITLE: Autopilot guess and first format
+STATEMENT: >>>
+`guessAutopilot(report)` is `px4` when the metadata has `px4_version`, or the firmware version and vehicle type
+contain `px4` (case ignored), or the file name ends in `.ulg` or `.ulog` (case ignored). Otherwise it is
+`ardupilot` when those contain `ardu`, `copter`, `plane`, `rover` or `sub` (at a word end) or the file name ends
+in `.bin`. Otherwise it is `ardupilot` when a change-sheet name starts with `ATC_`, `INS_`, `PSC_`, `MOT_`,
+`BATT_` or `EK3_`, then `px4` when one starts with `MC_`, `MPC_`, `EKF2_`, `IMU_` or `COM_`, else null.
+`defaultFormat(report)` is `qgc` for `px4` and `missionplanner` otherwise.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-009
+
+[REQUIREMENT]
+UID: LLR-WEB-044
+STATUS: Active
+TITLE: Mission Planner text
+STATEMENT: >>>
+`paramFile(params, "missionplanner")` is the line `# FlightMD suggested changes` followed by one line
+`NAME,VALUE` per entry, in the order given and with none left out, where VALUE is `fmtParam` of the suggested value;
+lines end with LF, the last one included. `paramLine(p, "missionplanner")` is that one line without the line end.
+The file name offered is `flightmd_changes.param`.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The tests check the text and the single line. The file name is checked by reading `FORMAT_FILE`.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-009
+
+[REQUIREMENT]
+UID: LLR-WEB-045
+STATUS: Active
+TITLE: QGroundControl text
+STATEMENT: >>>
+`paramFile(params, "qgc")` is the five lines `# Onboard parameters for Vehicle 1`, `#`, `# FlightMD suggested
+changes`, `#`, `# Vehicle-Id Component-Id Name Value Type`, then one row per entry, in the order given and with
+none left out: `1`, `1`, the name, `fmtParam` of the suggested value and the type, separated by tabs. The type is 6
+(INT32) when the current and the suggested value are both whole numbers and 9 (REAL32) otherwise. Lines end with
+LF, the last one included. `paramLine(p, "qgc")` is the name and value separated by a tab. The file name offered is
+`flightmd_changes.params`.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The tests check the header, both types and the single line. The file name is checked by reading `FORMAT_FILE`.
+<<<
+ALLOCATION: web
+COMMENT: >>>
+The real parameter type is not known to the web application. A floating-point parameter whose current and
+suggested values are both whole numbers is written as type 6, which QGroundControl can refuse to load. Problem report PR-040.
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-009
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Chart data (frontend/lib/chartData.ts)
+
+[REQUIREMENT]
+UID: LLR-WEB-046
+STATUS: Active
+TITLE: Common rules for chart series
+STATEMENT: >>>
+`chartSpecsFor(finding)` returns no chart when `chart_data` is not an object or the category is not one of
+oscillation, vibration, battery, gps, ekf, motors. In a series an element that is not a finite number becomes
+null (a gap, never 0), and a value that is not an array gives an empty series. For time charts the timestamps are
+in ms and are shown in seconds (ms / 1000); only indices with a timestamp are kept; above 500 of them, 500 are kept
+at `floor(k x n / 500)` for k = 0 to 499, the same indices for every series. A series with no value left is
+dropped; with fewer than 2 points or no series left there is no chart.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-007
+
+[REQUIREMENT]
+UID: LLR-WEB-047
+STATUS: Active
+TITLE: Oscillation spectrum
+STATEMENT: >>>
+For an oscillation finding the spectrum pairs `frequencies` and `amplitudes` up to the shorter length and keeps the
+pairs whose frequency is a number (amplitudes may be gaps); with fewer than 2 pairs there is no chart. The chart
+key is `oscillation:<axis>`, the title names the axis when `axis` is a string, and the peak is `peak_hz` when that
+is a finite number, else none.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-007
+
+[REQUIREMENT]
+UID: LLR-WEB-048
+STATUS: Active
+TITLE: Vibration charts
+STATEMENT: >>>
+For a vibration finding the sources are the object entries of `chart_data.instances` when that is an object, else
+`chart_data` itself; at most the first three are drawn. A source with a `vibe` array gives one series against
+reference lines at `warn` and `crit` (each when a finite number), in `rad/s` when its `metric` contains `gyro`
+(case ignored) and in `m/s²` otherwise, keyed `vibration:<source name, else metric, else vibe>`. Any other source
+gives the series `x`, `y` and `z` in `m/s²`, keyed `vibration:<source name>` and titled with that name when there
+is one.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-007
+
+[REQUIREMENT]
+UID: LLR-WEB-049
+STATUS: Active
+TITLE: Battery chart
+STATEMENT: >>>
+For a battery finding the chart `battery` has the series `voltage` on the left axis in `V` and `current` on the
+right axis in `A`.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-007
+
+[REQUIREMENT]
+UID: LLR-WEB-050
+STATUS: Active
+TITLE: GPS chart
+STATEMENT: >>>
+For a GPS finding the chart `gps` has the series `satellites` on the left axis drawn as steps and `hdop` on the
+right axis, with a reference line at HDOP 2 on the right axis.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test builds a GPS chart. A review reads the `gps` case of `chartSpecsFor`.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-007
+
+[REQUIREMENT]
+UID: LLR-WEB-051
+STATUS: Active
+TITLE: EKF chart
+STATEMENT: >>>
+For an EKF finding, when `innov_ratios` is an object its first six entries are series named by their keys on the
+chart `ekf`; else, when `ratio` is present, it is one series named by `col` (default `ratio`) on the chart
+`ekf:<col>`; else there is no chart. Both carry a reference line at 1.0.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The chart tests give only malformed EKF data and check that no chart comes out. The two shapes that draw are
+checked by reading the `ekf` case.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-007
+
+[REQUIREMENT]
+UID: LLR-WEB-052
+STATUS: Active
+TITLE: Motor chart
+STATEMENT: >>>
+For a motors finding, when `rpm_per_motor` is an object its first eight entries are series labelled motor 1 to 8
+in `rpm` on the chart `motors`; otherwise there is no chart.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The chart tests check that an array in place of the object gives no chart. The drawn case is checked by reading the
+`motors` case.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-007
+
+[REQUIREMENT]
+UID: LLR-WEB-053
+STATUS: Active
+TITLE: Charts of a report
+STATEMENT: >>>
+`collectCharts(findings)` builds the charts of every finding; an exception while building gives no chart for that
+finding and is not passed on. A chart key is kept once, at its first appearance. Each finding is listed on every
+chart it built, and its own chart is the first of them. A finding that built none is then listed on the first
+time chart of its category, when there is one.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-007
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Metric names and units (frontend/lib/metricLabels.ts, frontend/lib/useLabels.ts)
+
+[REQUIREMENT]
+UID: LLR-WEB-054
+STATUS: Active
+TITLE: Module and metric names
+STATEMENT: >>>
+`makeLabels(messages).module(key)` is the message `modules.<key>`, else the key itself. `metric(key).label` splits
+the key at its first `.` into module and name and is the message `metrics.<module>.<name>`, else the name with
+`_` replaced by spaces and the first letter in upper case.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-011
+- TYPE: Parent
+  VALUE: HLR-WEB-016
+
+[REQUIREMENT]
+UID: LLR-WEB-055
+STATUS: Active
+TITLE: Metric units and decimals
+STATEMENT: >>>
+Key metrics have fixed units and decimals: oscillation peaks in `Hz` with 1, normalised amplitudes with 2; vibration
+`max_imu_rms` in `m/s²` with 1, `total_clip_count` with 0, `vibration_vs_limit` with 2,
+`max_accel_vibration_metric` in `m/s²` with 2, `max_gyro_vibration_metric` in `rad/s` with 3; power `min_vcc_v` and
+`vcc_range_v` and battery `sag_per_cell_v` in `V` with 2; `ekf.max_innovation_ratio` with 2; `gps.max_hdop` with 1
+and `gps.min_satellites` with 0; `motors.motor_balance_index` with 2; `parameters.anomaly_count` with 0; ascent
+`time_to_apogee_s`, `boost_duration_s` and `time_from_apogee_to_deployment_s` in `s` with 1 and `peak_boost_g` in
+`g` with 1. Another key has no unit and 0 decimals when its name contains `count`, `satellites` or `num_` or ends
+in `_n`, else 2. `format(key, value)` is `fmtNum` with those decimals and unit.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The tests check one table entry and an unknown key. The rest of the table is checked by reading `METRIC_META`.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-011
+- TYPE: Parent
+  VALUE: HLR-WEB-016
+
+[REQUIREMENT]
+UID: LLR-WEB-056
+STATUS: Active
+TITLE: Altitude metrics follow the unit preference
+STATEMENT: >>>
+`ascent_profile.apogee_altitude_m` and `ascent_profile.parachute_deployment_altitude_m` are altitudes with 0
+decimals: `metric(key, system).unit` is the altitude unit of the system followed by ` AGL`; `format(key, value,
+system)` converts the value and adds ` AGL` when there is a value; `convert(key, value, system)` returns the
+converted value. For every other key, and for null, `convert` returns the value unchanged.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-021
+
+[REQUIREMENT]
+UID: LLR-WEB-057
+STATUS: Active
+TITLE: Labels from the loaded messages
+STATEMENT: >>>
+`useLabels()` returns `makeLabels` over the messages of the current page, made once per messages object.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test renders a component that uses the hook; the tests call `makeLabels` directly. A review reads `useLabels`.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-011
+- TYPE: Parent
+  VALUE: HLR-WEB-016
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Flight path geometry (frontend/components/three/flightPathGeometry.ts)
+
+[REQUIREMENT]
+UID: LLR-WEB-058
+STATUS: Active
+TITLE: Path point limit
+STATEMENT: >>>
+`sampleIndices(n, max = 1000)` returns every index when `n` is at most `max`, and otherwise `max` indices
+`round(k x (n - 1) / (max - 1))` for k = 0 to max - 1, so the first and the last point are always kept.
+`MAX_PATH_POINTS` is 1,000.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-008
+
+[REQUIREMENT]
+UID: LLR-WEB-059
+STATUS: Active
+TITLE: Path in scene coordinates
+STATEMENT: >>>
+`buildFlightPathScene(path)` takes `[lat, lon, alt_m]` points and returns null for an empty path. Relative to the
+first point, x is east in m (`(lon - lon0) x 111320 x cos(lat0)`), z is minus north in m (`(lat - lat0) x 111320`)
+and y is the height above the lowest point times 3. All three are multiplied by one scale that makes the longer of
+the x and z extents 3.2 units (an extent of 0 counts as 1 m), and x and z are centred on the middle of their
+extents. It also returns `maxAltitudeM`, the highest minus the lowest altitude in m, and the scale. `minMax`
+returns the lowest and highest value with a plain loop.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-008
+
+[REQUIREMENT]
+UID: LLR-WEB-060
+STATUS: Active
+TITLE: Path colours
+STATEMENT: >>>
+`normaliseValues(values)` is null for no values or no finite number, else each value's position from 0 (lowest)
+to 1 (highest), with a span of 0 counted as 1 and null where a value is not a finite number. `rampColour(t)` clamps
+`t` to 0 to 1 and interpolates linearly over the RGB stops (0.23, 0.32, 0.55), (0.13, 0.57, 0.55), (0.99, 0.91,
+0.15). `buildPathColors(mode, values)` is null in `standard` mode or when there is nothing to normalise, and
+otherwise one ramp colour per point, grey (0.45, 0.47, 0.50) where there is no reading. `rgbCss` writes
+`rgb(r, g, b)` with each part times 255, rounded.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-008
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Score change badge (frontend/components/shared/DeltaBadge.tsx)
+
+[REQUIREMENT]
+UID: LLR-WEB-061
+STATUS: Active
+TITLE: Score change badge
+STATEMENT: >>>
+`DeltaBadge` shows `DASH` for a null change; for a change smaller than 0.5 in size a dash icon and the message
+`delta.none` ("no change") in muted text; for a rise an up arrow and "+<n> better" with the class `text-ok`; for a
+fall a down arrow and "<minus sign U+2212><n> worse" with the class `text-caution`, where `n` is the size of the
+change rounded to a whole number.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-015
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Language and report types (frontend/i18n/request.ts, frontend/lib/types.ts)
+
+[REQUIREMENT]
+UID: LLR-WEB-062
+STATUS: Active
+TITLE: One locale
+STATEMENT: >>>
+The request configuration always gives the locale `en` and the messages of `messages/en.json`; `LOCALES` is `en`
+only. No locale is read from the address, a cookie or a request header.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test runs the request configuration. A review reads `i18n/request.ts`.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-027
+
+[REQUIREMENT]
+UID: LLR-WEB-063
+STATUS: Active
+TITLE: Report types
+STATEMENT: >>>
+`types.ts` declares the shapes of the report (schema 1.7) and of the API answers the web application reads
+(status, upload, trends, comparison, airframe settings, change records). Fields added to the report after schema
+1.5 are optional. The declarations are compile-time only: no answer is checked at run time, except `chart_data`
+(LLR-WEB-046).
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test compares the declarations with the published schema. A review reads `types.ts` against the report schema;
+the type check covers their use in the code.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-WEB-003
+
+[[/SECTION]]

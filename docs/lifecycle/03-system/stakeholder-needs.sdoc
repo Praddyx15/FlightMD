@@ -1,0 +1,123 @@
+[DOCUMENT]
+TITLE: FlightMD stakeholder needs
+UID: FMD-STK
+VERSION: Issue 1
+DATE: 2026-11-20
+OPTIONS:
+  MARKUP: Markdown
+
+[GRAMMAR]
+IMPORT_FROM_FILE: @flightmd
+
+[TEXT]
+STATEMENT: >>>
+What the people around FlightMD need from it, taken from the ConOps (`docs/lifecycle/03-system/conops.md`). Needs are validated with the stakeholders, not verified; system requirements (`system-requirements.sdoc`) trace up to them. None has been validated with anyone but the owner yet. The requirements standard (`docs/lifecycle/02-standards/requirements-standard.md`) says how these are written.
+<<<
+
+[REQUIREMENT]
+UID: STK-001
+STATUS: Active
+TITLE: What went wrong, in plain words, with the evidence
+STATEMENT: >>>
+Pilots and maintainers need to learn from one flight log what went wrong in the flight and how bad it is, in plain words, with the numbers and the time in the log that support each statement.
+<<<
+SOURCE: ConOps 2 (pilot, maintainer), 4.1
+
+[REQUIREMENT]
+UID: STK-002
+STATUS: Active
+TITLE: What to change
+STATEMENT: >>>
+Tuners need to know which parameter to change, from what value to what value and why, in a form their ground station loads, and need advice that fits their autopilot and frame.
+<<<
+SOURCE: ConOps 2 (tuner), 4.2
+
+[REQUIREMENT]
+UID: STK-003
+STATUS: Active
+TITLE: Any common log, as recorded
+STATEMENT: >>>
+Users need to give FlightMD the log their vehicle or ground station wrote (PX4, ArduPilot, MAVLink telemetry, Betaflight or INAV, DJI), compressed or not, without converting it first.
+<<<
+SOURCE: ConOps 2 (pilot), 3, 4.1
+
+[REQUIREMENT]
+UID: STK-004
+STATUS: Active
+TITLE: A result that can be relied on for what it claims
+STATEMENT: >>>
+Anyone who acts on a report needs it to be repeatable (the same log gives the same report), to say what it could not check instead of calling it healthy, and to say what it guessed or skipped.
+<<<
+SOURCE: ConOps 2 (maintainer, fleet operator), 5
+
+[REQUIREMENT]
+UID: STK-005
+STATUS: Active
+TITLE: One airframe over time
+STATEMENT: >>>
+Fleet operators and maintainers need to follow one airframe across flights: trends of the headline numbers, a maintenance log, and whether a change they applied made the finding go away.
+<<<
+SOURCE: ConOps 2 (fleet operator), 4.3
+
+[REQUIREMENT]
+UID: STK-006
+STATUS: Active
+TITLE: Take the result elsewhere
+STATEMENT: >>>
+Users need the report and the flight path as files other tools read (PDF, JSON, GPX, KML) and need to compare two flights.
+<<<
+SOURCE: ConOps 4.1, 4.4
+
+[REQUIREMENT]
+UID: STK-007
+STATUS: Active
+TITLE: Use it as an engine
+STATEMENT: >>>
+Integrators need to run the analysis from their own software (a Python call, a command line, an HTTP API) and need the report format to be versioned and published so a change does not break them silently.
+<<<
+SOURCE: ConOps 2 (integrator), 4.4
+
+[REQUIREMENT]
+UID: STK-008
+STATUS: Active
+TITLE: Logs stay private
+STATEMENT: >>>
+Users need their logs, tracks and airframe history not to be exposed to others, need to be able to run without any outside network call, and need anything they contribute to be removable.
+<<<
+SOURCE: ConOps 2 (pilot, self-hoster), 4.5
+
+[REQUIREMENT]
+UID: STK-009
+STATUS: Active
+TITLE: A service that stays up
+STATEMENT: >>>
+Whoever hosts the service needs it to keep working when given huge, damaged or hostile files and too many requests, on a small machine, and to see how it is doing.
+<<<
+SOURCE: ConOps 2 (self-hoster), 4.5
+
+[REQUIREMENT]
+UID: STK-010
+STATUS: Active
+TITLE: Context of the flight
+STATEMENT: >>>
+Users need the context a log does not carry when it can be had: where the flight was, the weather that day, and the planning brief the flight was flown against.
+<<<
+SOURCE: ConOps 4.1, 3 (planning tool)
+
+[REQUIREMENT]
+UID: STK-011
+STATUS: Active
+TITLE: Add a check without forking
+STATEMENT: >>>
+Developers need to add their own health check as a separate package and have it run, be scored and be reported like the built-in ones.
+<<<
+SOURCE: ConOps 2 (developer), 4.4
+
+[REQUIREMENT]
+UID: STK-012
+STATUS: Active
+TITLE: Changes to the engine do not change results unnoticed
+STATEMENT: >>>
+The project's maintainers and everyone who relies on reports need a change to a parser or a rule that alters the result for a real log to be noticed and agreed before it is released.
+<<<
+SOURCE: ConOps 2 (project maintainer), 5

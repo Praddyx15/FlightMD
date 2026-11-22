@@ -1,0 +1,679 @@
+[DOCUMENT]
+TITLE: API high-level requirements
+UID: FMD-HLR-API
+VERSION: Issue 1
+DATE: 2026-11-20
+OPTIONS:
+  MARKUP: Markdown
+
+[GRAMMAR]
+IMPORT_FROM_FILE: @flightmd
+
+[TEXT]
+STATEMENT: >>>
+Behaviour of the API item (HTTP service, storage, job queue, airframe history, alerts) as seen at its interfaces,
+written from the code under `api/` as built. Parents are system requirements (`03-system/system-requirements.sdoc`).
+The low-level requirements are in `llr-api.sdoc`, the design in `06-design/lld-api.md`, and the interfaces in
+`03-system/icd/icd-http-api.md` and `03-system/icd/icd-storage.md`. Defaults quoted here are the values of
+`api/config.py`; every one can be changed by an environment variable of the same name.
+<<<
+
+[[SECTION]]
+TITLE: Upload and analysis
+
+[REQUIREMENT]
+UID: HLR-API-001
+STATUS: Active
+TITLE: Upload a log
+STATEMENT: >>>
+`POST /analyse` shall take one log as the multipart field `file`, with optional form fields `airframe_label`,
+`contribute_to_dataset` (default false) and `planning_brief_sha256` and the optional header `X-Airframe-Token`.
+For an accepted upload it shall answer 200 with `report_id` (a new UUID4), `status` `"processing"`,
+`estimated_seconds` 20 and `deduplicated` false, keep the bytes in a file under `<data dir>/uploads` and hand the
+analysis to the queue. The format shall be taken from the first 4096 bytes of the content; a gzip or zip file is
+accepted as `compressed` and left for the engine to unpack.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-028
+
+[REQUIREMENT]
+UID: HLR-API-002
+STATUS: Active
+TITLE: Upload refusals
+STATEMENT: >>>
+`POST /analyse` shall answer 400 with a `detail` text, and start no analysis, when the file is shorter than 8
+bytes, when the format detector does not recognise the content (the detector's own message is returned), when
+`airframe_label` is given and is unusable (a slash, a backslash or a control character), or when
+`planning_brief_sha256` is not 64 hexadecimal characters.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-002
+- TYPE: Parent
+  VALUE: SYS-028
+
+[REQUIREMENT]
+UID: HLR-API-003
+STATUS: Active
+TITLE: Upload size limit
+STATEMENT: >>>
+An upload larger than `MAX_FILE_SIZE_MB` (default 50; 1 MB is 1024 x 1024 bytes) shall be refused with 413 and
+the text "File too large. Maximum size is <n>MB.". A request whose `Content-Length` exceeds the limit plus 65536
+bytes shall be refused before its body is read; any other oversized file shall be refused while it is copied to
+the upload folder, and the partial copy shall be deleted.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-003
+- TYPE: Parent
+  VALUE: SYS-033
+
+[REQUIREMENT]
+UID: HLR-API-004
+STATUS: Active
+TITLE: Bounded analyses
+STATEMENT: >>>
+With the in-process queue, at most `MAX_CONCURRENT_ANALYSES` analyses (default 2, never fewer than 1) shall run
+at once; further accepted uploads wait in memory. When 100 jobs are already in state `processing` (queued or
+running) `POST /analyse` shall answer 503 "Too many analyses in progress. Try again in a minute.". When the job
+cannot be handed to the queue it shall be marked failed and the answer shall be 503 "The analysis queue is
+unavailable. Try again in a minute.".
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-003
+
+[REQUIREMENT]
+UID: HLR-API-005
+STATUS: Active
+TITLE: Same log again within the hour
+STATEMENT: >>>
+When the SHA-256 of the uploaded bytes, the airframe label (or none) and the planning-brief hash (or none) all
+equal those of a job created less than 3600 s earlier that is processing or complete, `POST /analyse` shall
+return that job's `report_id` and status with `deduplicated` true and shall not analyse again. This shall not
+apply to an upload that contributes to the data set or that claims a new airframe label. A failed job is never
+reused.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-029
+
+[REQUIREMENT]
+UID: HLR-API-006
+STATUS: Active
+TITLE: Progress polling
+STATEMENT: >>>
+`GET /status/{report_id}` shall return `status` (`processing`, `complete` or `failed`), `progress` (integer 0 to
+100), `message`, `eta_seconds` (seconds remaining to one decimal while processing and when the engine gave an
+estimate, otherwise null) and, for a failed job, `error`. An unknown, expired or malformed identifier shall give
+404 "Report not found or expired.".
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-028
+
+[REQUIREMENT]
+UID: HLR-API-007
+STATUS: Active
+TITLE: Report by identifier only
+STATEMENT: >>>
+`GET /report/{report_id}` shall return the stored report as JSON with the header `X-FlightMD-Schema-Version`;
+202 while the analysis is in progress; 422 with the failure text when it failed; 404 when the identifier is
+unknown, expired, malformed or its stored report cannot be read. No route shall list reports or uploads. A
+report tagged with an airframe is returned to any caller that presents its identifier; no token is asked.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-028
+- TYPE: Parent
+  VALUE: SYS-029
+
+[REQUIREMENT]
+UID: HLR-API-008
+STATUS: Active
+TITLE: Result of an analysis job
+STATEMENT: >>>
+A finished analysis shall be stored under the identifier given at upload, carrying the SHA-256 of the uploaded
+bytes (the engine's own value wins when it set one) and the planning-brief hash given at upload. A log the
+engine rejects shall leave the job failed with the engine's message, with absolute file paths replaced by
+`<file>` and cut to 300 characters; any other error shall leave it failed with "Analysis failed because of an
+internal error.". The uploaded file shall be deleted when the job ends, whatever the outcome.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-028
+- TYPE: Parent
+  VALUE: SYS-024
+
+[REQUIREMENT]
+UID: HLR-API-009
+STATUS: Active
+TITLE: A stored report is not changed
+STATEMENT: >>>
+The API shall write a report's JSON once, when its analysis completes, and shall serve, export, compare and
+summarise from that stored text. Tagging, the planning-brief hash and the log hash are applied before the report
+is stored; contribution works on a copy. No route and no background task shall alter a stored report; the only
+later operation on it is deletion.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Tests show that the stored report is what was completed and that late progress updates do not touch a complete
+row. That no other statement updates `report_json` is checked by review of every SQL statement in `api/`.
+<<<
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-029
+- TYPE: Parent
+  VALUE: SYS-035
+
+[REQUIREMENT]
+UID: HLR-API-010
+STATUS: Active
+TITLE: Expiry
+STATEMENT: >>>
+A sweep at start-up and every 600 s after shall delete every complete report with no airframe label and every
+failed job (tagged or not) created more than 3600 s before, together with the cached exports of each deleted
+report, and shall delete upload files older than 3600 s. A report tagged with an airframe is never expired. A
+deleted report shall answer 404 on every route.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The expiry of reports and their exports is tested. No test runs the sweep's removal of old upload files or its
+600 s period; a review reads `_sweep`, `_remove_old_uploads` and `_cleanup_loop` (LLR-API-008).
+<<<
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-029
+
+[REQUIREMENT]
+UID: HLR-API-011
+STATUS: Active
+TITLE: Restart and stalled jobs
+STATEMENT: >>>
+Job state shall survive a restart of the API. At start-up with the in-process queue every job still processing
+shall be marked failed with an error that starts "interrupted:" and every upload file shall be removed; with the
+Redis queue both are left for the workers. A processing job whose row has not been updated for 3600 s shall be
+marked failed with the same error by the sweep.
+<<<
+RATIONALE: >>>
+No system requirement asks for this. Without it a job cut off by a restart would be reported as processing for
+ever and its upload would stay on disk.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+DERIVED: Yes
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-028
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Exports, comparison, health and questions
+
+[REQUIREMENT]
+UID: HLR-API-012
+STATUS: Active
+TITLE: Exports by report identifier
+STATEMENT: >>>
+`GET /export/pdf|json|gpx|kml/{report_id}` shall return the finished report as a PDF, as indented JSON (with
+`X-FlightMD-Schema-Version`), and its track as GPX and KML, each as an attachment named from the first 8
+characters of the identifier. The status rules of HLR-API-007 apply. GPX and KML shall answer 422 when the report
+has no track; PDF shall answer 501 when the PDF library is not installed; a failed build shall answer 500 with a
+fixed text.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-022
+- TYPE: Parent
+  VALUE: SYS-028
+
+[REQUIREMENT]
+UID: HLR-API-013
+STATUS: Active
+TITLE: Export cache
+STATEMENT: >>>
+Each export of a report shall be built once and kept under `<data dir>/exports/<report id>/` in a file named
+from the export kind, the report's schema version and the application version, so that a change of either
+version causes a rebuild. A cache that cannot be written shall not fail the request. The cache of a report shall
+be removed when the report expires.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-035
+- TYPE: Parent
+  VALUE: SYS-022
+
+[REQUIREMENT]
+UID: HLR-API-014
+STATUS: Active
+TITLE: Compare two reports
+STATEMENT: >>>
+`GET /diff?a=<id>&b=<id>` shall return, for two different finished reports, a summary of each, the overall score
+change (b minus a, 2 decimals), per-module score changes (null where a module was skipped or not assessed in
+either), per-metric changes (4 decimals), finding titles present only in a (`resolved`) or only in b (`new`),
+and the categories present in both. Equal identifiers shall give 400.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-028
+
+[REQUIREMENT]
+UID: HLR-API-015
+STATUS: Active
+TITLE: Health
+STATEMENT: >>>
+`GET /health` shall return `status` "ok", `version` (the installed `flightmd-core` package version, or
+`0.0.0+local` when the package is not installed), `schema_version` (the report schema default), `ai_configured`,
+`uptime_seconds` and `active_jobs` (jobs in state processing).
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-028
+
+[REQUIREMENT]
+UID: HLR-API-016
+STATUS: Active
+TITLE: Questions about a report
+STATEMENT: >>>
+`POST /ask/{report_id}` shall take a question of 1 to 500 characters about a finished report. With no AI
+provider configured it shall return `{"configured": false, "answer": null}` and make no outbound call. With one
+configured it shall send the provider only a system instruction, the cleaned question and a cleaned copy of the
+report of at most 24000 characters without file name, place name, track, topic list and chart data, and shall
+return the provider's text in `answer`. The answer shall not be stored and shall not change the report. A
+provider failure shall give a fixed fallback text, not an error.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+COMMENT: >>>
+PR-023 confirmed: the route does not check offline mode (`FLIGHTMD_OFFLINE`), so with a key configured and
+offline mode on it still calls the provider (LLR-API-029).
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-023
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Airframe history
+
+[REQUIREMENT]
+UID: HLR-API-017
+STATUS: Active
+TITLE: Airframe claim and token
+STATEMENT: >>>
+An airframe is named by a label of 1 to 40 characters after trimming. The first accepted write to an unclaimed
+label (a tagged upload, a configuration update or a maintenance entry) shall create a random token, return it
+once as `airframe_token` and store only its SHA-256. A request refused for another reason shall not consume the
+claim. Every later read or write of that airframe shall need the header `X-Airframe-Token`: 401 when it is
+missing or the airframe is unclaimed, 403 when it is wrong.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+COMMENT: >>>
+Partly met. An upload that claims a label and then fails to reach the queue answers 503 without the token, which
+leaves the airframe claimed by a token nobody holds (LLR-API-021). A label longer than 40 characters is cut, not
+refused (LLR-API-058).
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-030
+
+[REQUIREMENT]
+UID: HLR-API-018
+STATUS: Active
+TITLE: Airframe configuration and maintenance
+STATEMENT: >>>
+`GET` and `PUT /airframe/{label}/config` and `POST /airframe/{label}/maintenance` shall read and change the
+pre-flight checklist (at most 50 items of 200 characters), the maintenance interval (above 0 and at most 100000
+hours, or null), the alert rules (at most 20), the webhook address and the maintenance log (ISO 8601 date, type
+of 1 to 120 characters, notes of at most 2000). A field left out of an update stays; null clears it. Each answer
+shall carry the configuration, total flight hours and hours since the last maintenance entry (2 decimals),
+`maintenance_due` and `flight_count`, counting each distinct log once.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+COMMENT: >>>
+Hours since the last maintenance entry count the flights uploaded on or after its date, not those flown after
+it (LLR-API-090).
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-030
+
+[REQUIREMENT]
+UID: HLR-API-019
+STATUS: Active
+TITLE: Trends
+STATEMENT: >>>
+`GET /trends/{airframe_label}` shall return, to a holder of the token, every finished report tagged with the
+label, oldest upload first and each distinct log once, with report identifier, file name, upload time, overall
+score, grade, per-module scores (null for a module skipped or not assessed) and every key metric as
+`<analyser>.<name>`.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-030
+
+[REQUIREMENT]
+UID: HLR-API-020
+STATUS: Active
+TITLE: Airframe record
+STATEMENT: >>>
+`GET /export/airframe/{label}/pdf` shall return, to a holder of the token, a PDF of the airframe's flights
+(upload date, file name, duration in minutes, score, grade), its maintenance log, checklist and maintenance
+status, as an attachment whose name carries the label, with an ASCII fallback name.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-030
+- TYPE: Parent
+  VALUE: SYS-022
+
+[REQUIREMENT]
+UID: HLR-API-021
+STATUS: Active
+TITLE: Applied parameter changes and their verification
+STATEMENT: >>>
+`POST /airframe/{label}/changes` shall record, for a finished report tagged with that airframe, 1 to 50
+parameter changes (name, optional old value, new value), who applied them (`user` or `uaop`) and an optional
+note. `GET /airframe/{label}/changes` shall list them newest first, each with a verification: `pending` until a
+different log is uploaded for the airframe after the change was recorded, then `improved`, `worse`, `mixed` or
+`unchanged`, from the findings that name a changed parameter and from score changes of 2.0 points or more, with
+the resolved and new finding titles and the score changes. Both routes need the token.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-031
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Alerts
+
+[REQUIREMENT]
+UID: HLR-API-022
+STATUS: Active
+TITLE: Alert rules and webhook
+STATEMENT: >>>
+When a tagged analysis completes and its airframe has alert rules and a webhook address, the API shall evaluate
+each rule (`metric`, `lt` or `gt`, `threshold`) against the new report and, if at least one is breached, send
+one HTTP POST to the webhook with a JSON body whose `content` and `text` name the airframe, the report
+identifier and each breached rule with its value. A rule whose metric the report does not have is skipped. No
+failure of rule evaluation or delivery shall change the outcome of the analysis. A deduplicated upload sends
+nothing.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Rule evaluation, the call to the sender and the handling of its failures are tested. No test reads the posted
+body; a review reads the message building in `send_alert_webhook` (LLR-API-098).
+<<<
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-032
+
+[REQUIREMENT]
+UID: HLR-API-023
+STATUS: Active
+TITLE: Webhook address restrictions
+STATEMENT: >>>
+A webhook address shall be accepted, when saved and again before every send, only if it is at most 2048
+characters with no whitespace or control character, uses `https` (or `http` when `ALLOW_HTTP_WEBHOOKS` is true),
+names a host, and every address the host resolves to is a public unicast address. The POST shall go to the first
+address that was checked, shall not follow redirects, shall time out after 5 s and shall not be retried; only a
+2xx answer counts as delivered.
+<<<
+RATIONALE: >>>
+SYS-032 asks only for the https rule. The address checks are needed because the address is supplied by a user
+and the request is made from inside the operator's network.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+DERIVED: Yes
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-032
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Abuse protection and observability
+
+[REQUIREMENT]
+UID: HLR-API-024
+STATUS: Active
+TITLE: Rate limits and client address
+STATEMENT: >>>
+The API shall limit, per client address and per hour, `POST /analyse` to `RATE_LIMIT_PER_HOUR` (default 10),
+`POST /ask` to `ASK_RATE_LIMIT_PER_HOUR` (default 30) and each of the two PDF routes to `PDF_RATE_LIMIT_PER_HOUR`
+(default 30), answering 429 beyond that. The client address shall be the socket peer, unless the peer is inside
+`TRUSTED_PROXIES`; then it is the right-most `X-Forwarded-For` entry that is not a trusted proxy. A malformed
+`TRUSTED_PROXIES` shall stop the start-up.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The client-address rule is tested. No test drives a route past its limit or starts the application with a bad
+`TRUSTED_PROXIES`; a review checks the `@limiter.limit` decorators, the limit strings and the call in
+`lifespan`.
+<<<
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-033
+
+[REQUIREMENT]
+UID: HLR-API-025
+STATUS: Active
+TITLE: Browser origins and request log
+STATEMENT: >>>
+Cross-origin browser calls shall be allowed from the origins in `CORS_ORIGINS` only, without credentials. Every
+response shall carry `X-Request-ID` (12 hexadecimal characters). The API shall log one JSON line per request with
+request id, method, route template, status and duration in ms, and never the raw path, client address or file
+name.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The request id is tested. No test checks the CORS headers or the content of the log line; a review checks the
+`CORSMiddleware` arguments and `_log_request`.
+<<<
+ALLOCATION: api
+COMMENT: >>>
+A 500 answer for an exception not handled inside the application carries no `X-Request-ID` (LLR-API-002).
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-033
+
+[REQUIREMENT]
+UID: HLR-API-026
+STATUS: Active
+TITLE: Metrics
+STATEMENT: >>>
+`GET /metrics` shall give Prometheus text: HTTP counts and timings by route template, analyses by log format and
+outcome, and analysis duration by format. Label values come from fixed sets; no identifier, file name or
+position appears. When `METRICS_TOKEN` is set the route shall need `Authorization: Bearer <token>` (401 without,
+403 when wrong); when it is empty the route is open. The route is not in the OpenAPI schema.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+COMMENT: >>>
+With the Redis queue the analysis counters are kept in the worker processes, which serve no `/metrics`
+(LLR-API-100).
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-033
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Contributed logs
+
+[REQUIREMENT]
+UID: HLR-API-027
+STATUS: Active
+TITLE: Contribution and withdrawal
+STATEMENT: >>>
+Only when `contribute_to_dataset` is true shall a completed analysis keep the uploaded file and a copy of the
+report with `file_name` and `report_id` emptied and `location_name`, `gps_path`, `gps_path_wind_speed_ms` and
+`gps_path_hdop` set to null, under a `contribution_id` equal to the first 32 hexadecimal characters of the log's
+SHA-256, which the upload answer returns. The same log is stored once. A failure to store shall not fail the
+analysis. `DELETE /dataset/{contribution_id}` shall remove the file and the copy and answer 204, or 404 when
+there is none. `GET /dataset/stats` shall return the count and total bytes.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+COMMENT: >>>
+A withdrawal sent while the contributing analysis is still running answers 404 and the contribution is stored
+afterwards (LLR-API-025).
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-034
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Storage, queue and configuration
+
+[REQUIREMENT]
+UID: HLR-API-028
+STATUS: Active
+TITLE: One data directory and one database
+STATEMENT: >>>
+The API shall keep everything it stores under the directory `FLIGHTMD_DATA_DIR` (default `data`, relative to the
+working directory): the SQLite file `flightmd.db` in WAL mode holding reports with their job state, airframes,
+contributions and applied parameter changes; `uploads/`; `exports/`; and `blobs/` unless S3 is configured. The
+schema shall be created and brought up to date at first use by numbered migrations, each applied once and
+recorded.
+<<<
+VERIFICATION: Test
+ALLOCATION: api, deployment
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-035
+
+[REQUIREMENT]
+UID: HLR-API-029
+STATUS: Active
+TITLE: Import of earlier stores
+STATEMENT: >>>
+At start-up the API shall import the JSON stores of earlier versions (`reports/`, `airframes/`,
+`training_contributions/`) found under `api/data` or under the data directory into the database and the blob
+store, without overwriting rows that already exist, and shall then rename each directory to `<name>.imported` so
+it is not imported again. A file that cannot be read shall be logged and left in the renamed directory.
+<<<
+VERIFICATION: Test
+ALLOCATION: api, deployment
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-035
+
+[REQUIREMENT]
+UID: HLR-API-030
+STATUS: Active
+TITLE: Store for contributed logs
+STATEMENT: >>>
+Contributed log files shall be kept in `<data dir>/blobs`, or in the S3-compatible bucket `FLIGHTMD_S3_BUCKET`
+under `FLIGHTMD_S3_PREFIX` when a bucket is set. Keys are made by the API and shall be refused if they could
+name a path outside the store. Setting a bucket without the S3 library installed shall fail with a message
+naming the package extra to install.
+<<<
+VERIFICATION: Test
+ALLOCATION: api, deployment
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-035
+- TYPE: Parent
+  VALUE: SYS-034
+
+[REQUIREMENT]
+UID: HLR-API-031
+STATUS: Active
+TITLE: Optional Redis queue
+STATEMENT: >>>
+When `FLIGHTMD_REDIS_URL` is set the API shall hand each analysis to arq workers through Redis instead of
+running it in its own process, using the report identifier as the queue job identifier. A worker shall run at
+most `MAX_CONCURRENT_ANALYSES` jobs at once, give each 900 s and never retry. Workers share the data directory
+with the API. Setting the address without the queue library installed shall fail the hand-over with a message
+naming the package extra to install.
+<<<
+RATIONALE: >>>
+No system requirement asks for a second queue. It exists so that more than one API process can run; the limit of
+SYS-003 then holds per worker process.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The choice of queue and the missing-library message are tested. No test runs Redis or an arq worker; a review
+checks `RedisQueue.submit` and `api/worker.py`.
+<<<
+ALLOCATION: api, deployment
+DERIVED: Yes
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-003
+
+[REQUIREMENT]
+UID: HLR-API-032
+STATUS: Active
+TITLE: Configuration
+STATEMENT: >>>
+The API shall take its settings from environment variables (names not case sensitive) and from a `.env` file at
+the repository root, ignoring names it does not know, with the defaults of `api/config.py`: file size 50 MB,
+10 uploads, 30 questions and 30 PDFs per hour, 2 concurrent analyses, local development origins, no trusted
+proxy, https-only webhooks, data directory `data`, no S3, no Redis, no metrics token, AI provider `groq` with no
+key.
+<<<
+RATIONALE: >>>
+No system requirement names the settings. They are stated here because the limits of SYS-003 and SYS-033 and the
+directory of SYS-035 take their values from them.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test reads the defaults as a set; tests override single settings. A review compares `Settings` with
+`.env.example`, `api/render.yaml` and `docker-compose.yml`.
+<<<
+ALLOCATION: api, deployment
+DERIVED: Yes
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-033
+- TYPE: Parent
+  VALUE: SYS-035
+
+[[/SECTION]]

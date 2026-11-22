@@ -1,0 +1,2025 @@
+[DOCUMENT]
+TITLE: API low-level requirements
+UID: FMD-LLR-API
+VERSION: Issue 1
+DATE: 2026-11-22
+OPTIONS:
+  MARKUP: Markdown
+
+[GRAMMAR]
+IMPORT_FROM_FILE: @flightmd
+
+[TEXT]
+STATEMENT: >>>
+Low-level requirements of the API item, written from the code under `api/` as built. Parents are in
+`hlr-api.sdoc`. The design is in `docs/lifecycle/06-design/lld-api.md`; the interfaces in
+`03-system/icd/icd-http-api.md` and `03-system/icd/icd-storage.md`. Sizes: 1 MiB is 1048576 bytes. Times are
+Unix seconds. "The token check" is LLR-API-013 applied through `check_airframe_token`.
+<<<
+
+[[SECTION]]
+TITLE: Application, middleware and start-up (api/main.py)
+
+[REQUIREMENT]
+UID: LLR-API-001
+STATUS: Active
+TITLE: Early size refusal
+STATEMENT: >>>
+For `POST /analyse` whose `Content-Length` header is all digits and greater than `MAX_FILE_SIZE_MB` x 1048576
++ 65536 bytes, `request_log` answers 413 `{"detail": "File too large. Maximum size is <n>MB."}` with
+`X-Request-ID`, without calling the route and without reading the body.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-003
+
+[REQUIREMENT]
+UID: LLR-API-002
+STATUS: Active
+TITLE: Request id header
+STATEMENT: >>>
+`request_log` sets `X-Request-ID` on every response returned through it to the first 12 lower-case hexadecimal
+characters of a new UUID4.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+COMMENT: >>>
+An exception not handled inside the application is logged and re-raised; the 500 answer built outside the
+middleware then carries no `X-Request-ID`, so "every response" of HLR-API-025 holds only for handled responses.
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-025
+
+[REQUIREMENT]
+UID: LLR-API-003
+STATUS: Active
+TITLE: Request log line
+STATEMENT: >>>
+`_log_request` writes one INFO record to the logger `flightmd.access` per request: a JSON object with exactly
+`request_id`, `method`, `route` (the matched route template, or `unmatched`), `status` and `ms` (duration
+rounded to 0.1 ms). An exception from the application is logged with status 500.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test reads the access log. A review reads `_log_request` and checks that no raw path, client address or file
+name is written.
+<<<
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-025
+
+[REQUIREMENT]
+UID: LLR-API-004
+STATUS: Active
+TITLE: Cross-origin settings
+STATEMENT: >>>
+The application wraps everything, the early 413 included, in `CORSMiddleware` with `allow_origins` set to the
+comma-separated entries of `CORS_ORIGINS` (blank entries dropped), `allow_credentials` false, all methods and
+headers allowed, and `X-Request-ID`, `X-FlightMD-Schema-Version` and `Content-Disposition` exposed.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test sends a cross-origin request. A review checks the `add_middleware(CORSMiddleware, ...)` call and that it
+comes after the `request_log` middleware.
+<<<
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-025
+
+[REQUIREMENT]
+UID: LLR-API-005
+STATUS: Active
+TITLE: Trusted proxies checked at start-up
+STATEMENT: >>>
+`lifespan` first calls `trusted_networks(TRUSTED_PROXIES)`, which parses each comma-separated entry with
+`ipaddress.ip_network(strict=False)`; an entry that is not an address or network raises `ValueError` and the
+application does not start.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test starts the application with a bad `TRUSTED_PROXIES`. A review checks that the call is the first
+statement of `lifespan` and is not inside a `try`.
+<<<
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-024
+
+[REQUIREMENT]
+UID: LLR-API-006
+STATUS: Active
+TITLE: Start-up steps
+STATEMENT: >>>
+`_startup` sets `FLIGHTMD_DATA_DIR` in the process environment to the data directory when it is not set, runs
+`import_legacy` on `api/data` and the data directory (LLR-API-108), and, with the in-process queue only, marks
+every processing job interrupted (LLR-API-069) and deletes every file in `<data dir>/uploads`. It then runs one
+sweep (LLR-API-007, LLR-API-008). With the Redis queue processing jobs and upload files are left alone.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-011
+- TYPE: Parent
+  VALUE: HLR-API-029
+
+[REQUIREMENT]
+UID: LLR-API-007
+STATUS: Active
+TITLE: Expiry sweep
+STATEMENT: >>>
+`_sweep` deletes the reports selected by `cleanup_expired(3600)` (LLR-API-068) and, for each deleted
+identifier, its export directory (LLR-API-083).
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-010
+
+[REQUIREMENT]
+UID: LLR-API-008
+STATUS: Active
+TITLE: Stale jobs, old uploads and sweep period
+STATEMENT: >>>
+`_sweep` also runs `fail_stale(3600)` (LLR-API-070) and deletes the files in `<data dir>/uploads` last modified
+more than 3600 s ago. `_cleanup_loop` runs `_sweep` in a worker thread every 600 s after start-up; an exception
+from it is logged and the loop goes on.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+Tests run `fail_stale` on the store and the start-up removal of uploads, not these steps of the sweep or the
+loop. A review reads `_sweep`, `_remove_old_uploads` and `_cleanup_loop`.
+<<<
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-010
+- TYPE: Parent
+  VALUE: HLR-API-011
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Settings (api/config.py)
+
+[REQUIREMENT]
+UID: LLR-API-009
+STATUS: Active
+TITLE: Settings sources and defaults
+STATEMENT: >>>
+`Settings` reads environment variables (names not case sensitive) and the `.env` file in the repository root,
+ignores names it does not know, and defaults to: `max_file_size_mb` 50, `rate_limit_per_hour` 10,
+`ask_rate_limit_per_hour` 30, `pdf_rate_limit_per_hour` 30, `max_concurrent_analyses` 2, `cors_origins`
+`http://localhost` and `http://127.0.0.1` on ports 3000, 3001 and 3100, `trusted_proxies` empty,
+`allow_http_webhooks` false, `flightmd_data_dir` `data`, `flightmd_s3_bucket` empty, `flightmd_s3_prefix`
+`contributions/`, `flightmd_s3_endpoint_url` and `flightmd_s3_region` empty, `flightmd_redis_url` empty,
+`metrics_token` empty, `ai_provider` `groq`, `groq_api_key` and `anthropic_api_key` empty. `get_settings`
+returns one cached instance per process.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test reads the defaults as a set; tests override single values. A review compares the `Settings` fields with
+this list.
+<<<
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-032
+
+[REQUIREMENT]
+UID: LLR-API-010
+STATUS: Active
+TITLE: Derived settings
+STATEMENT: >>>
+`app_version` defaults to the installed `flightmd-core` version, or `0.0.0+local` when it is not installed;
+`max_file_size_bytes` is `max_file_size_mb` x 1048576; `data_dir` is `flightmd_data_dir` made absolute against
+the working directory; `ai_configured` is true only when `ai_provider`, trimmed and in lower case, is `groq` with
+a non-empty `groq_api_key` or `anthropic` with a non-empty `anthropic_api_key`.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test sets a provider and key and reads `ai_configured`, or runs without the package installed. A review reads
+`_package_version` and the `Settings` properties.
+<<<
+ALLOCATION: api
+COMMENT: >>>
+`app_version` is itself a setting, so an `APP_VERSION` variable replaces the package version on `/health` and in
+export cache names.
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-015
+- TYPE: Parent
+  VALUE: HLR-API-032
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Client address, rate limits and airframe tokens (api/security.py)
+
+[REQUIREMENT]
+UID: LLR-API-011
+STATUS: Active
+TITLE: Client address
+STATEMENT: >>>
+`client_ip` returns the socket peer address (`unknown` when there is none) unless `TRUSTED_PROXIES` is set and
+the peer is inside one of its networks. Then it splits every `X-Forwarded-For` header on commas and returns the
+right-most entry that is not inside a trusted network, the left-most entry when all are trusted, or the peer when
+there is no entry.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-024
+
+[REQUIREMENT]
+UID: LLR-API-012
+STATUS: Active
+TITLE: Rate limits
+STATEMENT: >>>
+One `slowapi` limiter keyed by `client_ip` limits `POST /analyse` to `RATE_LIMIT_PER_HOUR`,
+`POST /ask/{report_id}` to `ASK_RATE_LIMIT_PER_HOUR`, and `GET /export/pdf/{report_id}` and
+`GET /export/airframe/{label}/pdf` each to `PDF_RATE_LIMIT_PER_HOUR` requests per hour. A request over the limit
+gets 429 from slowapi's handler. The limits are read when the modules are imported and counted in process
+memory.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test drives a route past its limit (tests reset the limiter). A review checks each `@limiter.limit`
+decorator, its limit string, and the exception handler added in `api/main.py`.
+<<<
+ALLOCATION: api
+COMMENT: >>>
+The counts live in each process's memory, so with several API processes each keeps its own count.
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-024
+
+[REQUIREMENT]
+UID: LLR-API-013
+STATUS: Active
+TITLE: Token errors
+STATEMENT: >>>
+`token_error` maps the reason `invalid` to 403 "Wrong airframe token.", `missing` to 401 "This airframe needs
+its X-Airframe-Token header." and `unclaimed` to 401 "Airframe not claimed yet. Saving its config, logging
+maintenance or tagging an upload with it claims it.". `check_airframe_token` raises that error when
+`authorise` (LLR-API-086) refuses the token.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-017
+
+[REQUIREMENT]
+UID: LLR-API-014
+STATUS: Active
+TITLE: Claim checked before the work
+STATEMENT: >>>
+`precheck_airframe_token` writes nothing; it returns true for an unclaimed airframe, false when the token fits,
+and raises the 401 or 403 of LLR-API-013 for a missing or wrong token on a claimed one. A write route claims
+only after its own checks pass, with `check_airframe_token(claim=True)`, which returns the new token.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-017
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Upload and dataset routes (api/routers/analyse.py)
+
+[REQUIREMENT]
+UID: LLR-API-015
+STATUS: Active
+TITLE: Short file
+STATEMENT: >>>
+`POST /analyse` reads the first 4096 bytes of the field `file`; fewer than 8 bytes gives 400 "Invalid file. Must
+be a PX4 ULog (.ulg), ArduPilot (.bin), or MAVLink telemetry (.tlog) file.".
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-002
+
+[REQUIREMENT]
+UID: LLR-API-016
+STATUS: Active
+TITLE: Format of an upload
+STATEMENT: >>>
+`_detect` returns format `compressed` with suffix `.gz` for content starting `1F 8B` and `.zip` for content
+starting `50 4B 03 04`; otherwise the format from `detect_format_from_header(head, file name,
+complete=len(head) < 4096)` with suffix `.ulg`, `.bin`, `.log`, `.tlog`, `.bbl`, `.txt` or `.dat` for
+`px4_ulog`, `ardupilot_bin`, `ardupilot_log`, `mavlink_tlog`, `betaflight_bbl`, `dji_txt`, `dji_dat` (`.ulg`
+for any other). `UnsupportedFormatError` gives 400 with the detector's message. A missing file name is taken as
+`flight.ulg`.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-001
+- TYPE: Parent
+  VALUE: HLR-API-002
+
+[REQUIREMENT]
+UID: LLR-API-017
+STATUS: Active
+TITLE: Label and brief hash checks
+STATEMENT: >>>
+After format detection and before the copy, a non-blank `airframe_label` that `normalise_airframe_label` turns
+into none gives 400 "Invalid airframe label (no slashes or control characters).", and a non-blank
+`planning_brief_sha256` that, trimmed, is not 64 hexadecimal characters gives 400 "planning_brief_sha256 must be
+64 hex characters."; a valid hash is passed on in lower case. A blank label or hash counts as none.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-002
+
+[REQUIREMENT]
+UID: LLR-API-018
+STATUS: Active
+TITLE: Copy of the upload
+STATEMENT: >>>
+`_save_upload` copies the upload in reads of 1 MiB to a new file `flightmd-<random><suffix>` in
+`<data dir>/uploads` (created when missing) and returns its path, size and SHA-256. When the running size passes
+`MAX_FILE_SIZE_MB` x 1048576 bytes it stops and deletes the partial file, and the route answers 413 "File too
+large. Maximum size is <n>MB."; any other error also deletes the partial file.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-001
+- TYPE: Parent
+  VALUE: HLR-API-003
+
+[REQUIREMENT]
+UID: LLR-API-019
+STATUS: Active
+TITLE: Duplicate upload
+STATEMENT: >>>
+When `contribute_to_dataset` is false and the request does not claim a new airframe, the route calls
+`find_recent_duplicate(sha, label, brief, 3600)` (LLR-API-066). On a match it deletes the copied file, counts the
+analysis with outcome `deduplicated` and answers 200 with `report_id` and `status` of the match,
+`estimated_seconds` 0 when it is complete and 20 otherwise, and `deduplicated` true, creating no job.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-005
+
+[REQUIREMENT]
+UID: LLR-API-020
+STATUS: Active
+TITLE: Job store full
+STATEMENT: >>>
+The route creates the job row under a new UUID4 with `job_store.create`; when that raises `StoreFull`
+(LLR-API-060) it deletes the copied file and answers 503 "Too many analyses in progress. Try again in a
+minute.".
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+The cap is tested on the store (LLR-API-060); no test fills the store and posts an upload. A review reads the
+`except StoreFull` branch of `analyse_log`.
+<<<
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-004
+
+[REQUIREMENT]
+UID: LLR-API-021
+STATUS: Active
+TITLE: Claim after the job row
+STATEMENT: >>>
+When the precheck found the label unclaimed, the route claims it after the job row is created. If the claim
+fails (another request claimed it in between) the route deletes the job row with `discard`, deletes the copied
+file and returns the 401 or 403. `discard` deletes the row and its parsed copy.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+COMMENT: >>>
+The claim comes before the hand-over to the queue. When the hand-over then fails (LLR-API-022) the answer is
+503 without the token, and the airframe stays claimed by a token nobody holds. This is a gap against
+HLR-API-017 ("a request refused for another reason shall not consume the claim").
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-017
+
+[REQUIREMENT]
+UID: LLR-API-022
+STATUS: Active
+TITLE: Queue hand-over failure
+STATEMENT: >>>
+An exception from `get_queue().submit` marks the job failed with the error "could not be queued", deletes the
+copied file and gives 503 "The analysis queue is unavailable. Try again in a minute.".
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-004
+
+[REQUIREMENT]
+UID: LLR-API-023
+STATUS: Active
+TITLE: Accepted upload answer
+STATEMENT: >>>
+After the hand-over the route answers 200 with `report_id`, `status` "processing", `estimated_seconds` 20 and
+`deduplicated` false, plus `airframe_token` only when this request claimed the airframe and `contribution_id`
+(the first 32 hexadecimal characters of the upload's SHA-256) only when `contribute_to_dataset` is true.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-001
+- TYPE: Parent
+  VALUE: HLR-API-027
+
+[REQUIREMENT]
+UID: LLR-API-024
+STATUS: Active
+TITLE: Dataset statistics
+STATEMENT: >>>
+`GET /dataset/stats` answers 200 `{"contributed_logs": <number of contributions>, "total_bytes": <sum of their
+sizes>}` (LLR-API-107).
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-027
+
+[REQUIREMENT]
+UID: LLR-API-025
+STATUS: Active
+TITLE: Withdraw a contribution
+STATEMENT: >>>
+`DELETE /dataset/{contribution_id}` answers 204 with no body when `training_data_store.delete` removed the
+contribution (LLR-API-106), and 404 "No contribution with that id." when the id is not 32 lower-case
+hexadecimal characters or nothing is stored under it. No token is asked.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+COMMENT: >>>
+A withdrawal sent while the contributing analysis is still running answers 404, and the job then stores the
+contribution (a to-do note in the code). Gap against HLR-API-027.
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-027
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Status, report and question routes (api/routers/report.py)
+
+[REQUIREMENT]
+UID: LLR-API-026
+STATUS: Active
+TITLE: Finished report or the reason
+STATEMENT: >>>
+`finished_report` raises 404 "Report not found or expired." when `job_store.get` returns none, 202 "Analysis
+still in progress." while the job is processing, 422 with the job's error (or "Analysis failed.") when it
+failed, and 404 when a complete job has no report; otherwise it returns the report.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-007
+
+[REQUIREMENT]
+UID: LLR-API-027
+STATUS: Active
+TITLE: Status route
+STATEMENT: >>>
+`GET /status/{report_id}` answers 200 with the job summary (LLR-API-064), or 404 "Report not found or expired."
+when the summary is `not_found`.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-006
+
+[REQUIREMENT]
+UID: LLR-API-028
+STATUS: Active
+TITLE: Report route
+STATEMENT: >>>
+`GET /report/{report_id}` answers 200 with the report serialised by `model_dump_json` as `application/json`
+(a NaN float is written as null) and the header `X-FlightMD-Schema-Version` equal to the report's
+`schema_version`; the other answers are those of LLR-API-026. No route lists reports or uploads.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-007
+
+[REQUIREMENT]
+UID: LLR-API-029
+STATUS: Active
+TITLE: Question route
+STATEMENT: >>>
+`POST /ask/{report_id}` takes the JSON body `{"question": <1 to 500 characters>}` (422 otherwise), applies
+LLR-API-026, builds an `AIEnhancer` from `AI_PROVIDER`, `GROQ_API_KEY` and `ANTHROPIC_API_KEY`, and answers
+`{"configured": false, "answer": null}` without an outbound call when it is not configured, else
+`{"configured": true, "answer": <LLR-API-115>}`. It stores nothing.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+COMMENT: >>>
+PR-023 confirmed: the route never reads `FLIGHTMD_OFFLINE` (`flightmd_core.orchestrator.offline()`), so with a
+key set and offline mode on, the question and the cleaned report are still sent to the provider. Gap against
+SYS-025.
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-016
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Export routes (api/routers/export.py)
+
+[REQUIREMENT]
+UID: LLR-API-030
+STATUS: Active
+TITLE: PDF export
+STATEMENT: >>>
+`GET /export/pdf/{report_id}` returns the PDF from the export cache (kind `report.pdf`) as `application/pdf`
+with `Content-Disposition: attachment; filename="flightmd_report_<first 8 characters of the id>.pdf"`. A
+`RuntimeError` from the renderer gives 501 "PDF export isn't available on this server."; any other exception
+gives 500 "PDF generation failed.".
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-012
+
+[REQUIREMENT]
+UID: LLR-API-031
+STATUS: Active
+TITLE: GPX and KML export
+STATEMENT: >>>
+`GET /export/gpx/{report_id}` and `GET /export/kml/{report_id}` give 422 "This flight log has no GPS track to
+export." when `metadata.gps_path` is empty; otherwise they return the cached `track.gpx` as
+`application/gpx+xml` named `flightmd_track_<8>.gpx`, or `track.kml` as `application/vnd.google-earth.kml+xml`
+named `flightmd_track_<8>.kml`, as attachments. A build error gives 500 "GPX generation failed." or "KML
+generation failed.".
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-012
+
+[REQUIREMENT]
+UID: LLR-API-032
+STATUS: Active
+TITLE: JSON export
+STATEMENT: >>>
+`GET /export/json/{report_id}` returns the report as JSON indented by 2 spaces (cached as `report.json`), as the
+attachment `flightmd_report_<8>.json` with `X-FlightMD-Schema-Version` equal to its `schema_version`.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-012
+
+[REQUIREMENT]
+UID: LLR-API-033
+STATUS: Active
+TITLE: Airframe record PDF
+STATEMENT: >>>
+`GET /export/airframe/{label}/pdf` gives 400 "Invalid airframe label." for a label that normalises to none,
+applies the token check, and renders (not cached) a PDF from the airframe's config, its maintenance status
+(LLR-API-090) and one row per flight of LLR-API-067 with upload date (UTC, `YYYY-MM-DD`), file name, duration in
+minutes to 1 decimal, score rounded to a whole number and grade. The answer is `application/pdf` with
+`attachment; filename="flightmd_airframe_<ascii>.pdf"; filename*=UTF-8''<percent-encoded
+flightmd_airframe_<label>.pdf>`, where `<ascii>` is the label with every character that is not an ASCII letter
+or digit replaced by `_`. A render error gives 500 "PDF generation failed.".
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-020
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Health route (api/routers/health.py)
+
+[REQUIREMENT]
+UID: LLR-API-034
+STATUS: Active
+TITLE: Health answer
+STATEMENT: >>>
+`GET /health` answers 200 with `status` "ok", `version` (`app_version`), `schema_version` (the default of
+`FlightMDReport.schema_version`), `ai_configured` (LLR-API-010), `uptime_seconds` (whole seconds since the
+application module was loaded) and `active_jobs` (LLR-API-071). No token is asked.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-015
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Trends and comparison routes (api/routers/trends.py)
+
+[REQUIREMENT]
+UID: LLR-API-035
+STATUS: Active
+TITLE: Trends route
+STATEMENT: >>>
+`GET /trends/{airframe_label}` gives 400 "Invalid airframe label." for a label that normalises to none, applies
+the token check, and answers `airframe_label`, `flight_count` and `flights`: for each flight of LLR-API-067,
+`report_id`, `file_name`, `created_at` (upload time), `overall_score`, `letter_grade`, `module_scores`
+(LLR-API-036) and `key_metrics` keyed `<analyser>.<name>`.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-019
+
+[REQUIREMENT]
+UID: LLR-API-036
+STATUS: Active
+TITLE: Module score of a flight
+STATEMENT: >>>
+`_module_score` gives null for a module that is skipped or whose `assessed` is false, otherwise its
+`health_score`.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-019
+- TYPE: Parent
+  VALUE: HLR-API-014
+
+[REQUIREMENT]
+UID: LLR-API-037
+STATUS: Active
+TITLE: Comparison route
+STATEMENT: >>>
+`GET /diff?a=<id>&b=<id>` gives 400 "Cannot diff a report against itself." when `a` equals `b`, applies
+LLR-API-026 to `a` and then `b`, and answers `a` and `b` (each `report_id`, `file_name`, `overall_score`,
+`letter_grade`, `score_label`), `overall_score_delta` (b minus a, rounded to 2 decimals), `module_score_deltas`,
+`findings_diff` and `key_metric_deltas`. No token is asked.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-014
+
+[REQUIREMENT]
+UID: LLR-API-038
+STATUS: Active
+TITLE: Score and metric changes
+STATEMENT: >>>
+`_deltas` gives, for every key in either report in sorted order, `{"a", "b", "delta"}`, with `delta` b minus a
+rounded to 2 decimals for module scores and 4 for key metrics, and null when either value is null or missing.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-014
+
+[REQUIREMENT]
+UID: LLR-API-039
+STATUS: Active
+TITLE: Findings comparison
+STATEMENT: >>>
+`_findings_diff` gives `resolved`, the titles of a's findings whose title is not among b's (in a's order);
+`new`, the titles of b's findings not among a's; and `persisting_categories`, for each category present in both
+(sorted), the severity of the last finding of that category in a and in b.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+`resolved` and `new` are tested; no test checks `persisting_categories`. A review reads `_findings_diff`.
+<<<
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-014
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Airframe configuration routes (api/routers/airframe.py)
+
+[REQUIREMENT]
+UID: LLR-API-040
+STATUS: Active
+TITLE: Configuration body limits
+STATEMENT: >>>
+The body of `PUT /airframe/{label}/config` gives 422 when `checklist_items` has more than 50 items or an item of
+more than 200 characters, `maintenance_interval_hours` is not above 0 and at most 100000, `alert_rules` has more
+than 20 rules, a rule's `comparison` is not `lt` or `gt`, or a rule's `label` is longer than 120 characters.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-018
+
+[REQUIREMENT]
+UID: LLR-API-041
+STATUS: Active
+TITLE: Read the configuration
+STATEMENT: >>>
+`GET /airframe/{label}/config` gives 400 "Invalid airframe label." for a label that normalises to none, applies
+the token check without claiming, and answers the configuration (LLR-API-044).
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-018
+
+[REQUIREMENT]
+UID: LLR-API-042
+STATUS: Active
+TITLE: Update the configuration
+STATEMENT: >>>
+`PUT /airframe/{label}/config` runs the precheck (LLR-API-014); gives 400 with the checker's text when a
+non-empty `webhook_url` is refused by `validate_webhook_url` (LLR-API-097) and 400 with the rule's error when an
+alert rule fails LLR-API-084; then claims when needed, changes only the fields present in the body
+(LLR-API-089) and answers the configuration with `airframe_token` when it claimed.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-018
+- TYPE: Parent
+  VALUE: HLR-API-023
+
+[REQUIREMENT]
+UID: LLR-API-043
+STATUS: Active
+TITLE: Maintenance entry
+STATEMENT: >>>
+`POST /airframe/{label}/maintenance` takes `date`, `maintenance_type` (1 to 120 characters) and `notes` (at most
+2000, default empty), giving 422 otherwise; runs the precheck; gives 400 "date must be an ISO 8601 date, e.g.
+2026-07-05" when `datetime.fromisoformat` refuses `date`; then claims when needed, adds the entry
+(LLR-API-088) and answers the configuration.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-018
+
+[REQUIREMENT]
+UID: LLR-API-044
+STATUS: Active
+TITLE: Configuration answer
+STATEMENT: >>>
+`_config_response` answers `airframe_label`, `checklist_items`, `maintenance_log`, `maintenance_interval_hours`,
+`alert_rules` and `webhook_url` (LLR-API-085), `total_flight_hours` and `hours_since_maintenance` rounded to 2
+decimals and `maintenance_due` (LLR-API-090), `flight_count` (the number of flights of LLR-API-067) and, only
+when a token was just created, `airframe_token`.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-018
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Applied parameter change routes (api/routers/changes.py)
+
+[REQUIREMENT]
+UID: LLR-API-045
+STATUS: Active
+TITLE: Change body limits
+STATEMENT: >>>
+The body of `POST /airframe/{label}/changes` gives 422 when `report_id` is not 1 to 64 characters, `changes` has
+fewer than 1 or more than 50 items, a change's `name` is not 1 to 32 letters, digits or `_`, its `to_value` is
+missing or not a number, `applied_by` is not `user` or `uaop` (default `user`), or `note` is longer than 500
+characters.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-021
+
+[REQUIREMENT]
+UID: LLR-API-046
+STATUS: Active
+TITLE: Record applied changes
+STATEMENT: >>>
+`POST /airframe/{label}/changes` gives 400 "Invalid airframe label." for an unusable label, applies the token
+check without claiming (401 for an unclaimed airframe), gives 400 "report_id must be a finished flight tagged
+with this airframe." unless the report is complete and tagged with this label, stores the row (LLR-API-093) and
+answers 201 with it and a pending `verify` (LLR-API-094).
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-021
+
+[REQUIREMENT]
+UID: LLR-API-047
+STATUS: Active
+TITLE: List applied changes
+STATEMENT: >>>
+`GET /airframe/{label}/changes` gives 400 "Invalid airframe label." for an unusable label, applies the token
+check, and answers the airframe's changes newest first, each with a `verify` computed when read
+(LLR-API-095).
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-021
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Analysis job (api/analysis.py)
+
+[REQUIREMENT]
+UID: LLR-API-048
+STATUS: Active
+TITLE: Error text shown to the client
+STATEMENT: >>>
+`public_error` returns, for `ValueError` or `UnsupportedFormatError`, the message with every absolute path of
+two or more separators replaced by `<file>`, trimmed and cut to 300 characters ("The log could not be
+analysed." when empty); for any other exception "Analysis failed because of an internal error.".
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-008
+
+[REQUIREMENT]
+UID: LLR-API-049
+STATUS: Active
+TITLE: Successful job
+STATEMENT: >>>
+`run_job` sets progress 1 "Starting analysis…", runs `run_analysis` with a progress callback that stores
+progress, message and time remaining (LLR-API-061) and an `AIEnhancer` built from the settings, then sets the
+report's `report_id` to the job's, sets `metadata.log_sha256` from the job when the engine left it empty and
+`metadata.planning_brief_sha256` when the job has one, and stores the report with `complete` (LLR-API-062).
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-008
+
+[REQUIREMENT]
+UID: LLR-API-050
+STATUS: Active
+TITLE: Work after completion
+STATEMENT: >>>
+After the report is stored, `run_job` runs the alert check (LLR-API-052) and `refresh_pending` (LLR-API-096) for
+a tagged job, and `training_data_store.save` (log path, its suffix, format, report, log hash) for a contributing
+job. An exception in any of these is logged and the job stays complete.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-022
+- TYPE: Parent
+  VALUE: HLR-API-021
+- TYPE: Parent
+  VALUE: HLR-API-027
+
+[REQUIREMENT]
+UID: LLR-API-051
+STATUS: Active
+TITLE: Failed job and clean-up
+STATEMENT: >>>
+An exception before the report is stored marks the job failed with `public_error` (LLR-API-048); outcome
+`rejected` for `ValueError` or `UnsupportedFormatError`, `error` otherwise; a failure to mark it is logged. In
+every case `run_job` counts the analysis by format and outcome (LLR-API-100), deletes the uploaded file and
+does not raise.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-008
+
+[REQUIREMENT]
+UID: LLR-API-052
+STATUS: Active
+TITLE: Alert check
+STATEMENT: >>>
+`_check_alert_rules` reads the airframe's config and does nothing when it has no alert rules or no webhook
+address; otherwise it evaluates the rules (LLR-API-092) and, when at least one is breached, calls
+`send_alert_webhook` once with the address, label, report id and breached rules. It logs and swallows every
+exception.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-022
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Analysis queue (api/job_queue.py)
+
+[REQUIREMENT]
+UID: LLR-API-053
+STATUS: Active
+TITLE: In-process queue
+STATEMENT: >>>
+`LocalQueue` runs `max(1, MAX_CONCURRENT_ANALYSES)` worker tasks that take jobs from an unbounded
+`asyncio.Queue` in order and run them with `run_job`, so no more than that many run at once; an exception from
+a job is logged and the worker goes on. Workers start on the first `submit` in an event loop; `depth` is the
+number of jobs waiting.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-004
+
+[REQUIREMENT]
+UID: LLR-API-054
+STATUS: Active
+TITLE: Queue library missing
+STATEMENT: >>>
+`RedisQueue.submit` raises `RuntimeError` "FLIGHTMD_REDIS_URL is set but arq isn't installed: pip install
+'flightmd-core[queue]'" when `arq` cannot be imported.
+<<<
+VERIFICATION: Test
+ALLOCATION: api, deployment
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-031
+
+[REQUIREMENT]
+UID: LLR-API-055
+STATUS: Active
+TITLE: Hand-over to Redis
+STATEMENT: >>>
+`RedisQueue.submit` opens one arq connection pool from `FLIGHTMD_REDIS_URL` on first use and enqueues the
+function `analyse` with the job's fields as a dict and `_job_id` equal to the report id.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test runs Redis. A review reads `RedisQueue.submit`.
+<<<
+ALLOCATION: api, deployment
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-031
+
+[REQUIREMENT]
+UID: LLR-API-056
+STATUS: Active
+TITLE: Queue choice
+STATEMENT: >>>
+`get_queue` returns one `RedisQueue` per process when `FLIGHTMD_REDIS_URL` is set and one `LocalQueue`
+otherwise; `uses_redis` is true only when the address is set.
+<<<
+VERIFICATION: Test
+ALLOCATION: api, deployment
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-031
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Queue worker (api/worker.py)
+
+[REQUIREMENT]
+UID: LLR-API-057
+STATUS: Active
+TITLE: Worker settings
+STATEMENT: >>>
+`WorkerSettings` registers the function `analyse`, which runs `run_job` on the received fields, connects to
+`FLIGHTMD_REDIS_URL` (`redis://localhost:6379` when empty), and sets `max_jobs` to
+`max(1, MAX_CONCURRENT_ANALYSES)`, `job_timeout` to 900 s and `max_tries` to 1.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test runs an arq worker. A review reads `api/worker.py`.
+<<<
+ALLOCATION: api, deployment
+COMMENT: >>>
+A job stopped by the 900 s timeout is cancelled, which `run_job` does not catch: the upload is deleted but the
+job stays processing until the stale-job sweep (LLR-API-008) marks it failed.
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-031
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Job store (api/storage.py)
+
+[REQUIREMENT]
+UID: LLR-API-058
+STATUS: Active
+TITLE: Airframe label form
+STATEMENT: >>>
+`normalise_airframe_label` returns none for none; otherwise it trims the label, cuts it to 40 characters, trims
+again, and returns none when the result is empty or holds `/`, `\`, a character below 0x20 or 0x7F.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+COMMENT: >>>
+A label longer than 40 characters is cut, not refused, so two labels that differ only after the 40th character
+name the same airframe.
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-017
+- TYPE: Parent
+  VALUE: HLR-API-002
+
+[REQUIREMENT]
+UID: LLR-API-059
+STATUS: Active
+TITLE: Report identifier form
+STATEMENT: >>>
+`JobStore.get` returns none and `status_summary` returns `not_found` without a database query for an id that is
+not 1 to 64 letters, digits or `-`.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-006
+- TYPE: Parent
+  VALUE: HLR-API-007
+
+[REQUIREMENT]
+UID: LLR-API-060
+STATUS: Active
+TITLE: New job and the cap
+STATEMENT: >>>
+`create` counts, in one write transaction, the rows in state `processing`; at 100 or more it raises
+`StoreFull`; otherwise it inserts the row with status `processing`, progress 0, message "Queued…", the
+normalised label, format, log hash, brief hash and the current time as `created_at` and `updated_at`.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-004
+
+[REQUIREMENT]
+UID: LLR-API-061
+STATUS: Active
+TITLE: Progress update
+STATEMENT: >>>
+`update_progress` stores progress clamped to 0 to 100, the message, `eta_at` = now + max(0, eta) (null when no
+estimate) and `updated_at`, only on a row still in state `processing`.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-006
+- TYPE: Parent
+  VALUE: HLR-API-009
+
+[REQUIREMENT]
+UID: LLR-API-062
+STATUS: Active
+TITLE: Completed job
+STATEMENT: >>>
+`complete` writes the report JSON with status `complete`, progress 100, message "Analysis complete.", no ETA
+and no error, inserting the row when it is missing (untagged); an existing `log_sha256` is kept, otherwise the
+report's is used.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-008
+- TYPE: Parent
+  VALUE: HLR-API-009
+
+[REQUIREMENT]
+UID: LLR-API-063
+STATUS: Active
+TITLE: Failed job
+STATEMENT: >>>
+`fail` sets status `failed`, the error, message "Analysis failed: <error>", no ETA and `updated_at`.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-008
+
+[REQUIREMENT]
+UID: LLR-API-064
+STATUS: Active
+TITLE: Job summary
+STATEMENT: >>>
+`status_summary` returns `status`, `progress`, `message` and `eta_seconds` (max(0, `eta_at` - now) to 1 decimal
+while processing with an ETA, else null), plus `error` when the row has one, read from the database so that it
+holds across a restart; `{"status": "not_found"}` for an unknown id.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-006
+- TYPE: Parent
+  VALUE: HLR-API-011
+
+[REQUIREMENT]
+UID: LLR-API-065
+STATUS: Active
+TITLE: Unreadable stored report
+STATEMENT: >>>
+`JobStore.get` returns none, after logging, for a complete row whose report JSON is empty or does not parse as
+a `FlightMDReport`.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test damages a row and reads it through `get`; the same parse is tested through `list_by_airframe`. A review
+reads the `except ValueError` branch of `get`.
+<<<
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-007
+
+[REQUIREMENT]
+UID: LLR-API-066
+STATUS: Active
+TITLE: Recent duplicate
+STATEMENT: >>>
+`find_recent_duplicate` returns `(report_id, status)` of the newest row with the same log hash, status
+`processing` or `complete`, `created_at` within the last 3600 s, and the same label and brief hash (none
+matching none), or none.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-005
+
+[REQUIREMENT]
+UID: LLR-API-067
+STATUS: Active
+TITLE: Flights of an airframe
+STATEMENT: >>>
+`list_by_airframe_with_created_at` returns `(created_at, report)` for every complete row tagged with the
+normalised label, ordered by `created_at` then `report_id`, skipping a row whose log hash was already seen and a
+row whose report cannot be parsed; an unusable label gives an empty list.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-019
+- TYPE: Parent
+  VALUE: HLR-API-018
+
+[REQUIREMENT]
+UID: LLR-API-068
+STATUS: Active
+TITLE: Expired rows
+STATEMENT: >>>
+`cleanup_expired(ttl)` deletes, in one transaction, every row created more than `ttl` seconds ago that is
+complete with no label or failed (with or without a label), and returns their ids; processing rows and complete
+tagged rows are kept.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-010
+
+[REQUIREMENT]
+UID: LLR-API-069
+STATUS: Active
+TITLE: Interrupted jobs
+STATEMENT: >>>
+`interrupt_running` sets every processing row to failed with the error "interrupted: the server restarted
+during the analysis, please upload the log again" and no ETA, and returns their number.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-011
+
+[REQUIREMENT]
+UID: LLR-API-070
+STATUS: Active
+TITLE: Stalled jobs
+STATEMENT: >>>
+`fail_stale(max_idle_s)` sets every processing row whose `updated_at` is older than `max_idle_s` seconds to
+failed with the interrupted error of LLR-API-069, and returns their number.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-011
+
+[REQUIREMENT]
+UID: LLR-API-071
+STATUS: Active
+TITLE: Active job count
+STATEMENT: >>>
+`job_count` is the number of rows in state `processing`.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-015
+- TYPE: Parent
+  VALUE: HLR-API-004
+
+[REQUIREMENT]
+UID: LLR-API-072
+STATUS: Active
+TITLE: Parsed report cache
+STATEMENT: >>>
+`JobStore` keeps up to 32 parsed reports in memory, keyed by database path and report id, least recently used
+dropped first; `complete`, `discard` and `cleanup_expired` drop the entry of the ids they touch.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test checks the cache size or its eviction. A review reads `_parse` and `_forget` and checks that no code
+changes a cached report.
+<<<
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-009
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Database (api/db.py)
+
+[REQUIREMENT]
+UID: LLR-API-073
+STATUS: Active
+TITLE: Database file and connections
+STATEMENT: >>>
+`Database` creates the data directory when missing and opens `<data dir>/flightmd.db` with one connection per
+thread, a 30 s lock timeout, `journal_mode=WAL` and `synchronous=NORMAL`. `transaction()` begins
+`IMMEDIATE` by default (or deferred), commits at the end and rolls back on any exception.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-028
+
+[REQUIREMENT]
+UID: LLR-API-074
+STATUS: Active
+TITLE: Migrations
+STATEMENT: >>>
+On opening, `_migrate` creates `schema_migrations (version, applied_at)` when missing and, in one write
+transaction, applies in order each migration whose version is not recorded, then records it.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-028
+
+[REQUIREMENT]
+UID: LLR-API-075
+STATUS: Active
+TITLE: Tables
+STATEMENT: >>>
+Migration 1 creates the tables `reports`, `airframes`, `contributions` and `param_changes` with the columns and
+indexes listed in `icd-storage.md` section 2.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-028
+
+[REQUIREMENT]
+UID: LLR-API-076
+STATUS: Active
+TITLE: Process database
+STATEMENT: >>>
+`db.get` opens one `Database` per process on first use, at `FLIGHTMD_DATA_DIR` made absolute.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+Tests replace the process database with a temporary one. A review reads `db.get`.
+<<<
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-028
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Blob store (api/blobs.py)
+
+[REQUIREMENT]
+UID: LLR-API-077
+STATUS: Active
+TITLE: Blob key check
+STATEMENT: >>>
+Every blob operation refuses with `ValueError` a key that is not 1 to 128 characters of letters, digits, `.`,
+`_` or `-`, starts with `.`, or holds `..`.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-030
+
+[REQUIREMENT]
+UID: LLR-API-078
+STATUS: Active
+TITLE: Local blob store
+STATEMENT: >>>
+`LocalBlobStore.put` copies the source to a temporary file in the store directory (created when missing) and
+renames it onto the key, deleting the temporary file on failure; `exists` tests the file; `delete` removes it and
+ignores a missing file.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-030
+
+[REQUIREMENT]
+UID: LLR-API-079
+STATUS: Active
+TITLE: S3 blob store
+STATEMENT: >>>
+`S3BlobStore` raises `RuntimeError` "FLIGHTMD_S3_BUCKET is set but boto3 isn't installed: pip install
+'flightmd-core[s3]'" when boto3 cannot be imported; otherwise it makes an S3 client with the endpoint and region
+when set, stores each blob under `<prefix><key>` in the bucket, and `exists` returns false for a 404,
+`NoSuchKey` or `NotFound` error and raises any other.
+<<<
+VERIFICATION: Test
+ALLOCATION: api, deployment
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-030
+
+[REQUIREMENT]
+UID: LLR-API-080
+STATUS: Active
+TITLE: Store choice
+STATEMENT: >>>
+`blobs.get` returns one `S3BlobStore` per process when `FLIGHTMD_S3_BUCKET` is set, else a `LocalBlobStore` on
+`<data dir>/blobs`.
+<<<
+VERIFICATION: Test
+ALLOCATION: api, deployment
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-030
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Export cache (api/export_cache.py)
+
+[REQUIREMENT]
+UID: LLR-API-081
+STATUS: Active
+TITLE: Cache file name
+STATEMENT: >>>
+An export of kind `k` is cached at `<data dir>/exports/<report id>/<k>-<tag>`, where `<tag>` is
+`<schema version>-<app version>` with every run of characters other than letters, digits and `.` replaced by
+`_`. A report id not of the form of LLR-API-059 raises `ValueError` before the disk is touched.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-013
+
+[REQUIREMENT]
+UID: LLR-API-082
+STATUS: Active
+TITLE: Build once
+STATEMENT: >>>
+`get_or_build` returns the cached bytes when the file exists; otherwise it builds them, writes them with
+`write_atomic` (LLR-API-112) and returns them; an `OSError` while writing is logged and the built bytes are
+still returned.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-013
+
+[REQUIREMENT]
+UID: LLR-API-083
+STATUS: Active
+TITLE: Drop a report's exports
+STATEMENT: >>>
+`drop` removes `<data dir>/exports/<report id>/` and everything in it, ignoring errors.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-013
+- TYPE: Parent
+  VALUE: HLR-API-010
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Airframe store (api/airframe_store.py)
+
+[REQUIREMENT]
+UID: LLR-API-084
+STATUS: Active
+TITLE: Alert rule check
+STATEMENT: >>>
+`AlertRule` raises `ValueError` when `comparison` is not `lt` or `gt` or `metric` is not 1 to 64 letters,
+digits, `_` or `.`.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-022
+- TYPE: Parent
+  VALUE: HLR-API-018
+
+[REQUIREMENT]
+UID: LLR-API-085
+STATUS: Active
+TITLE: Public configuration
+STATEMENT: >>>
+`AirframeConfig.to_dict` holds `airframe_label`, `checklist_items`, `maintenance_log`,
+`maintenance_interval_hours`, `alert_rules` and `webhook_url`, never the token hash; the stored `config_json` is
+this dict.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-017
+
+[REQUIREMENT]
+UID: LLR-API-086
+STATUS: Active
+TITLE: Token check and claim
+STATEMENT: >>>
+`authorise` reads the airframe in a transaction (a write transaction when claiming). With no stored token hash
+it raises `TokenError("unclaimed")`, or with `claim=True` stores the SHA-256 hex of a new
+`secrets.token_urlsafe(32)` token and returns the token. With a stored hash it raises `missing` for an empty
+token and `invalid` when the token's SHA-256 differs (constant-time compare), and returns none when it fits.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-017
+
+[REQUIREMENT]
+UID: LLR-API-087
+STATUS: Active
+TITLE: Read a configuration row
+STATEMENT: >>>
+Reading an airframe with no row gives an empty unclaimed configuration and writes nothing; a row whose
+`config_json` does not parse raises, so no later write replaces it.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-018
+
+[REQUIREMENT]
+UID: LLR-API-088
+STATUS: Active
+TITLE: Add a maintenance entry
+STATEMENT: >>>
+`add_maintenance_entry` appends the entry, sorts the log by `date` as text and saves it, in one write
+transaction.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-018
+
+[REQUIREMENT]
+UID: LLR-API-089
+STATUS: Active
+TITLE: Change settings
+STATEMENT: >>>
+`update_settings` changes, in one write transaction, only the fields passed; none clears a field (lists become
+empty, the webhook none); the token hash is kept. `save` writes one row per label, upserting.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-018
+
+[REQUIREMENT]
+UID: LLR-API-090
+STATUS: Active
+TITLE: Maintenance status
+STATEMENT: >>>
+`compute_maintenance_status` gives `total_flight_hours` (sum of the flights' `duration_seconds` / 3600),
+`hours_since_maintenance` (the same over flights uploaded at or after 00:00 UTC of the last log entry's date;
+all flights when there is no entry or its date does not parse) and `maintenance_due` (an interval is set and
+the hours since are at least the interval).
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+COMMENT: >>>
+Flights are counted by upload time, not by when they were flown, so a log flown before a maintenance entry and
+uploaded after it counts as flown since.
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-018
+
+[REQUIREMENT]
+UID: LLR-API-091
+STATUS: Active
+TITLE: Metric value of a rule
+STATEMENT: >>>
+`extract_metric_value` gives `overall_score` for `overall_score`, the module's `health_score` for
+`module.<analyser>`, the key metric for `<analyser>.<name>`, and none when the report has no such module or
+metric.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-022
+
+[REQUIREMENT]
+UID: LLR-API-092
+STATUS: Active
+TITLE: Breached rules
+STATEMENT: >>>
+`evaluate_alert_rules` returns `{rule, value}` for every rule whose value is strictly below (`lt`) or above
+(`gt`) its threshold, skipping a rule whose metric has no value.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-022
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Applied parameter changes (api/param_changes.py)
+
+[REQUIREMENT]
+UID: LLR-API-093
+STATUS: Active
+TITLE: Change rows
+STATEMENT: >>>
+`ParamChangeStore.add` stores a row with a new UUID4 hex `id`, label, report id, changes, `applied_by`, note
+and the current time, and returns it; `for_airframe` returns the airframe's rows ordered by `created_at`
+newest first, then `id`.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-021
+
+[REQUIREMENT]
+UID: LLR-API-094
+STATUS: Active
+TITLE: Verification of a change
+STATEMENT: >>>
+`verify(before, after, names)` returns `pending` with empty lists when `after` is none. Otherwise, over findings
+whose `params` (upper case) meet the changed names (upper case): `findings_resolved` are such titles of before
+whose `kind` (or title) is not in after, `findings_new` the reverse; `metric_deltas` holds `overall_score` and
+`module.<name>` (2 decimals) for modules tied to those findings and assessed in both. The status is `improved`
+when something resolved or a module change (the overall change when there is none) is 2.0 points or more,
+`worse` when something is new or a change is -2.0 or less, `mixed` when both, else `unchanged`.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-021
+
+[REQUIREMENT]
+UID: LLR-API-095
+STATUS: Active
+TITLE: Next flight of a change
+STATEMENT: >>>
+`with_verification` gives each change `verify` = `pending` when its report is not among the airframe's flights
+(LLR-API-067), else LLR-API-094 against the first flight uploaded after the change was recorded whose report is
+not the change's own.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-021
+
+[REQUIREMENT]
+UID: LLR-API-096
+STATUS: Active
+TITLE: Stored verification
+STATEMENT: >>>
+`refresh_pending` stores, in `verify_json`, a fresh verification for each of the airframe's changes that has
+none or a pending one, and returns how many are no longer pending.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-021
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Alert webhook (api/webhook_notifier.py)
+
+[REQUIREMENT]
+UID: LLR-API-097
+STATUS: Active
+TITLE: Webhook address check
+STATEMENT: >>>
+`validate_webhook_url` raises `UnsafeWebhookURLError` when the address is longer than 2048 characters or holds
+whitespace or a character below 0x20, its scheme is not `https` (or `http` when `ALLOW_HTTP_WEBHOOKS` is true),
+it has no host or a bad port, the host does not resolve, or any resolved address (an IPv4-mapped IPv6 address
+taken as IPv4) is not global or is multicast; otherwise it returns the resolved addresses.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-023
+
+[REQUIREMENT]
+UID: LLR-API-098
+STATUS: Active
+TITLE: Alert message
+STATEMENT: >>>
+`send_alert_webhook` posts the JSON `{"content": <text>, "text": <text>}` with `Content-Type: application/json`
+and `User-Agent: FlightMD-webhook`, where the text is a first line naming the airframe label and report id and
+one line per breached rule with its label (or metric), value to 3 significant digits, `<` or `>` and the
+threshold.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test reads the posted body. A review reads the message building in `send_alert_webhook`.
+<<<
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-022
+
+[REQUIREMENT]
+UID: LLR-API-099
+STATUS: Active
+TITLE: Alert delivery
+STATEMENT: >>>
+`send_alert_webhook` returns false without connecting when the address fails LLR-API-097; otherwise it sends one
+POST to the address's path and query, connecting to the first checked address with TLS checked against the
+host name, a 5 s timeout, no redirect followed and no retry, and returns true only for a 2xx status. It never
+raises.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-023
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Metrics (api/metrics.py)
+
+[REQUIREMENT]
+UID: LLR-API-100
+STATUS: Active
+TITLE: Analysis metrics
+STATEMENT: >>>
+`count_analysis` increments `flightmd_analyses_total{format, outcome}` and `observe_duration` records
+`flightmd_analysis_duration_seconds{format}` (buckets 1, 2, 5, 10, 20, 30, 60, 120, 300, 600 s); a format
+outside the eight known values is `other`, an outcome outside `complete`, `rejected`, `error`, `deduplicated` is
+`error`.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+COMMENT: >>>
+With the Redis queue these counters are kept in the worker processes, which serve no `/metrics`; the API's
+`/metrics` then shows only HTTP metrics and `deduplicated`. Gap against HLR-API-026.
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-026
+
+[REQUIREMENT]
+UID: LLR-API-101
+STATUS: Active
+TITLE: Metrics token
+STATEMENT: >>>
+When `METRICS_TOKEN` is set, `GET /metrics` gives 401 "Metrics need a bearer token." with
+`WWW-Authenticate: Bearer` unless `Authorization` is `Bearer <token>` (scheme in any case), and 403 "Wrong
+metrics token." when the token differs (constant-time compare); when it is empty the route is open. The answer
+is the Prometheus text of the default registry.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-026
+
+[REQUIREMENT]
+UID: LLR-API-102
+STATUS: Active
+TITLE: HTTP metrics
+STATEMENT: >>>
+`instrument` adds HTTP metrics labelled by route template with status codes grouped (`2xx` ...), ignoring
+requests that match no route and leaving out `/metrics`; the `/metrics` route is not in the OpenAPI schema.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-026
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Contributed logs (api/training_data_store.py)
+
+[REQUIREMENT]
+UID: LLR-API-103
+STATUS: Active
+TITLE: Contribution id
+STATEMENT: >>>
+`contribution_id_for` returns the first 32 characters of the log's SHA-256 hex; a valid id is 32 lower-case
+hexadecimal characters.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-027
+
+[REQUIREMENT]
+UID: LLR-API-104
+STATUS: Active
+TITLE: Stripped report copy
+STATEMENT: >>>
+`anonymise` returns the report as JSON data with `file_name` and `report_id` set to "" and `metadata`
+`location_name`, `gps_path`, `gps_path_wind_speed_ms` and `gps_path_hdop` set to null.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-027
+
+[REQUIREMENT]
+UID: LLR-API-105
+STATUS: Active
+TITLE: Store a contribution
+STATEMENT: >>>
+`save` uses the given log hash (or hashes the file), returns at once when a row with that id exists, else puts
+the file in the blob store under `<id><suffix>` first and then inserts the row (id, hash, format, key, size in
+bytes, time, stripped report); a blob failure raises and leaves no row. The source file is not changed.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-027
+- TYPE: Parent
+  VALUE: HLR-API-030
+
+[REQUIREMENT]
+UID: LLR-API-106
+STATUS: Active
+TITLE: Delete a contribution
+STATEMENT: >>>
+`delete` returns false when no row has the id; otherwise it deletes the blob, then the row, and returns true;
+a blob failure raises and keeps the row.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-027
+
+[REQUIREMENT]
+UID: LLR-API-107
+STATUS: Active
+TITLE: Contribution totals
+STATEMENT: >>>
+`stats` returns the number of contribution rows and the sum of their `size_bytes` (0 when there are none).
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-027
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Import of earlier stores (api/legacy_import.py)
+
+[REQUIREMENT]
+UID: LLR-API-108
+STATUS: Active
+TITLE: Import and retire
+STATEMENT: >>>
+`import_legacy` visits each root once (by absolute path) and, for each of `reports/`, `airframes/` and
+`training_contributions/` present, imports it and renames it to `<name>.imported` (or
+`<name>.imported-<Unix time>` when that exists); it returns the number of rows inserted per kind. A missing root
+is skipped.
+<<<
+VERIFICATION: Test
+ALLOCATION: api, deployment
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-029
+
+[REQUIREMENT]
+UID: LLR-API-109
+STATUS: Active
+TITLE: Import reports
+STATEMENT: >>>
+`_import_reports` reads each `<id>.json` (id of the form of LLR-API-059), as `{airframe_label, created_at,
+report}` or as a bare report (untagged, file time), and inserts it as a complete row without replacing an
+existing one; a file that cannot be read or validated is logged and skipped.
+<<<
+VERIFICATION: Test
+ALLOCATION: api, deployment
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-029
+
+[REQUIREMENT]
+UID: LLR-API-110
+STATUS: Active
+TITLE: Import airframes
+STATEMENT: >>>
+`_import_airframes` reads files named `<slug>-<16 hex>.json` before other names, and inserts each config with
+its token hash without replacing an existing row, so the first file read for a label wins; an unreadable file
+is logged and skipped.
+<<<
+VERIFICATION: Test
+ALLOCATION: api, deployment
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-029
+
+[REQUIREMENT]
+UID: LLR-API-111
+STATUS: Active
+TITLE: Import contributions
+STATEMENT: >>>
+`_import_contributions` takes each `<32 hex>.json` with exactly one other file starting with that id, puts the
+file in the blob store under its file name and inserts the row with the stripped report without replacing an
+existing one; otherwise the entry is logged and skipped.
+<<<
+VERIFICATION: Test
+ALLOCATION: api, deployment
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-029
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: File writes (api/fs.py)
+
+[REQUIREMENT]
+UID: LLR-API-112
+STATUS: Active
+TITLE: Atomic file write
+STATEMENT: >>>
+`write_atomic` writes to a temporary file in the target's directory, flushes and fsyncs it and renames it onto
+the target; on any failure it deletes the temporary file and raises, leaving the old target unchanged.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-013
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Questions about a report (api/services/report_qa.py)
+
+[REQUIREMENT]
+UID: LLR-API-113
+STATUS: Active
+TITLE: Report context
+STATEMENT: >>>
+`report_context` serialises the report without `file_name`, without `metadata` `gps_path`,
+`gps_path_wind_speed_ms`, `gps_path_hdop`, `available_topics`, `location_name` and `armed_windows`, without
+findings' `chart_data`, and with each module's findings replaced by `finding_count`; every string goes through
+`clean_text` (400 characters, keys 80); while longer than 24000 characters the last finding is dropped and
+`findings_truncated` set; the text is then cut to 24000 characters.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-016
+
+[REQUIREMENT]
+UID: LLR-API-114
+STATUS: Active
+TITLE: Question prompt
+STATEMENT: >>>
+`build_prompt` returns `<report>`, newline, the context, newline, `</report>`, a blank line and
+`Question: <question cleaned by clean_text to 500 characters>`.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-016
+
+[REQUIREMENT]
+UID: LLR-API-115
+STATUS: Active
+TITLE: Provider call
+STATEMENT: >>>
+`answer` asks the provider for one completion of at most 400 tokens with the system text `QA_SYSTEM` (the
+engine's data-not-instructions prompt plus: answer only from the report, reply exactly "Not in this report."
+otherwise, five sentences at most) and returns the trimmed text.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-016
+
+[REQUIREMENT]
+UID: LLR-API-116
+STATUS: Active
+TITLE: Provider failure
+STATEMENT: >>>
+`answer` returns "The AI assistant couldn't answer that just now. Try the keyword search instead." when the call
+raises (the exception type is logged), and "Not in this report." when the text is empty.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test makes the provider fail or answer empty. A review reads the `try` in `answer`.
+<<<
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-API-016
+
+[[/SECTION]]
