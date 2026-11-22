@@ -49,12 +49,14 @@ def store(database):
 
 
 class TestAirframeConfigStore:
+    # covers: HLR-API-018, LLR-API-087
     def test_get_returns_default_for_unknown_airframe(self, store):
         config = store.get("Quad-1")
         assert config.airframe_label == "Quad-1"
         assert config.checklist_items == []
         assert config.maintenance_log == []
 
+    # covers: HLR-API-018, LLR-API-089
     def test_save_and_reload_round_trips(self, store):
         config = store.get("Quad-1")
         config.checklist_items = ["Check props", "Check battery"]
@@ -63,6 +65,7 @@ class TestAirframeConfigStore:
         reloaded = store.get("Quad-1")
         assert reloaded.checklist_items == ["Check props", "Check battery"]
 
+    # covers: HLR-API-018, LLR-API-088
     def test_add_maintenance_entry_persists_and_sorts(self, store):
         store.add_maintenance_entry("Quad-1", MaintenanceEntry(date="2026-06-01", maintenance_type="Prop swap"))
         store.add_maintenance_entry("Quad-1", MaintenanceEntry(date="2026-01-01", maintenance_type="Motor service"))
@@ -70,6 +73,7 @@ class TestAirframeConfigStore:
         config = store.get("Quad-1")
         assert [m.date for m in config.maintenance_log] == ["2026-01-01", "2026-06-01"]
 
+    # covers: HLR-API-018, LLR-API-089
     def test_update_settings_partial_update_preserves_other_fields(self, store):
         store.update_settings("Quad-1", checklist_items=["A"])
         store.update_settings("Quad-1", maintenance_interval_hours=10.0)
@@ -78,12 +82,14 @@ class TestAirframeConfigStore:
         assert config.checklist_items == ["A"]
         assert config.maintenance_interval_hours == 10.0
 
+    # covers: HLR-API-018, LLR-API-089
     def test_labels_with_special_characters_get_a_safe_filename(self, store):
         store.update_settings("Quad #1 / Test", checklist_items=["A"])
         config = store.get("Quad #1 / Test")
         assert config.checklist_items == ["A"]
         assert config.airframe_label == "Quad #1 / Test"
 
+    # covers: HLR-API-018, LLR-API-089
     def test_labels_with_the_same_slug_do_not_collide(self, store):
         store.update_settings("Quad 1", checklist_items=["space"])
         store.update_settings("Quad_1", checklist_items=["underscore"])
@@ -93,6 +99,7 @@ class TestAirframeConfigStore:
         assert store.get("Quad_1").checklist_items == ["underscore"]
         assert store.get("Quad#1").checklist_items == ["hash"]
 
+    # covers: HLR-API-018, LLR-API-089
     def test_none_clears_a_field_and_omitted_fields_stay(self, store):
         store.update_settings("Quad-1", checklist_items=["A"], maintenance_interval_hours=10.0)
         store.update_settings("Quad-1", maintenance_interval_hours=None)
@@ -101,6 +108,7 @@ class TestAirframeConfigStore:
         assert config.maintenance_interval_hours is None
         assert config.checklist_items == ["A"]
 
+    # covers: HLR-API-018, LLR-API-087
     def test_corrupt_row_raises_instead_of_being_overwritten(self, store, database):
         store.update_settings("Quad-1", checklist_items=["A"])
         database.execute("UPDATE airframes SET config_json = '{not json' WHERE label = 'Quad-1'")
@@ -110,12 +118,14 @@ class TestAirframeConfigStore:
         row = database.query_one("SELECT config_json FROM airframes WHERE label = 'Quad-1'")
         assert row[0] == "{not json"
 
+    # covers: HLR-API-018, LLR-API-087
     def test_get_does_not_create_a_row(self, store, database):
         store.get("Quad-1")
         assert database.query_one("SELECT COUNT(*) FROM airframes")[0] == 0
 
 
 class TestAirframeTokens:
+    # covers: HLR-API-017, LLR-API-086
     def test_first_claim_returns_a_token_and_stores_only_its_hash(self, store, database):
         token = store.authorise("Quad-1", None, claim=True)
         assert token
@@ -125,15 +135,18 @@ class TestAirframeTokens:
         assert token not in row["config_json"]
         assert "token_hash" not in row["config_json"]
 
+    # covers: HLR-API-017, LLR-API-086
     def test_rejected_token_check_writes_nothing(self, store, database):
         with pytest.raises(TokenError):
             store.authorise("Quad-1", None)
         assert database.query_one("SELECT COUNT(*) FROM airframes")[0] == 0
 
+    # covers: HLR-API-017, LLR-API-085
     def test_token_never_in_public_dict(self, store):
         store.authorise("Quad-1", None, claim=True)
         assert "token_hash" not in store.get("Quad-1").to_dict()
 
+    # covers: HLR-API-017, LLR-API-086
     def test_claimed_airframe_needs_the_right_token(self, store):
         token = store.authorise("Quad-1", None, claim=True)
 
@@ -147,17 +160,20 @@ class TestAirframeTokens:
 
         assert store.authorise("Quad-1", token) is None
 
+    # covers: HLR-API-017, LLR-API-086
     def test_unclaimed_airframe_cannot_be_read(self, store):
         with pytest.raises(TokenError) as e:
             store.authorise("Quad-1", None)
         assert e.value.reason == "unclaimed"
 
+    # covers: HLR-API-017, LLR-API-086
     def test_existing_config_without_token_is_claimed_by_first_write(self, store):
         store.update_settings("Quad-1", checklist_items=["A"])
         token = store.authorise("Quad-1", None, claim=True)
         assert token
         assert store.get("Quad-1").checklist_items == ["A"]
 
+    # covers: HLR-API-017, LLR-API-086, LLR-API-089
     def test_settings_updates_keep_the_token(self, store):
         token = store.authorise("Quad-1", None, claim=True)
         store.update_settings("Quad-1", checklist_items=["A"])
@@ -166,49 +182,60 @@ class TestAirframeTokens:
 
 
 class TestAlertRuleValidation:
+    # covers: HLR-API-022, LLR-API-084
     def test_invalid_comparison_rejected(self):
         with pytest.raises(ValueError):
             AlertRule(metric="overall_score", comparison="equals", threshold=50.0)
 
+    # covers: HLR-API-022, LLR-API-084
     def test_invalid_metric_name_rejected(self):
         with pytest.raises(ValueError):
             AlertRule(metric="oh no; drop table", comparison="lt", threshold=50.0)
 
 
 class TestExtractMetricValue:
+    # covers: HLR-API-022, LLR-API-091
     def test_overall_score(self):
         assert extract_metric_value(make_report(72.0), "overall_score") == 72.0
 
+    # covers: HLR-API-022, LLR-API-091
     def test_module_score(self):
         assert extract_metric_value(make_report(), "module.battery") == 80.0
 
+    # covers: HLR-API-022, LLR-API-091
     def test_key_metric(self):
         assert extract_metric_value(make_report(), "battery.sag_per_cell_v") == 0.6
 
+    # covers: HLR-API-022, LLR-API-091
     def test_missing_module_returns_none(self):
         assert extract_metric_value(make_report(), "module.gps") is None
 
+    # covers: HLR-API-022, LLR-API-091
     def test_missing_key_metric_returns_none(self):
         assert extract_metric_value(make_report(), "battery.nonexistent") is None
 
 
 class TestEvaluateAlertRules:
+    # covers: HLR-API-022, LLR-API-092
     def test_breach_detected_lt(self):
         rules = [AlertRule(metric="overall_score", comparison="lt", threshold=90.0, label="Score too low")]
         triggered = evaluate_alert_rules(make_report(85.0), rules)
         assert len(triggered) == 1
         assert triggered[0]["value"] == 85.0
 
+    # covers: HLR-API-022, LLR-API-092
     def test_breach_detected_gt(self):
         rules = [AlertRule(metric="battery.sag_per_cell_v", comparison="gt", threshold=0.5, label="Battery sag")]
         triggered = evaluate_alert_rules(make_report(), rules)
         assert len(triggered) == 1
 
+    # covers: HLR-API-022, LLR-API-092
     def test_no_breach_when_within_threshold(self):
         rules = [AlertRule(metric="overall_score", comparison="lt", threshold=50.0)]
         triggered = evaluate_alert_rules(make_report(85.0), rules)
         assert triggered == []
 
+    # covers: HLR-API-022, LLR-API-092
     def test_rule_referencing_missing_metric_is_skipped_not_breached(self):
         rules = [AlertRule(metric="gps.max_hdop", comparison="gt", threshold=2.0)]
         triggered = evaluate_alert_rules(make_report(), rules)
@@ -216,6 +243,7 @@ class TestEvaluateAlertRules:
 
 
 class TestMaintenanceHours:
+    # covers: HLR-API-018, LLR-API-067, LLR-API-090
     def test_reuploaded_log_counts_once(self, store):
         jobs = JobStore()
         for rid, sha in (("r1", "a" * 64), ("r2", "a" * 64), ("r3", "b" * 64)):

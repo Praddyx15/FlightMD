@@ -1,0 +1,1338 @@
+[DOCUMENT]
+TITLE: Intake and pipeline low-level requirements
+UID: FMD-LLR-INT
+VERSION: Issue 1
+DATE: 2026-11-20
+OPTIONS:
+  MARKUP: Markdown
+
+[GRAMMAR]
+IMPORT_FROM_FILE: @flightmd
+
+[TEXT]
+STATEMENT: >>>
+Low-level requirements of the intake and pipeline item, written from the code as built:
+`flightmd_core/services/format_detector.py`, `flightmd_core/services/compressed.py`,
+`flightmd_core/services/columns.py`, `flightmd_core/cache.py`, `flightmd_core/orchestrator.py`,
+`flightmd_core/__main__.py` and `flightmd_core/__init__.py`. Parents are in `hlr-int.sdoc`. The design is in
+`docs/lifecycle/06-design/lld-int.md`. Where a statement says "as built" the behaviour is recorded as found and
+is listed as a gap in section 6 of the design.
+<<<
+
+[[SECTION]]
+TITLE: Format detection (flightmd_core/services/format_detector.py)
+
+[REQUIREMENT]
+UID: LLR-INT-001
+STATUS: Active
+TITLE: ULog magic
+STATEMENT: >>>
+`detect_format_from_header` returns `"px4_ulog"` when the first 7 bytes are `ULog\x01\x12\x35`, before any
+other check and whatever the file name.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-001
+
+[REQUIREMENT]
+UID: LLR-INT-002
+STATUS: Active
+TITLE: Binary dataflash head
+STATEMENT: >>>
+`_check_dataflash` returns `True` when bytes 0 and 1 are `0xA3 0x95`, byte 2 is `0x80` (the FMT message type)
+and every byte present at offsets 5 to 8 (the FMT name) is 0, an ASCII digit or an ASCII upper-case letter;
+offsets past the end of the buffer count as valid. `detect_format_from_header` then returns `"ardupilot_bin"`.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-001
+
+[REQUIREMENT]
+UID: LLR-INT-003
+STATUS: Active
+TITLE: Blackbox marker
+STATEMENT: >>>
+`detect_format_from_header` returns `"betaflight_bbl"` when `looks_like_blackbox` finds the blackbox start line
+anywhere in the header; this check comes third, after ULog and binary dataflash.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-001
+
+[REQUIREMENT]
+UID: LLR-INT-004
+STATUS: Active
+TITLE: Text dataflash first line
+STATEMENT: >>>
+`_check_text_dataflash` returns `False` when the buffer holds a zero byte; otherwise it removes one leading
+UTF-8 byte order mark and leading carriage returns, line feeds, tabs and spaces and returns `True` when the rest
+starts with `FMT,` followed by two integers, two words and one more word character, comma separated with at most
+one space after each comma. `detect_format_from_header` then returns `"ardupilot_log"`.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-001
+
+[REQUIREMENT]
+UID: LLR-INT-005
+STATUS: Active
+TITLE: DJI .DAT is recognised and refused
+STATEMENT: >>>
+`detect_format_from_header` raises `UnsupportedFormatError` with the message `DAT_UNSUPPORTED` and
+`format_id="dji_dat"` when `looks_like_dji_dat` is true for the header (`BUILD` at offset 16, or `LOGH` at
+offset 0), after the four checks above and before the telemetry-log check.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-002
+
+[REQUIREMENT]
+UID: LLR-INT-006
+STATUS: Active
+TITLE: Length of one telemetry-log record
+STATEMENT: >>>
+`_tlog_frame_len(buf, pos)` returns -1 when fewer than 9 bytes remain after `pos`, and `None` when the first
+byte of the 8-byte big-endian timestamp is not 0 or the byte after the timestamp is neither `0xFE` nor `0xFD`.
+For `0xFE` (MAVLink 1) the length is 8 + 6 + payload length + 2. For `0xFD` (MAVLink 2) it returns `None` when
+the incompatibility flags have any bit other than `0x01`, else the length is 8 + 10 + payload length + 2, plus
+13 when bit `0x01` (signed) is set. It returns -1 when the buffer ends before the length byte, the flags byte or
+the end of the record.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-001
+
+[REQUIREMENT]
+UID: LLR-INT-007
+STATUS: Active
+TITLE: Three records in a row make a telemetry log
+STATEMENT: >>>
+`_check_tlog(buf, complete)` walks records from offset 0 and returns `True` after `TLOG_FRAMES_NEEDED` = 3
+valid records, or, when `complete` is true, when the buffer ends exactly after one or two valid records. It
+returns `False` at the first position that is not a record and `None` when the buffer ends inside a record.
+`detect_format_from_header` returns `"mavlink_tlog"` on `True`.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-001
+
+[REQUIREMENT]
+UID: LLR-INT-008
+STATUS: Active
+TITLE: Provisional telemetry log from a short header
+STATEMENT: >>>
+`detect_format_from_header` returns `"mavlink_tlog"` when `_check_tlog` returned `None`, `complete` is false,
+the file name ends in `.tlog` (case ignored) and the first byte of the header is 0. With any other extension the
+same header is refused.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-003
+
+[REQUIREMENT]
+UID: LLR-INT-009
+STATUS: Active
+TITLE: DJI flight record, sure or provisional
+STATEMENT: >>>
+`detect_format_from_header` returns `"dji_txt"` when `check_dji_txt(header, complete)` is true, and also when it
+returned `None`, `complete` is false and the file name ends in `.txt` (case ignored). This is the last positive
+check.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-001
+- TYPE: Parent
+  VALUE: HLR-INT-003
+
+[REQUIREMENT]
+UID: LLR-INT-010
+STATUS: Active
+TITLE: Refusal messages and the error class
+STATEMENT: >>>
+`UnsupportedFormatError` is a `ValueError` with an attribute `format_id`, `None` unless given. When no check
+matched, `detect_format_from_header` raises it with a message that the `.log` file is not an ArduPilot
+text-format dataflash log when the name ends in `.log`, and otherwise with "Unrecognized log format", the file
+name in brackets when one was given, and the list of supported formats.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-002
+
+[REQUIREMENT]
+UID: LLR-INT-011
+STATUS: Active
+TITLE: Detection of a file on disk
+STATEMENT: >>>
+`detect_format(file_path)` reads the first `HEADER_BYTES` = 4096 bytes, sets `complete` to true only when fewer
+than 4096 bytes were read, and returns `detect_format_from_header(header, basename, complete)`. As built a file
+of 4096 bytes or more is therefore never `complete`, and the provisional rules of LLR-INT-008 and LLR-INT-009
+apply to it.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-001
+- TYPE: Parent
+  VALUE: HLR-INT-003
+
+[REQUIREMENT]
+UID: LLR-INT-012
+STATUS: Active
+TITLE: Parser table
+STATEMENT: >>>
+`PARSERS` maps exactly the identifiers `px4_ulog`, `ardupilot_bin`, `ardupilot_log`, `mavlink_tlog`,
+`betaflight_bbl`, `dji_txt` and `dji_dat` to a class with a `parse` method; `dji_txt` and `dji_dat` both map to
+`DJIParser`. The module also defines `SUPPORTED_EXTENSIONS` (`.ulg .ulog .bin .tlog .log .bbl .bfl .txt`),
+which detection does not use.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-001
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Compressed uploads (flightmd_core/services/compressed.py)
+
+[REQUIREMENT]
+UID: LLR-INT-013
+STATUS: Active
+TITLE: A plain file comes back unchanged
+STATEMENT: >>>
+`open_log(path, max_bytes)` reads the first 4 bytes. When they start with neither `\x1f\x8b` (gzip) nor
+`PK\x03\x04` or `PK\x05\x06` (zip) it returns `(path, cleanup)` with the same path and a cleanup that does
+nothing, and creates no directory.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-004
+
+[REQUIREMENT]
+UID: LLR-INT-014
+STATUS: Active
+TITLE: An archive is unpacked into a private directory
+STATEMENT: >>>
+For a gzip or zip file `open_log` creates a directory with `tempfile.mkdtemp(prefix="flightmd-")`, unpacks the
+log into it as `log` plus the inner name's extension (lower case; dropped unless it is a dot and 1 to 8 letters
+or digits, `_extension`), and returns that path and a cleanup that removes the directory and ignores errors. On
+any exception during unpacking or the content check it runs the cleanup and re-raises.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-004
+- TYPE: Parent
+  VALUE: HLR-INT-005
+
+[REQUIREMENT]
+UID: LLR-INT-015
+STATUS: Active
+TITLE: Nested archive found by content
+STATEMENT: >>>
+After unpacking, `open_log` raises `ValueError` ("The archive contains another archive; ...") when the first 8
+bytes of the unpacked file start with a gzip, zip, bzip2 (`BZh`), xz, 7z or rar (`Rar!`) signature.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-005
+
+[REQUIREMENT]
+UID: LLR-INT-016
+STATUS: Active
+TITLE: gzip source
+STATEMENT: >>>
+`_gzip_source(path)` returns a function that opens the file with `gzip.open(path, "rb")` and, as the inner
+name, the base name of `path` with a trailing `.gz` (case ignored) removed.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-004
+
+[REQUIREMENT]
+UID: LLR-INT-017
+STATUS: Active
+TITLE: zip entries: unsafe paths, clutter, exactly one file
+STATEMENT: >>>
+`_zip_source` raises `ValueError` "The zip file is damaged: ..." when `zipfile.ZipFile` raises `BadZipFile`.
+For every entry, with backslashes turned into slashes, it raises `ValueError` "The zip has an entry with an
+unsafe path (...)" when `_unsafe_name` is true: the name starts with `/`, starts with a letter and a colon, or
+has a `..` component. It then ignores directories and names matching `__MACOSX/`, `.DS_Store`, `Thumbs.db` or
+`desktop.ini` (case ignored) and raises `ValueError` "A zip upload must contain exactly one log file; this one
+has N." unless exactly one entry is left.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-004
+- TYPE: Parent
+  VALUE: HLR-INT-005
+
+[REQUIREMENT]
+UID: LLR-INT-018
+STATUS: Active
+TITLE: Password protected zip member
+STATEMENT: >>>
+`_zip_source` raises `ValueError` "The zip is password protected." when bit 0 of the member's general purpose
+flags is set.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test builds an encrypted zip (the standard library cannot write one). A review checks the test
+`info.flag_bits & 0x1` and that it comes before the member is opened.
+<<<
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-005
+
+[REQUIREMENT]
+UID: LLR-INT-019
+STATUS: Active
+TITLE: zip member: declared size, declared ratio, archive extension
+STATEMENT: >>>
+`_zip_source` raises `ValueError` when the member's declared size is above `max_bytes` (message with both in
+MB of 1 000 000 bytes), when the declared size is above `RATIO_FLOOR_BYTES` = 1 048 576 and above `MAX_RATIO` =
+200 times the declared compressed size (taken as at least 1) ("The zip expands far more than a flight log can;
+refusing it."), and when the member's extension is one of `.zip .gz .tgz .tar .7z .rar .bz2 .xz` ("The zip
+contains another archive; ..."). Otherwise it returns the inner base name and a function that reopens the zip
+and gives the member stream.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-005
+- TYPE: Parent
+  VALUE: HLR-INT-006
+
+[REQUIREMENT]
+UID: LLR-INT-020
+STATUS: Active
+TITLE: Member stream closes its zip
+STATEMENT: >>>
+`_ClosingMember` wraps the open member and its `ZipFile`; `read(n)` reads from the member and leaving the
+`with` block closes the member and then the `ZipFile`.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test names this requirement; the behaviour is exercised only indirectly by other tests. A review reads
+`_ClosingMember` and checks that closing the stream closes the zip.
+<<<
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-004
+
+[REQUIREMENT]
+UID: LLR-INT-021
+STATUS: Active
+TITLE: Capped copy
+STATEMENT: >>>
+`_copy_capped(opener, out, max_bytes, packed_size)` copies in chunks of `CHUNK` = 65 536 bytes and stops before
+writing the chunk that takes the total above `limit = min(max_bytes, max(200 * packed_size, 1 048 576))`,
+where `packed_size` is the size of the archive file. It then raises `ValueError` "The decompressed log is over
+the N MB limit." when the total is above `max_bytes`, else "The archive expands far more than a flight log can;
+refusing it.".
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-006
+
+[REQUIREMENT]
+UID: LLR-INT-022
+STATUS: Active
+TITLE: Damaged archive data
+STATEMENT: >>>
+`_copy_capped` turns `gzip.BadGzipFile`, `EOFError`, `zlib.error` and `zipfile.BadZipFile` raised while opening
+or reading into `ValueError` "The archive is damaged or incomplete: ...". As built no other exception is
+converted; a zip member with a compression method the runtime cannot read raises `NotImplementedError`.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+A truncated gzip is tested. The unconverted `NotImplementedError` is found by review of the `except` clause.
+<<<
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-005
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Row buffer (flightmd_core/services/columns.py)
+
+[REQUIREMENT]
+UID: LLR-INT-023
+STATUS: Active
+TITLE: Construction
+STATEMENT: >>>
+`ColumnBuffer(columns, size=0)` keeps the column names as a list, raises `ValueError` when two names are equal,
+and allocates one float64 block of `max(int(size), MIN_ROWS)` rows (`MIN_ROWS` = 256) by the number of columns.
+`len()` of a new buffer is 0.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-024
+
+[REQUIREMENT]
+UID: LLR-INT-024
+STATUS: Active
+TITLE: Appending a row
+STATEMENT: >>>
+`ColumnBuffer.append(row)` stores the row as float64 at index `n` and adds 1 to `n`; `None` is stored as NaN and
+a value NumPy cannot convert to a float raises `ValueError`. When the block is full it first doubles the number
+of rows, keeping the stored rows; a block sized exactly by `size` is not reallocated while `n` stays within it.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-024
+
+[REQUIREMENT]
+UID: LLR-INT-025
+STATUS: Active
+TITLE: The table
+STATEMENT: >>>
+`ColumnBuffer.frame()` returns a `pandas.DataFrame` holding a copy of the first `n` rows under the column
+names, all float64; later changes to the buffer do not change it, and an empty buffer gives an empty frame with
+the columns.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-024
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Parse cache (flightmd_core/cache.py)
+
+[REQUIREMENT]
+UID: LLR-INT-026
+STATUS: Active
+TITLE: When the cache is on
+STATEMENT: >>>
+`enabled()` reads `FLIGHTMD_CACHE` trimmed and lower-cased: when it is not empty the cache is on unless the
+value is `0`, `false`, `no` or `off`; when it is empty or unset the cache is on exactly when
+`FLIGHTMD_DATA_DIR` is set and not empty.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-009
+
+[REQUIREMENT]
+UID: LLR-INT-027
+STATUS: Active
+TITLE: Entry path and key check
+STATEMENT: >>>
+`cache_dir()` is `<FLIGHTMD_DATA_DIR>/cache`, or `data/cache` under the working directory when the variable is
+unset or empty. `_path(sha256)` raises `ValueError` unless the key matches `^[0-9a-f]{64}$` and returns
+`<cache_dir>/<sha256>.v2.pkl.gz`, where 2 is `CACHE_VERSION`. `get` and `put` return before this check when the
+cache is off.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-009
+
+[REQUIREMENT]
+UID: LLR-INT-028
+STATUS: Active
+TITLE: Reading an entry
+STATEMENT: >>>
+`get(sha256)` returns `None` when the cache is off or the entry file does not exist. When the file's
+modification time is more than `FLIGHTMD_CACHE_TTL_S` seconds old (default 3600) it deletes the file and returns
+`None`. Otherwise it loads the gzip pickle, sets the file's modification time to now (errors ignored), and
+returns `(topics, params, metadata)` with the metadata rebuilt by `FlightMetadata.model_validate`. As built the
+time limit therefore runs from the last read or write, not from the parse.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-009
+- TYPE: Parent
+  VALUE: HLR-INT-011
+
+[REQUIREMENT]
+UID: LLR-INT-029
+STATUS: Active
+TITLE: Unreadable entry
+STATEMENT: >>>
+`get` logs a warning, deletes the entry (`_drop`, which ignores `OSError` from the delete) and returns `None`
+when opening the entry, loading it or rebuilding `(topics, params, metadata)` from it raises `OSError`,
+`EOFError`, `zlib.error`, `pickle.UnpicklingError`, `AttributeError`, `ImportError`, `KeyError`, `TypeError` or
+`ValueError` (which includes a metadata validation error). The next analysis of the log parses it again.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+COMMENT: >>>
+Problem report PR-003, fixed: before, only the first five exceptions were handled and a damaged entry blocked
+the log until it expired.
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-010
+
+[REQUIREMENT]
+UID: LLR-INT-030
+STATUS: Active
+TITLE: Writing an entry
+STATEMENT: >>>
+`put(sha256, topics, params, metadata)` does nothing when the cache is off. Otherwise it creates the cache
+directory, pickles `{"topics", "params", "metadata": metadata.model_dump()}` with the highest pickle protocol
+through gzip level 3 into a file `.tmp-*.pkl.gz` in the same directory, renames it onto the entry path with
+`os.replace`, and calls `prune()`. On any exception it deletes the temporary file and re-raises.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-009
+- TYPE: Parent
+  VALUE: HLR-INT-010
+- TYPE: Parent
+  VALUE: HLR-INT-011
+
+[REQUIREMENT]
+UID: LLR-INT-031
+STATUS: Active
+TITLE: Pruning
+STATEMENT: >>>
+`prune()` does nothing when the cache directory does not exist. It deletes every `.tmp-` file older than 3600 s
+and every other `*.pkl.gz` file that is older than `FLIGHTMD_CACHE_TTL_S` (default 3600 s) or does not end in
+`.v2.pkl.gz`. It then deletes the remaining entries oldest first, by modification time, until their total size
+is at most `FLIGHTMD_CACHE_MAX_MB` (default 1024) times 1 000 000 bytes. Files that vanish meanwhile are
+skipped.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-009
+- TYPE: Parent
+  VALUE: HLR-INT-010
+
+[REQUIREMENT]
+UID: LLR-INT-032
+STATUS: Active
+TITLE: Numeric settings
+STATEMENT: >>>
+`_env_float(name, default)` in `cache.py` and in `orchestrator.py` returns `float()` of the environment
+variable, or of the default when it is unset, and returns the default when `float()` raises `ValueError`. As
+built the texts `nan` and `inf` are accepted as values.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Tests set valid numbers for the time limit, the size cap, the log size limit and the parse timeout. No test
+sets text that is not a number; a review checks the `except ValueError`.
+<<<
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-027
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Parsing under a limit (flightmd_core/orchestrator.py)
+
+[REQUIREMENT]
+UID: LLR-INT-033
+STATUS: Active
+TITLE: Offline switch
+STATEMENT: >>>
+`offline()` returns `True` when `FLIGHTMD_OFFLINE`, trimmed and lower-cased, is `1`, `true`, `yes` or `on`, and
+`False` otherwise, including when it is unset.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-018
+
+[REQUIREMENT]
+UID: LLR-INT-034
+STATUS: Active
+TITLE: File hash
+STATEMENT: >>>
+`file_sha256(path)` returns the lower-case hexadecimal SHA-256 of the file's bytes, read in blocks of
+1 048 576 bytes.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-017
+
+[REQUIREMENT]
+UID: LLR-INT-035
+STATUS: Active
+TITLE: Calling the parser
+STATEMENT: >>>
+`_parse(log_format, path, report)` makes a new instance of `PARSERS[log_format]` and returns
+`parser.parse(path)`, passing `progress=report` only when a callback was given and the parser's `parse` has a
+parameter named `progress`.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-008
+- TYPE: Parent
+  VALUE: HLR-INT-014
+
+[REQUIREMENT]
+UID: LLR-INT-036
+STATUS: Active
+TITLE: The parser process
+STATEMENT: >>>
+`_child(log_format, path, q)` runs `_parse` and puts `("done", result)` on the queue. It puts
+`("progress", frac)` only when `frac` is at least 0.01 above the last one sent. On any exception, including
+`BaseException`, it puts `("error", e)`, replacing an exception that cannot be pickled by
+`RuntimeError("<type>: <text>")`.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Every sample-log test with the default timeout takes the result through this function. No test makes a parser
+raise inside the child; a review checks the error branch.
+<<<
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-008
+
+[REQUIREMENT]
+UID: LLR-INT-037
+STATUS: Active
+TITLE: Parse with a time limit
+STATEMENT: >>>
+`_parse_with_limit(log_format, path, timeout_s, report)` calls `_parse` in the calling thread when `timeout_s`
+is 0 or less. Otherwise it starts `_child` as a daemon process of the `spawn` context, waits on the queue in
+steps of at most 1.0 s, passes each progress value to `report`, re-raises an `"error"` value and returns a
+`"done"` value. When `timeout_s` has passed on the monotonic clock it raises `ValueError` "Parsing the log took
+longer than N s and was stopped.".
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-008
+
+[REQUIREMENT]
+UID: LLR-INT-038
+STATUS: Active
+TITLE: Dead parser process and clean-up
+STATEMENT: >>>
+When the queue is empty and the process is no longer alive, `_parse_with_limit` waits 1.0 s more for a queued
+message and then raises `ValueError` "The parser process stopped unexpectedly (exit code N).". On every way
+out it terminates the process if it is alive, joins it for at most 5 s and closes the queue.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test kills the parser process. A review checks the `queue.Empty` branch and the `finally` block.
+<<<
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-008
+
+[REQUIREMENT]
+UID: LLR-INT-039
+STATUS: Active
+TITLE: Open, detect, parse
+STATEMENT: >>>
+`_open_and_parse` runs `open_log(log_path, max_bytes)`, `detect_format` and `_parse_with_limit` in the default
+thread pool, with the timeout from `FLIGHTMD_PARSE_TIMEOUT_S` (default 600 s). It re-raises
+`UnsupportedFormatError` as `ValueError` with the same text, passes a `ValueError` from the parse on unchanged,
+and turns any other `Exception` from the parse into `ValueError` "Failed to parse <format> file: <text>". It
+always calls the cleanup of `open_log`, then sets `metadata.source_format` to the detected identifier and
+returns `(topics, params, metadata)`. As built an exception from `open_log` that is not a `ValueError` is not
+converted.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-012
+- TYPE: Parent
+  VALUE: HLR-INT-017
+- TYPE: Parent
+  VALUE: HLR-INT-002
+
+[REQUIREMENT]
+UID: LLR-INT-040
+STATUS: Active
+TITLE: Parse progress and time left
+STATEMENT: >>>
+Before parsing, `_open_and_parse` reports 5 % with a first estimate of size in MB divided by
+`PARSE_MB_PER_S` for the format (12 ULog, 5 binary dataflash, 2 text dataflash, 3 telemetry log, else
+`DEFAULT_MB_PER_S` = 4) plus the analysis estimate. For each parser fraction `frac` it reports
+`5 + int(55 * min(frac, 1.0))` % with the message "Parsing flight log" followed by an ellipsis and the percentage,
+and time left `spent * (1 - frac) / frac` plus the analysis estimate when `frac` is above 0.02, else the first
+estimate less the time spent, never below 0. These calls are scheduled onto the event loop from the parse
+thread and are not awaited.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-014
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: The pipeline (flightmd_core/orchestrator.py)
+
+[REQUIREMENT]
+UID: LLR-INT-041
+STATUS: Active
+TITLE: Size limit
+STATEMENT: >>>
+`run_analysis` raises `ValueError` "Log is N MB; the limit is M MB." when the size of `ulog_path` on disk
+divided by 1 000 000 is above `FLIGHTMD_MAX_LOG_MB` (default 512), before hashing or opening the file, and
+passes `int(limit * 1e6)` to `_open_and_parse` as `max_bytes`. The `file_size` argument takes no part in this
+check.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-007
+
+[REQUIREMENT]
+UID: LLR-INT-042
+STATUS: Active
+TITLE: Progress wrapper
+STATEMENT: >>>
+The inner `progress(pct, msg, eta_s)` of `run_analysis` drops a call whose `pct` is below the highest already
+sent. Otherwise it calls `progress_callback(pct, msg, eta)` with `eta` `None` or rounded to 1 decimal, awaits
+the result when it is awaitable, logs and swallows any `Exception` from the callback, and logs the step. With no
+callback it only logs.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-014
+
+[REQUIREMENT]
+UID: LLR-INT-043
+STATUS: Active
+TITLE: Progress steps
+STATEMENT: >>>
+`run_analysis` reports these steps: 5 "Reading flight log" with an estimate of size in MB / 4 plus the analysis
+estimate (`ANALYSIS_BASE_S` = 2.0 s plus `ANALYSIS_S_PER_MB` = 0.04 s per MB); 5 to 60 during the parse, or 60
+"Using the earlier parse of this log" on a cache hit; 62 before the weather lookup (online only); 65 before the
+analysers; 80 before scoring; 88 before the explanations; 92 before the AI summary (only when used); 96 before
+the report is assembled; 100 "Done." with 0.0 s left. After the parse the time left is the analysis estimate
+less the time spent since the parse, never below 0.5 s.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Tests check that percentages never fall, that the first estimate is positive and that the last call is 100
+with 0. The individual step values are checked by review.
+<<<
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-014
+
+[REQUIREMENT]
+UID: LLR-INT-044
+STATUS: Active
+TITLE: Cache use in the pipeline
+STATEMENT: >>>
+`run_analysis` computes `file_sha256(ulog_path)` and, when `cache.enabled()`, calls `cache.get` in the thread
+pool; an `OSError` from it is logged and treated as a miss. On a hit it uses the cached
+`(topics, params, metadata)` and does not open, detect or parse. On a miss it calls `_open_and_parse`, sets
+`metadata.log_sha256`, and when the cache is on calls `cache.put` at once, before armed windows, path, weather
+or place name are added; an `OSError` from the write is logged and ignored.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-011
+- TYPE: Parent
+  VALUE: HLR-INT-017
+- TYPE: Parent
+  VALUE: HLR-INT-009
+
+[REQUIREMENT]
+UID: LLR-INT-045
+STATUS: Active
+TITLE: Return and error contract
+STATEMENT: >>>
+`run_analysis(ulog_path, file_name, file_size, progress_callback=None, ai_enhancer=None)` must be awaited on a
+running event loop and returns the `FlightMDReport` made by `ReportBuilder().build` from the results, the
+explained findings, the metadata, the score triple, the summary, `file_name`, `file_size` and the start time in
+milliseconds; `file_name` and `file_size` are passed on as given. The errors it raises for an unusable log are
+`ValueError`. As built nothing after the parse is wrapped, so an exception from the later steps leaves with its
+own type.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-012
+- TYPE: Parent
+  VALUE: HLR-INT-017
+
+[REQUIREMENT]
+UID: LLR-INT-046
+STATUS: Active
+TITLE: No analysable telemetry
+STATEMENT: >>>
+`run_analysis` raises `ValueError` "No analysable telemetry in this log (no IMU, GPS, battery or ESC data), so
+there is nothing to score." when every topic name starts with `vehicle_status` or `vehicle_land_detected`, or
+there is no topic. The check comes after the cache write, so such a parse is cached and refused again on a hit.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test in the assigned files gives a parse with only status topics. A review checks the `any(...)` test and
+its position after `cache.put`.
+<<<
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-013
+
+[REQUIREMENT]
+UID: LLR-INT-047
+STATUS: Active
+TITLE: Armed windows
+STATEMENT: >>>
+`_armed_windows(topics, end_s)` returns `None` when `vehicle_status` is missing, empty or has no
+`arming_state` column. Otherwise it sorts by `timestamp` (microseconds), takes a row as armed when
+`arming_state == 2`, starts a window at the time of each row that turns armed and ends it at the time of the row
+that turns disarmed, starts one at the first row when that row is armed, and ends an open window at
+`max(end_s, last row time)`. Times are seconds rounded to 3 decimals; the result is a list of `[start, end]`,
+empty when no row is armed.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-015
+
+[REQUIREMENT]
+UID: LLR-INT-048
+STATUS: Active
+TITLE: Notes about arming
+STATEMENT: >>>
+`run_analysis` sets `metadata.armed_windows` from `_armed_windows(topics, metadata.duration_seconds)` and
+appends to `metadata.parse_warnings` "No arming information in this log, so the whole recording is treated as
+flight." when the result is `None`, or "The vehicle never armed during this log." when it is an empty list.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The `None` case is tested on the ULog and dataflash samples. No test has a log that never arms; a review
+checks the `elif`.
+<<<
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-015
+
+[REQUIREMENT]
+UID: LLR-INT-049
+STATUS: Active
+TITLE: Track from the GPS receiver
+STATEMENT: >>>
+`_gps_track` uses `vehicle_gps_position` when it has `lat` and `lon`: it keeps rows where both are not 0 and,
+when `fix_type` exists, `fix_type >= 2`, and when any row is left returns a frame sorted by `timestamp` with
+`lat` and `lon` divided by 1e7 (degrees), `alt` from `alt` or else `alt_ellipsoid` divided by 1000 (millimetres
+to metres; NaN when neither exists) and `hdop` from `hdop` or else `eph` when one exists. As built a row whose
+`lat` or `lon` is NaN passes the not-0 test.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-016
+
+[REQUIREMENT]
+UID: LLR-INT-050
+STATUS: Active
+TITLE: Track from the estimator
+STATEMENT: >>>
+When the receiver topic gives no row, `_gps_track` uses `vehicle_global_position` when it has `lat` and `lon`:
+it keeps rows where either is not 0 and returns `timestamp`, `lat`, `lon` (already degrees) and `alt` (metres,
+NaN when the column is missing), sorted by `timestamp`, with no `hdop`. It returns `None` when neither topic
+gives a row.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test in the assigned files asserts which topic the track came from. A review checks the fallback branch
+and the `None` return.
+<<<
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-016
+
+[REQUIREMENT]
+UID: LLR-INT-051
+STATUS: Active
+TITLE: Path points
+STATEMENT: >>>
+`_fill_path` takes every `step`-th row of the track, `step = max(1, len(track) // PATH_POINTS)` with
+`PATH_POINTS` = 500, and sets `metadata.gps_path` to `[lat, lon, alt]` with NaN replaced by 0.0,
+`metadata.gps_path_t_s` to the row times in seconds rounded to 3 decimals, and, when the track has `hdop`,
+`metadata.gps_path_hdop` to the values with `None` for values that are not finite. As built the path holds up
+to 999 points (a track of 999 rows gives step 1), and no point is left out for being implausible.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-016
+
+[REQUIREMENT]
+UID: LLR-INT-052
+STATUS: Active
+TITLE: Altitude, distance and speed from the track
+STATEMENT: >>>
+Only where the parser left the field `None`, `_fill_path` sets `max_altitude_m` to the highest finite track
+altitude less the first finite one (rounded to 0.1 m), and from the whole track, with an equirectangular
+projection on a 6 371 000 m sphere, sets `total_distance_m` to the sum of the plausible segments (rounded to
+0.1 m) and `max_speed_ms` to the fastest plausible segment (rounded to 0.01 m/s). A segment is plausible when it
+lasts at least `MIN_GPS_DT_S` = 0.05 s and its speed is at most `MAX_PLAUSIBLE_SPEED_MS` = 75 m/s. Segments left
+out are not reported anywhere.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-016
+
+[REQUIREMENT]
+UID: LLR-INT-053
+STATUS: Active
+TITLE: Wind per path point
+STATEMENT: >>>
+When `estimator_status` has `timestamp` and both wind columns (`wind_vel_n` or `wind[0]`, and `wind_vel_e` or
+`wind[1]`), `_fill_path` sets `metadata.gps_path_wind_speed_ms` to the horizontal wind speed (m/s) of the
+estimator row nearest in time to each path point, `None` where it is not finite. No limit is put on how far
+apart in time the two rows are. Otherwise the field is left unset.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test in the assigned files asserts the wind values. A review checks the column choice and the
+`merge_asof(direction="nearest")` call.
+<<<
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-016
+
+[REQUIREMENT]
+UID: LLR-INT-054
+STATUS: Active
+TITLE: Weather and place name
+STATEMENT: >>>
+`run_analysis` takes the first track point as the position. With no track it sets `metadata.weather` to
+`_no_weather("No GPS position data in log")`; when `offline()` to
+`_no_weather("Weather lookup is off (offline mode)")`, with no network call. Otherwise it calls `fetch_weather(lat,
+lon, log_start_utc)` when `metadata.log_start_utc` is set, else sets
+`_no_weather("Flight date unknown, so no weather lookup")`, and sets `metadata.location_name` from
+`reverse_geocode(lat, lon)`. `_no_weather(reason)` is a dict with `temperature_max_c`, `temperature_min_c`,
+`wind_speed_max_ms` and `rain_sum_mm` all `None` and `description` the reason.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The offline branch is tested. The suite never goes online; a review checks the other branches.
+<<<
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-018
+
+[REQUIREMENT]
+UID: LLR-INT-055
+STATUS: Active
+TITLE: Running the analysers
+STATEMENT: >>>
+After the metadata steps `run_analysis` calls `load_analysers(metadata=metadata)`, runs `safe_analyse(topics,
+params)` of each analyser whose `missing_inputs(topics)` is `None` in the default thread pool, all at once,
+and collects the results with `asyncio.gather` in the order of the analyser list, not of completion. It then
+appends `skip_result(topics)` of each remaining analyser in list order, and builds the findings list by
+concatenating the results' findings in that order.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-019
+
+[REQUIREMENT]
+UID: LLR-INT-056
+STATUS: Active
+TITLE: Score, then explanations
+STATEMENT: >>>
+`run_analysis` calls `ScoreCalculator().calculate(results)` before the explanations, then
+`ExplanationEngine().explain_findings(findings)` and `generate_summary(metadata, findings, overall_score,
+score_label, results)`, and passes `(overall_score, score_label, letter_grade)` to the report builder.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-020
+
+[REQUIREMENT]
+UID: LLR-INT-057
+STATUS: Active
+TITLE: Explanation engine failure
+STATEMENT: >>>
+When either explanation call raises an `Exception`, `run_analysis` logs it, sets on every finding whose
+`plain_english` is empty or equal to its `technical_summary`: `plain_english` to the technical summary and
+`recommendation` to "Consult a PX4 expert for this finding." (as built, for every autopilot), and uses
+`_fallback_summary(score, label, findings)`: with no findings "Flight analysed. Health score: N/100 (label). No
+significant findings detected.", otherwise the score, the severity and title of the first finding in list order
+and the number of findings.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test makes the explanation engine raise. A review checks the `except` block and `_fallback_summary`.
+<<<
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-020
+
+[REQUIREMENT]
+UID: LLR-INT-058
+STATUS: Active
+TITLE: AI enhancer
+STATEMENT: >>>
+`run_analysis` calls `ai_enhancer.polish_summary(base_summary, findings, metadata)` only when `ai_enhancer` is
+not `None`, `ai_enhancer.is_configured` is true and `offline()` is false, and uses the returned text as the
+executive summary only. It does not assign the findings, results or score from the enhancer.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test in the assigned files passes an enhancer to `run_analysis`. A review checks the condition and that
+only `executive_summary` is assigned.
+<<<
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-020
+- TYPE: Parent
+  VALUE: HLR-INT-018
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Command line (flightmd_core/__main__.py)
+
+[REQUIREMENT]
+UID: LLR-INT-059
+STATUS: Active
+TITLE: Writing an export
+STATEMENT: >>>
+`_write(path, data)` writes the bytes to `path + ".part"` and renames it onto `path` with `os.replace`.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-021
+
+[REQUIREMENT]
+UID: LLR-INT-060
+STATUS: Active
+TITLE: Progress line
+STATEMENT: >>>
+`_show_progress(pct, msg, eta_s)` writes a carriage return and `[pct%] msg`, with `~N s left` when `eta_s` is
+not 0 or `None`, padded to 79 characters, to standard error, and a line feed when `pct` is 100 or more.
+`analyse` passes it as the progress callback only when standard error is a terminal.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+Under test standard error is not a terminal, so the function is not called. A review reads it.
+<<<
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-021
+- TYPE: Parent
+  VALUE: HLR-INT-014
+
+[REQUIREMENT]
+UID: LLR-INT-061
+STATUS: Active
+TITLE: analyse: errors
+STATEMENT: >>>
+`analyse(args)` prints `error: no such file: <path>` to standard error and returns 2 when `args.log` is not a
+file. It runs `run_analysis` with the path, its base name as `file_name` and its size on disk as `file_size`,
+under `asyncio.run`, and on `ValueError` prints `error: <text>` to standard error and returns 1. Other
+exceptions are not caught.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Exit code 1 is tested. No test passes a missing file; a review checks the first branch.
+<<<
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-021
+
+[REQUIREMENT]
+UID: LLR-INT-062
+STATUS: Active
+TITLE: analyse: offline setting
+STATEMENT: >>>
+Before running, `analyse` sets `FLIGHTMD_OFFLINE` in the process environment: to `1` only if it is not already
+set when neither flag was given (`args.offline is None`), to `1` for `--offline` and to `0` for `--online`. It
+passes no `ai_enhancer`.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test names this requirement; the behaviour is exercised only indirectly by other tests. A review reads how
+`analyse` sets `FLIGHTMD_OFFLINE` for each flag.
+<<<
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-022
+
+[REQUIREMENT]
+UID: LLR-INT-063
+STATUS: Active
+TITLE: analyse: exports and exit code 3
+STATEMENT: >>>
+After a successful analysis `analyse` writes, in this order and only when asked: the report as indented UTF-8
+JSON (`--json`), GPX (`--gpx`), KML (`--kml`) and PDF (`--pdf`), each through `_write`. When rendering the PDF
+raises `RuntimeError` it prints `error: no PDF: <text>` to standard error and returns 3 without printing the
+summary; the earlier exports stay written.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-021
+
+[REQUIREMENT]
+UID: LLR-INT-064
+STATUS: Active
+TITLE: analyse: summary on standard output
+STATEMENT: >>>
+`analyse` prints `<file name>: <score, no decimals>/100 (<grade>, <label>)`, then one line `  note: <text>` per
+parse warning and one line `  [SEVERITY] <title>` per finding in report order, and returns 0. A report in
+which nothing was assessed is printed as `0/100 (-, Not assessed)` and also returns 0.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test names this requirement; the behaviour is exercised only indirectly by other tests. A review reads the
+lines `analyse` prints.
+<<<
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-021
+
+[REQUIREMENT]
+UID: LLR-INT-065
+STATUS: Active
+TITLE: Keys used to compare
+STATEMENT: >>>
+`_finding_key(f)` is the pair (`kind`, or `title` when `kind` is missing or empty; `severity`).
+`_module_score(m)` is `None` when the module entry is missing, has `skipped` true or has `assessed` equal to
+`False`, else its `health_score`.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-023
+
+[REQUIREMENT]
+UID: LLR-INT-066
+STATUS: Active
+TITLE: compare_reports
+STATEMENT: >>>
+`compare_reports(a, b)` returns a dict with `before` and `after` (the two `file_name` values), `score_before`,
+`score_after`, `score_delta` (after less before, 1 decimal), `modules` (for each analyser name in either
+report, sorted: `before`, `after`, and `delta` to 1 decimal or `None` when either side is `None`),
+`findings_resolved` (titles of findings whose key is only in `a`) and `findings_new` (only in `b`). Findings with
+the same key in one report count once.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-023
+
+[REQUIREMENT]
+UID: LLR-INT-067
+STATUS: Active
+TITLE: compare_reports: missing or null overall score, not-assessed report
+STATEMENT: >>>
+As built, `compare_reports` takes a missing `overall_score` as 0 for `score_delta` while `score_before` or
+`score_after` is `None`; an `overall_score` present as JSON `null` raises `TypeError`. A "Not assessed" report
+carries `overall_score` 0.0 and is compared as a score of 0; its label and grade are not read.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test compares a report without a numeric score or a not-assessed report. A review checks the
+`.get("overall_score", 0)` expressions.
+<<<
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-023
+
+[REQUIREMENT]
+UID: LLR-INT-068
+STATUS: Active
+TITLE: compare: reading and printing
+STATEMENT: >>>
+`compare(args)` loads both files as UTF-8 JSON; on `OSError` or `json.JSONDecodeError` it prints `error: can't
+read <path>: <text>` to standard error and returns 2. It prints `<before> -> <after>`, `  score B -> A (+D)`
+with no decimals, one line per module whose delta is `None` (a missing side shown as `-`) or not 0, then
+`  resolved: <title>` and `  new:      <title>` lines, and returns 0. As built a `None` score makes the score
+line raise `TypeError`, which is not caught.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-023
+
+[REQUIREMENT]
+UID: LLR-INT-069
+STATUS: Active
+TITLE: Arguments
+STATEMENT: >>>
+`main(argv=None)` uses `sys.argv[1:]` when `argv` is `None`, inserts `analyse` in front when the first argument
+is neither `analyse` nor `compare` and does not start with `-`, and parses with program name `flightmd`: the
+required subcommand `analyse` (`log`, `--json FILE`, `--pdf FILE`, `--gpx FILE`, `--kml FILE`, and the mutually
+exclusive `--offline` and `--online` with default `None`) or `compare` (`before`, `after`). It returns the
+subcommand's exit code; an argument error ends through `argparse` with exit code 2. The console script
+`flightmd` and `python -m flightmd_core` both call it.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-021
+- TYPE: Parent
+  VALUE: HLR-INT-023
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Package root (flightmd_core/__init__.py)
+
+[REQUIREMENT]
+UID: LLR-INT-070
+STATUS: Active
+TITLE: Exported names and version
+STATEMENT: >>>
+`flightmd_core/__init__.py` imports and lists in `__all__`: `run_analysis`, `FlightMDReport`, `Finding`,
+`AnalyserResult`, `ParamRecommendation`, `Severity`, `Category`, `FlightMetadata`, and sets `__version__` to
+`"1.0.0"`. Nothing in the engine reads `__version__`; the report does not carry it.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test asserts the names or the version. A review reads the file and compares the version with
+`pyproject.toml`, which says 1.1.0.
+<<<
+ALLOCATION: intake
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-025
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Regression corpus check (tests/corpus/test_corpus.py)
+
+[REQUIREMENT]
+UID: LLR-INT-071
+STATUS: Active
+TITLE: What a golden file holds
+STATEMENT: >>>
+`summarise(report)` gives: `score` (the overall score); `findings`, the sorted set of `kind|severity` strings
+(title when a finding has no kind); `assessed_modules`, the sorted names of results that are not skipped and are
+assessed; `metrics`, every key metric that is not `None` as `<analyser>.<name>` rounded to 4 decimals; and
+`metadata` with `source_format`, `vehicle_type`, `airframe_name`, `firmware_version`, `px4_version` and
+`duration_seconds`. With `--update-golden` the test writes these plus `id`, `generated_with`
+(`flightmd_core.__version__`), `schema_version` and `score_band` = score -5.0 and +5.0 to
+`tests/corpus/golden/<id>.json`.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+This is test code and is not itself under test. A review reads `summarise` and one golden file.
+<<<
+ALLOCATION: tools, procedure
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-026
+
+[REQUIREMENT]
+UID: LLR-INT-072
+STATUS: Active
+TITLE: How a result is compared with its golden
+STATEMENT: >>>
+`test_corpus_log_matches_golden` skips when the golden is missing or the log cannot be downloaded, and fails
+when the downloaded file's SHA-256 differs from the manifest. It asserts: detected format equals the manifest;
+score within `score_band`; `findings` and `assessed_modules` equal; every metric in the golden present and
+within 10 % relative or 0.05 absolute, whichever is wider, unless the golden's `tolerances` block overrides it;
+metadata equal, `duration_seconds` within 1.0 s. Not compared: the number, order, confidence, evidence, time
+windows and explanations of findings, parameter recommendations, grade and label, the assessed fraction, parse
+warnings, armed windows, the path, and metrics that are new.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+This is test code and is not itself under test. A review reads the assertions.
+<<<
+ALLOCATION: tools, procedure
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-INT-026
+
+[[/SECTION]]

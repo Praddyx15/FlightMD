@@ -42,12 +42,14 @@ class TestGPX:
         root = ET.fromstring(gpx_bytes)
         assert root.tag.endswith("gpx")
 
+    # covers: HLR-RPT-016, LLR-RPT-047
     def test_track_points_match_path_length(self):
         gpx_bytes = generate_gpx(make_report(PATH))
         root = ET.fromstring(gpx_bytes)
         trkpts = root.findall(".//{http://www.topografix.com/GPX/1/1}trkpt")
         assert len(trkpts) == len(PATH)
 
+    # covers: HLR-RPT-016, LLR-RPT-047
     def test_lat_lon_round_trip(self):
         gpx_bytes = generate_gpx(make_report(PATH))
         root = ET.fromstring(gpx_bytes)
@@ -61,6 +63,7 @@ class TestGPX:
         trkpts = root.findall(".//{http://www.topografix.com/GPX/1/1}trkpt")
         assert trkpts == []
 
+    # covers: HLR-RPT-016, LLR-RPT-047
     def test_file_name_is_escaped_not_injected(self):
         report = make_report(PATH)
         report.file_name = 'evil"><script>alert(1)</script>'
@@ -78,6 +81,7 @@ class TestKML:
         root = ET.fromstring(kml_bytes)
         assert root.tag.endswith("kml")
 
+    # covers: HLR-RPT-017, LLR-RPT-048
     def test_coordinates_are_lon_lat_alt_order(self):
         kml_bytes = generate_kml(make_report(PATH))
         root = ET.fromstring(kml_bytes)
@@ -95,6 +99,7 @@ class TestKML:
         assert not coords_el.text
 
 
+# covers: HLR-RPT-016, HLR-RPT-017, LLR-RPT-045
 def test_nan_altitude_is_left_out():
     path = [[37.7749, -122.4194, float("nan")], [37.7750, -122.4195, 15.0]]
     root = ET.fromstring(generate_gpx(make_report(path)))
@@ -119,18 +124,21 @@ def timed_report(start="2026-10-01T09:12:33Z"):
     return report
 
 
+# covers: HLR-RPT-016, HLR-RPT-017, LLR-RPT-046
 def test_gpx_time_per_point():
     root = ET.fromstring(generate_gpx(timed_report()))
     times = [e.text for e in root.iter(f"{GPX}time")]
     assert times == ["2026-10-01T09:12:43.000Z", "2026-10-01T09:12:43.500Z", "2026-10-01T09:12:44.250Z"]
 
 
+# covers: HLR-RPT-016, LLR-RPT-047
 def test_gpx_time_comes_after_ele():
     root = ET.fromstring(generate_gpx(timed_report()))
     trkpt = root.find(f".//{GPX}trkpt")
     assert [c.tag for c in trkpt] == [f"{GPX}ele", f"{GPX}time"]
 
 
+# covers: HLR-RPT-016, HLR-RPT-017, LLR-RPT-046
 def test_gpx_no_time_without_utc_start():
     report = timed_report()
     report.metadata.log_start_utc = None
@@ -138,6 +146,7 @@ def test_gpx_no_time_without_utc_start():
     assert list(root.iter(f"{GPX}time")) == []
 
 
+# covers: HLR-RPT-016, HLR-RPT-017, LLR-RPT-046
 def test_gpx_no_time_when_lengths_disagree():
     report = timed_report()
     report.metadata.gps_path_t_s = [10.0]
@@ -145,6 +154,7 @@ def test_gpx_no_time_when_lengths_disagree():
     assert list(root.iter(f"{GPX}time")) == []
 
 
+# covers: HLR-RPT-017, LLR-RPT-049
 def test_kml_points_carry_hdop_wind_and_time():
     root = ET.fromstring(generate_kml(timed_report()))
     folder = root.find(f".//{KML}Folder")
@@ -164,6 +174,7 @@ def test_kml_points_carry_hdop_wind_and_time():
     assert float(first.split(",")[0]) == pytest.approx(PATH[0][1])
 
 
+# covers: HLR-RPT-017, LLR-RPT-049
 def test_kml_without_point_data_has_no_folder():
     root = ET.fromstring(generate_kml(make_report(PATH)))
     assert root.find(f".//{KML}Folder") is None

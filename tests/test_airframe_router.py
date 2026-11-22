@@ -44,11 +44,13 @@ def auth(token):
 
 
 class TestClaiming:
+    # covers: HLR-API-017, LLR-API-013, LLR-API-041
     @pytest.mark.asyncio
     async def test_unclaimed_airframe_cannot_be_read(self, client):
         resp = await client.get("/airframe/Quad-1/config")
         assert resp.status_code == 401
 
+    # covers: HLR-API-017, HLR-API-018, LLR-API-042, LLR-API-044, LLR-API-085, LLR-API-086
     @pytest.mark.asyncio
     async def test_first_put_returns_token_once(self, client):
         token = await claim(client)
@@ -63,6 +65,7 @@ class TestClaiming:
         assert "airframe_token" not in data
         assert "token_hash" not in data
 
+    # covers: HLR-API-017, LLR-API-013, LLR-API-041
     @pytest.mark.asyncio
     async def test_claimed_airframe_rejects_missing_and_wrong_tokens(self, client):
         await claim(client)
@@ -70,6 +73,7 @@ class TestClaiming:
         assert (await client.get("/airframe/Quad-1/config")).status_code == 401
         assert (await client.get("/airframe/Quad-1/config", headers=auth("nope"))).status_code == 403
 
+    # covers: HLR-API-017, LLR-API-014, LLR-API-042
     @pytest.mark.asyncio
     async def test_webhook_cannot_be_taken_over(self, client):
         await claim(client)
@@ -80,6 +84,7 @@ class TestClaiming:
         )
         assert resp.status_code == 403
 
+    # covers: HLR-API-017, HLR-API-018, LLR-API-043
     @pytest.mark.asyncio
     async def test_maintenance_post_also_claims(self, client):
         resp = await client.post("/airframe/Quad-2/maintenance", json={
@@ -88,6 +93,7 @@ class TestClaiming:
         assert resp.status_code == 200
         assert resp.json()["airframe_token"]
 
+    # covers: HLR-API-017, LLR-API-014, LLR-API-042
     @pytest.mark.asyncio
     async def test_rejected_body_does_not_consume_the_claim(self, client):
         resp = await client.put("/airframe/Quad-1/config", json={
@@ -96,6 +102,7 @@ class TestClaiming:
         assert resp.status_code == 400
         assert await claim(client)
 
+    # covers: HLR-API-018, LLR-API-041
     @pytest.mark.asyncio
     async def test_invalid_label_rejected(self, client):
         resp = await client.get("/airframe/%20/config")
@@ -103,6 +110,7 @@ class TestClaiming:
 
 
 class TestUpdateConfig:
+    # covers: HLR-API-018, LLR-API-042, LLR-API-089
     @pytest.mark.asyncio
     async def test_set_checklist_items(self, client):
         token = await claim(client)
@@ -111,6 +119,7 @@ class TestUpdateConfig:
         assert resp.status_code == 200
         assert resp.json()["checklist_items"] == ["Check props", "Check GPS lock"]
 
+    # covers: HLR-API-018, LLR-API-042
     @pytest.mark.asyncio
     async def test_set_alert_rules(self, client):
         token = await claim(client)
@@ -120,6 +129,7 @@ class TestUpdateConfig:
         assert resp.status_code == 200
         assert resp.json()["alert_rules"][0]["metric"] == "overall_score"
 
+    # covers: HLR-API-018, LLR-API-040
     @pytest.mark.asyncio
     async def test_invalid_alert_rule_comparison_rejected_by_pydantic(self, client):
         resp = await client.put("/airframe/Quad-1/config", json={
@@ -127,6 +137,7 @@ class TestUpdateConfig:
         })
         assert resp.status_code == 422
 
+    # covers: HLR-API-018, LLR-API-042, LLR-API-084
     @pytest.mark.asyncio
     async def test_invalid_alert_rule_metric_rejected(self, client):
         # AlertRuleBody takes any metric string; METRIC_NAME_RE lives in AlertRule
@@ -135,18 +146,21 @@ class TestUpdateConfig:
         })
         assert resp.status_code == 400
 
+    # covers: HLR-API-023, LLR-API-042, LLR-API-097
     @pytest.mark.asyncio
     @pytest.mark.parametrize("url", ["http://127.0.0.1/hook", "https://127.0.0.1/hook", "https://10.0.0.5/hook"])
     async def test_unsafe_webhook_url_rejected(self, client, url):
         resp = await client.put("/airframe/Quad-1/config", json={"webhook_url": url})
         assert resp.status_code == 400
 
+    # covers: HLR-API-018, LLR-API-040
     @pytest.mark.asyncio
     @pytest.mark.parametrize("hours", [0, -5])
     async def test_non_positive_interval_rejected(self, client, hours):
         resp = await client.put("/airframe/Quad-1/config", json={"maintenance_interval_hours": hours})
         assert resp.status_code == 422
 
+    # covers: HLR-API-018, LLR-API-089
     @pytest.mark.asyncio
     async def test_null_clears_interval(self, client):
         token = await claim(client)
@@ -156,6 +170,7 @@ class TestUpdateConfig:
 
 
 class TestMaintenanceEntry:
+    # covers: HLR-API-018, LLR-API-043, LLR-API-088
     @pytest.mark.asyncio
     async def test_add_entry(self, client):
         token = await claim(client)
@@ -167,6 +182,7 @@ class TestMaintenanceEntry:
         assert len(data["maintenance_log"]) == 1
         assert data["maintenance_log"][0]["maintenance_type"] == "Propeller replacement"
 
+    # covers: HLR-API-018, LLR-API-043
     @pytest.mark.asyncio
     async def test_invalid_date_rejected(self, client):
         resp = await client.post("/airframe/Quad-1/maintenance", json={
@@ -176,11 +192,13 @@ class TestMaintenanceEntry:
 
 
 class TestAirframeRecordExport:
+    # covers: HLR-API-020, LLR-API-033
     @pytest.mark.asyncio
     async def test_needs_token(self, client):
         await claim(client)
         assert (await client.get("/export/airframe/Quad-1/pdf")).status_code == 401
 
+    # covers: HLR-API-020, LLR-API-033
     @pytest.mark.asyncio
     async def test_non_ascii_label_gets_a_valid_filename(self, client, monkeypatch):
         import api.routers.export as export_module

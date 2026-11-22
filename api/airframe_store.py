@@ -49,6 +49,7 @@ class AlertRule:
     label: str = ""      # shown in the alert message
 
     def __post_init__(self):
+        """@relation(LLR-API-084, scope=function)"""
         if self.comparison not in VALID_COMPARISONS:
             raise ValueError(f"comparison must be one of {VALID_COMPARISONS}, got {self.comparison!r}")
         if not METRIC_NAME_RE.match(self.metric):
@@ -66,6 +67,7 @@ class AirframeConfig:
     token_hash: Optional[str] = None
 
     def to_dict(self) -> dict:
+        """@relation(LLR-API-085, scope=function)"""
         # what clients see; token_hash stays out of it
         return {
             "airframe_label": self.airframe_label,
@@ -101,6 +103,7 @@ class TokenError(Exception):
 
 
 def hash_token(token: str) -> str:
+    """@relation(LLR-API-086, scope=function)"""
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
@@ -108,6 +111,7 @@ class AirframeConfigStore:
     """One row per airframe in the `airframes` table: the config as JSON plus the token hash."""
 
     def _get(self, c, airframe_label: str) -> AirframeConfig:
+        """@relation(LLR-API-087, scope=function)"""
         row = c.execute(
             "SELECT config_json, token_hash FROM airframes WHERE label = ?", (airframe_label,)
         ).fetchone()
@@ -130,10 +134,13 @@ class AirframeConfigStore:
         )
 
     def get(self, airframe_label: str) -> AirframeConfig:
-        """Stored config, or an empty unclaimed one for a label nobody has used yet."""
+        """Stored config, or an empty unclaimed one for a label nobody has used yet.
+
+        @relation(LLR-API-087, scope=function)"""
         return self._get(db.get().conn(), airframe_label)
 
     def save(self, config: AirframeConfig) -> None:
+        """@relation(LLR-API-089, scope=function)"""
         with db.get().transaction() as c:
             self._save(c, config)
 
@@ -142,6 +149,8 @@ class AirframeConfigStore:
 
         With claim=True an unclaimed airframe is claimed instead, and the new
         token is returned; that's the only time it is ever available.
+
+        @relation(LLR-API-086, scope=function)
         """
         # a claim writes, so it takes the write lock before reading: two
         # first uploads racing can't both walk away with a token
@@ -162,6 +171,7 @@ class AirframeConfigStore:
             return None
 
     def add_maintenance_entry(self, airframe_label: str, entry: MaintenanceEntry) -> AirframeConfig:
+        """@relation(LLR-API-088, scope=function)"""
         with db.get().transaction() as c:
             config = self._get(c, airframe_label)
             config.maintenance_log.append(entry)
@@ -177,7 +187,9 @@ class AirframeConfigStore:
         alert_rules=_UNSET,
         webhook_url=_UNSET,
     ) -> AirframeConfig:
-        """Change only the fields passed. Passing None clears a field."""
+        """Change only the fields passed. Passing None clears a field.
+
+        @relation(LLR-API-089, scope=function)"""
         with db.get().transaction() as c:
             config = self._get(c, airframe_label)
             if checklist_items is not _UNSET:
@@ -193,6 +205,7 @@ class AirframeConfigStore:
 
 
 def compute_maintenance_status(config: AirframeConfig, flights_with_ts: list[tuple[float, object]]) -> dict:
+    """@relation(LLR-API-090, scope=function)"""
     total_hours = sum(r.metadata.duration_seconds for _, r in flights_with_ts) / 3600.0
 
     last_maintenance_date = config.maintenance_log[-1].date if config.maintenance_log else None
@@ -223,6 +236,8 @@ def extract_metric_value(report, metric: str) -> Optional[float]:
 
     Rules can name metrics that an older or format-limited report never
     produced, so a miss is normal and never raises.
+
+    @relation(LLR-API-091, scope=function)
     """
     if metric == "overall_score":
         return report.overall_score
@@ -245,7 +260,9 @@ def extract_metric_value(report, metric: str) -> Optional[float]:
 
 
 def evaluate_alert_rules(report, alert_rules: list[AlertRule]) -> list[dict]:
-    """[{rule, value}] for every rule the report breaches. Missing metrics are skipped."""
+    """[{rule, value}] for every rule the report breaches. Missing metrics are skipped.
+
+    @relation(LLR-API-092, scope=function)"""
     triggered = []
     for rule in alert_rules:
         value = extract_metric_value(report, rule.metric)

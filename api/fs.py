@@ -1,9 +1,16 @@
+"""
+Atomic file writes.
+
+@relation(LLR-API-112, scope=file)
+"""
+
 import json
 import os
 import tempfile
 
 
 def write_atomic(path: str, data: bytes) -> None:
+    """@relation(LLR-API-112, scope=function)"""
     # temp file in the same dir so os.replace is a rename, never a copy
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".tmp-")
     try:
@@ -21,4 +28,5 @@ def write_atomic(path: str, data: bytes) -> None:
 
 
 def write_json_atomic(path: str, obj, **kwargs) -> None:
+    """@relation(LLR-API-112, scope=function)"""
     write_atomic(path, json.dumps(obj, **kwargs).encode("utf-8"))

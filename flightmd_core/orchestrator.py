@@ -59,10 +59,12 @@ PATH_POINTS = 500
 
 
 def offline() -> bool:
+    """@relation(LLR-INT-033, scope=function)"""
     return os.environ.get("FLIGHTMD_OFFLINE", "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def _env_float(name: str, default: float) -> float:
+    """@relation(LLR-INT-032, scope=function)"""
     try:
         return float(os.environ.get(name, default))
     except ValueError:
@@ -70,6 +72,7 @@ def _env_float(name: str, default: float) -> float:
 
 
 def file_sha256(path: str) -> str:
+    """@relation(LLR-INT-034, scope=function)"""
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
@@ -78,6 +81,7 @@ def file_sha256(path: str) -> str:
 
 
 def _parse(log_format: str, path: str, report: Optional[Callable[[float], None]] = None):
+    """@relation(LLR-INT-035, scope=function)"""
     parser = PARSERS[log_format]()
     # the newer parsers take a progress callback; the others just parse
     if report is not None and "progress" in inspect.signature(parser.parse).parameters:
@@ -86,6 +90,7 @@ def _parse(log_format: str, path: str, report: Optional[Callable[[float], None]]
 
 
 def _child(log_format: str, path: str, q) -> None:
+    """@relation(LLR-INT-036, scope=function)"""
     last = [0.0]
 
     def report(frac: float) -> None:
@@ -106,7 +111,10 @@ def _child(log_format: str, path: str, q) -> None:
 def _parse_with_limit(log_format: str, path: str, timeout_s: float,
                       report: Optional[Callable[[float], None]] = None):
     """Parse in a child process so a runaway parse can actually be killed (a thread
-    can't be). Progress comes back over the same queue as the result."""
+    can't be). Progress comes back over the same queue as the result.
+
+    @relation(LLR-INT-037, LLR-INT-038, scope=function)
+    """
     if timeout_s <= 0:
         return _parse(log_format, path, report)
 
@@ -147,7 +155,10 @@ def _parse_with_limit(log_format: str, path: str, timeout_s: float,
 
 
 async def _open_and_parse(log_path, max_bytes, analysis_est_s, progress, loop):
-    """Decompress if needed, detect the format and parse, reporting progress + ETA."""
+    """Decompress if needed, detect the format and parse, reporting progress + ETA.
+
+    @relation(LLR-INT-039, LLR-INT-040, scope=function)
+    """
     path, cleanup = await loop.run_in_executor(None, open_log, log_path, max_bytes)
     try:
         try:
@@ -189,6 +200,7 @@ async def _open_and_parse(log_path, max_bytes, analysis_est_s, progress, loop):
 
 
 def _no_weather(reason: str) -> dict:
+    """@relation(LLR-INT-054, scope=function)"""
     return {
         "temperature_max_c": None,
         "temperature_min_c": None,
@@ -214,6 +226,9 @@ async def run_analysis(
 
     Raises ValueError for a log that can't be analysed (unknown format, too big, no
     telemetry, parse failure or timeout).
+
+    @relation(LLR-INT-041, LLR-INT-042, LLR-INT-043, LLR-INT-044, LLR-INT-045, LLR-INT-046, scope=function)
+    @relation(LLR-INT-048, LLR-INT-054, LLR-INT-055, LLR-INT-056, LLR-INT-057, LLR-INT-058, scope=function)
     """
     start_ms = int(time.time() * 1000)
     loop = asyncio.get_running_loop()
@@ -387,7 +402,10 @@ async def run_analysis(
 
 
 def _armed_windows(topics, end_s: float) -> Optional[list[list[float]]]:
-    """[start_s, end_s] pairs where arming_state == 2; None if the log has no arming info."""
+    """[start_s, end_s] pairs where arming_state == 2; None if the log has no arming info.
+
+    @relation(LLR-INT-047, scope=function)
+    """
     vs = topics.get("vehicle_status")
     if vs is None or vs.empty or "arming_state" not in vs.columns:
         return None
@@ -406,7 +424,10 @@ def _armed_windows(topics, end_s: float) -> Optional[list[list[float]]]:
 
 def _gps_track(topics) -> Optional[pd.DataFrame]:
     """timestamp / lat / lon (deg) / alt (m) / hdop for the map, from the receiver if
-    there is one with a fix, else from the estimator's global position (tlogs)."""
+    there is one with a fix, else from the estimator's global position (tlogs).
+
+    @relation(LLR-INT-049, LLR-INT-050, scope=function)
+    """
     gps = topics.get("vehicle_gps_position")
     if gps is not None and "lat" in gps.columns and "lon" in gps.columns:
         ok = (gps["lat"] != 0) & (gps["lon"] != 0)
@@ -444,6 +465,7 @@ def _none_if_nan(values) -> list[Optional[float]]:
 
 
 def _fill_path(metadata, track: pd.DataFrame, topics) -> None:
+    """@relation(LLR-INT-051, LLR-INT-052, LLR-INT-053, scope=function)"""
     step = max(1, len(track) // PATH_POINTS)
     sub = track.iloc[::step]
 
@@ -497,6 +519,7 @@ def _fill_path(metadata, track: pd.DataFrame, topics) -> None:
 
 
 def _fallback_summary(score: float, label: str, findings: list) -> str:
+    """@relation(LLR-INT-057, scope=function)"""
     if not findings:
         return f"Flight analysed. Health score: {score:.0f}/100 ({label}). No significant findings detected."
     top = findings[0]

@@ -20,6 +20,8 @@ Autopilots store params as float32, so 0.05 arrives as 0.05000000074505806.
 Values are rounded back to their float32 decimal form before comparing or
 showing them; otherwise every gain that sits exactly on a bound reads as
 "above range".
+
+@relation(LLR-ANL-083, scope=file)
 """
 
 import json
@@ -132,7 +134,9 @@ _AP_VEHICLE = {"multirotor": "copter", "fixed_wing": "plane", "vtol": "plane", "
 def f32(v: float) -> float:
     """The decimal the autopilot actually stores: float32, shortest repr.
     Whole numbers are left alone: INT32 params past 2^24 (coordinates, IP
-    addresses) would get rounded."""
+    addresses) would get rounded.
+
+    @relation(LLR-ANL-070, scope=function)"""
     if float(v).is_integer():
         return float(v)
     return float(str(np.float32(v)))
@@ -140,7 +144,9 @@ def f32(v: float) -> float:
 
 @lru_cache(maxsize=1)
 def load_safe_ranges() -> dict:
-    """{"px4": {name: {min, max, unit, why}}, "ardupilot": {...}}"""
+    """{"px4": {name: {min, max, unit, why}}, "ardupilot": {...}}
+
+    @relation(LLR-ANL-071, scope=function)"""
     with open(os.path.join(DATA_DIR, "param_safe_ranges.json"), encoding="utf-8") as f:
         data = json.load(f)
     return {k: v for k, v in data.items() if not k.startswith("_")}
@@ -148,6 +154,7 @@ def load_safe_ranges() -> dict:
 
 @lru_cache(maxsize=1)
 def load_tables() -> list[dict]:
+    """@relation(LLR-ANL-072, scope=function)"""
     tables = []
     for name in sorted(os.listdir(TABLE_DIR)):
         if not name.endswith(".json"):
@@ -160,6 +167,7 @@ def load_tables() -> list[dict]:
 
 
 def firmware_series(metadata, autopilot: str) -> Optional[tuple[int, int]]:
+    """@relation(LLR-ANL-073, scope=function)"""
     if metadata is None:
         return None
     fields = ["px4_version", "firmware_version"] if autopilot == "px4" else ["firmware_version"]
@@ -171,6 +179,7 @@ def firmware_series(metadata, autopilot: str) -> Optional[tuple[int, int]]:
 
 
 def ap_vehicle(metadata, frame: str) -> Optional[str]:
+    """@relation(LLR-ANL-074, scope=function)"""
     vt = (getattr(metadata, "vehicle_type", None) or "").lower()
     if vt in ("copter", "plane", "rover"):
         return vt
@@ -180,7 +189,9 @@ def ap_vehicle(metadata, frame: str) -> Optional[str]:
 def pick_table(autopilot: str, vehicle: Optional[str], series) -> tuple[dict, str]:
     """(params table, which one in words). The table nearest the firmware
     version; with no version, every table of that autopilot merged with the
-    widest ranges, so a value valid in any release isn't flagged."""
+    widest ranges, so a value valid in any release isn't flagged.
+
+    @relation(LLR-ANL-075, LLR-ANL-076, scope=function)"""
     # print([t["version"] for t in load_tables()])
     cands = [t for t in load_tables() if t["autopilot"] == autopilot
              and (autopilot != "ardupilot" or vehicle is None or t["vehicle"] == vehicle)]
@@ -206,6 +217,7 @@ def pick_table(autopilot: str, vehicle: Optional[str], series) -> tuple[dict, st
 
 
 class ParameterAnalyser(BaseAnalyser):
+    """@relation(LLR-ANL-077, scope=class)"""
     name            = "parameters"
     display_name    = "Parameter Analysis"
     required_topics = []
@@ -215,6 +227,7 @@ class ParameterAnalyser(BaseAnalyser):
         return True     # works off params, which every format has
 
     def analyse(self, topics, params):
+        """@relation(LLR-ANL-078, LLR-ANL-085, LLR-ANL-087, scope=function)"""
         if not params:
             return self._skip("No parameters found in log.")
 
@@ -229,6 +242,12 @@ class ParameterAnalyser(BaseAnalyser):
         series = firmware_series(self.metadata, autopilot)
         table, source = pick_table(autopilot, ap_vehicle(self.metadata, vehicle.frame), series)
         safe = load_safe_ranges().get(autopilot, {})
+
+        # an unrecognised set checked against tables it shares no name with is not a clean 100 (PR-030)
+        combo_names = {p for c in DANGEROUS_COMBOS if c["autopilot"] == autopilot for p, _, _ in c["when"]}
+        if not any(p in table or p in safe or p in combo_names for p in values):
+            return self._skip(f"None of the {len(values)} parameters is in the {autopilot.upper()} tables "
+                              f"({vehicle.autopilot} autopilot).")
 
         findings: list[Finding] = []
         health_score = 100.0
@@ -284,6 +303,7 @@ class ParameterAnalyser(BaseAnalyser):
         )
 
     def _range_check(self, pname, pval, fw, rec, source):
+        """@relation(LLR-ANL-079, LLR-ANL-080, LLR-ANL-081, LLR-ANL-082, scope=function)"""
         fw_min, fw_max = fw.get("min"), fw.get("max")
         rec_min, rec_max = rec.get("min"), rec.get("max")
         unit = fw.get("unit") or rec.get("unit")
@@ -349,6 +369,7 @@ class ParameterAnalyser(BaseAnalyser):
         )
 
     def _combo_fix(self, combo, values, table) -> list[ParamRecommendation]:
+        """@relation(LLR-ANL-086, scope=function)"""
         if not combo["fix"]:
             return []
         pname, direction = combo["fix"]
@@ -370,7 +391,9 @@ class ParameterAnalyser(BaseAnalyser):
         )]
 
     def _check_combo(self, conditions, params: dict[str, float]) -> bool:
-        """Each condition is (param, op, number) or (param, op, other_param)."""
+        """Each condition is (param, op, number) or (param, op, other_param).
+
+        @relation(LLR-ANL-084, scope=function)"""
         for pname, op, rhs in conditions:
             lhs = params.get(pname)
             if lhs is None:

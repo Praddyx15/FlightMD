@@ -1,0 +1,550 @@
+[DOCUMENT]
+TITLE: Analysers high-level requirements
+UID: FMD-HLR-ANL
+VERSION: Issue 1
+DATE: 2026-11-20
+OPTIONS:
+  MARKUP: Markdown
+
+[GRAMMAR]
+IMPORT_FROM_FILE: @flightmd
+
+[TEXT]
+STATEMENT: >>>
+High-level requirements of the analyser item, part ANL: the analyser framework (base class, registry, flight
+phases, vehicle identification, shared helpers), the GPS, battery, motor, board power and parameter checks, the
+shipped parameter tables and the script that generates them. Written from the code as built. The oscillation,
+vibration, EKF and ascent checks are in another part. Low-level requirements are in `llr-anl.sdoc`; the design
+is in `docs/lifecycle/06-design/lld-anl.md`.
+<<<
+
+[[SECTION]]
+TITLE: Framework
+
+[REQUIREMENT]
+UID: HLR-ANL-001
+STATUS: Active
+TITLE: One interface for every check
+STATEMENT: >>>
+Every check shall be a class with a unique snake_case name, a display name, a declaration of the topics, columns
+and log formats it needs and a score weight, and one operation that takes the topic tables and the parameter set
+and returns one result holding its findings, a health score from 0 to 100, its headline numbers, and whether it
+was skipped and why.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-008
+- TYPE: Parent
+  VALUE: SYS-018
+
+[REQUIREMENT]
+UID: HLR-ANL-002
+STATUS: Active
+TITLE: Missing declared inputs give a skipped result with the reason
+STATEMENT: >>>
+When a required topic is absent, none of a set of alternative topics is present, the log format is not one the
+check declares, or a present topic lacks a declared column, the check shall not run and shall return a skipped
+result whose reason names what is missing.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-010
+
+[REQUIREMENT]
+UID: HLR-ANL-003
+STATUS: Active
+TITLE: A failing check does not stop the others
+STATEMENT: >>>
+An exception raised inside a check shall be turned into a skipped result whose reason carries the exception type
+and message, and every result shall carry the time the check took in milliseconds.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test in the analyser test files makes `analyse` raise. Review checks the `try`/`except Exception` in
+`BaseAnalyser.safe_analyse` and that `processing_ms` is set on both paths.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-010
+
+[REQUIREMENT]
+UID: HLR-ANL-004
+STATUS: Active
+TITLE: The set of checks: nine built-ins plus plugins
+STATEMENT: >>>
+The item shall supply fresh instances of the nine built-in checks in a fixed order (oscillation, vibration, EKF,
+battery, GPS, parameters, motors, ascent profile, board power), followed by every plugin class found under the
+entry point group `flightmd.analysers`, each given the flight metadata of the log.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-008
+- TYPE: Parent
+  VALUE: SYS-018
+
+[REQUIREMENT]
+UID: HLR-ANL-005
+STATUS: Active
+TITLE: Bad plugins are left out with a warning
+STATEMENT: >>>
+A plugin that fails to load, is not a subclass of the check base class, reuses the name of a built-in or of an
+earlier plugin, or fails to construct shall be left out and a warning naming it shall be logged; the remaining
+checks shall still be supplied.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-018
+
+[REQUIREMENT]
+UID: HLR-ANL-006
+STATUS: Active
+TITLE: Score weights
+STATEMENT: >>>
+The item shall publish the score weight of each check by name, leaving out checks of weight 0. The built-in
+weights shall be oscillation 20, vibration 20, EKF 20, battery 15, GPS 15, parameters 5, motors 5 (sum 100) and
+ascent profile 0 and board power 0. A plugin's weight shall be added to the set unchanged, so the total then
+exceeds 100.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-011
+- TYPE: Parent
+  VALUE: SYS-018
+
+[REQUIREMENT]
+UID: HLR-ANL-007
+STATUS: Active
+TITLE: Armed and in-air windows
+STATEMENT: >>>
+The item shall derive the armed windows from `vehicle_status.arming_state` (2 means armed) and the in-air windows
+from the armed windows intersected with the not-landed windows of `vehicle_land_detected.landed`, on the
+log-relative microsecond clock. With no arming data, or a log that was never armed, both shall be the whole log
+and the result shall say that the phases are not known. With arming data and no usable land detector the in-air
+windows shall equal the armed windows.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-007
+
+[REQUIREMENT]
+UID: HLR-ANL-008
+STATUS: Active
+TITLE: Autopilot and frame type from the parameters
+STATEMENT: >>>
+The item shall identify the autopilot (px4, ardupilot, unknown) and the frame type (multirotor, fixed_wing,
+vtol, rover, unknown) from the parameter names and values, and shall give the rate-loop P and D parameter names
+for an axis only for PX4 and ArduPilot multirotors and fixed-wing aircraft, giving none for VTOL, rover and
+unknown vehicles.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-013
+
+[REQUIREMENT]
+UID: HLR-ANL-009
+STATUS: Active
+TITLE: Confidence and time window of a finding
+STATEMENT: >>>
+The item shall provide one rule for the confidence of a finding, a number from 0 to 1 rounded to 3 places that
+rises with the margin past the threshold, with the duration up to 2 s, and with the data quality, and one rule
+that turns a window in microseconds into the finding's start and end in milliseconds and seconds.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Tests check the window start of findings (`t_start_s`). No test asserts a confidence value; review checks the
+formula in `helpers.confidence` against LLR-ANL-016.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-009
+
+[REQUIREMENT]
+UID: HLR-ANL-010
+STATUS: Active
+TITLE: Chart series on findings
+STATEMENT: >>>
+Findings of the GPS, battery, motor and board power checks shall carry the time series behind them, reduced to
+at most 500 points per series by taking every n-th sample, with timestamps in milliseconds and with NaN and
+infinite values replaced by null.
+<<<
+RATIONALE: >>>
+No system requirement asks the checks for chart series. The web application draws them (SYS-036) and the report
+must hold only valid JSON numbers (SYS-019), so the checks bound and clean the series at the source.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+DERIVED: Yes
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-009
+- TYPE: Parent
+  VALUE: SYS-019
+
+[REQUIREMENT]
+UID: HLR-ANL-011
+STATUS: Active
+TITLE: Module health score and fixed rules
+STATEMENT: >>>
+Each of the GPS, battery, motor, board power and parameter checks shall start its health score at 100 and
+subtract a fixed penalty per finding (30 for a critical finding, 15 for a warning, 10 for the battery C-rate
+warning), never going below 0, and shall decide every finding, severity and suggested value from constants and
+tables held in the code and the shipped data files, with no random or learned element.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Tests check that findings lower the score and that severities follow the thresholds. Absence of random or
+learned elements is checked by review of the imports and code of the five modules.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-011
+- TYPE: Parent
+  VALUE: SYS-012
+- TYPE: Parent
+  VALUE: SYS-009
+
+[REQUIREMENT]
+UID: HLR-ANL-012
+STATUS: Active
+TITLE: Headline numbers per check
+STATEMENT: >>>
+Each check shall return its headline numbers by fixed names: GPS `min_satellites` and `max_hdop`; battery
+`consumed_mah`, `sag_per_cell_v`, `internal_resistance_mohm_per_cell` and `peak_c_rate`; motors
+`motor_balance_index` and `motor_<n>_rpm_dev_pct`; board power `min_vcc_v` and `vcc_range_v`; parameters
+`param_count` and `anomaly_count`. A number that could not be measured shall be left out, not set to zero.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-030
+- TYPE: Parent
+  VALUE: SYS-008
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: GPS check
+
+[REQUIREMENT]
+UID: HLR-ANL-013
+STATUS: Active
+TITLE: GPS check inputs and in-flight gating
+STATEMENT: >>>
+The GPS check shall need the topic `vehicle_gps_position` with a `timestamp` column, shall judge only samples
+inside the in-air windows, and when the phases are not known shall instead drop the samples before the first 3D
+fix. It shall return a skipped result when the topic has no timestamps or fewer than 5 samples remain.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-008
+- TYPE: Parent
+  VALUE: SYS-007
+- TYPE: Parent
+  VALUE: SYS-010
+
+[REQUIREMENT]
+UID: HLR-ANL-014
+STATUS: Active
+TITLE: GPS findings
+STATEMENT: >>>
+The GPS check shall report: no 3D fix at any time in flight (critical); a fix below 3D for 1.0 s or longer
+(critical) or shorter (warning); a loss of 4 or more satellites within 5 s (warning); HDOP held for 2 s above
+2.0 (warning) or above 4.0 (critical); a jamming indicator held for 2 s above 100 of 255 (warning) or above 180
+(critical), or a receiver jamming state of warning or critical held for 2 s; and a receiver spoofing state of
+"indicated" (warning) or "multiple indications" (critical) on any sample. Each finding shall carry a rule
+identifier beginning `gps.`.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-008
+- TYPE: Parent
+  VALUE: SYS-009
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Battery check
+
+[REQUIREMENT]
+UID: HLR-ANL-015
+STATUS: Active
+TITLE: Battery check inputs
+STATEMENT: >>>
+The battery check shall need the topic `battery_status` with a timestamp, a voltage and a current column, shall
+use only rows where all three are present and the voltage is above 0, over the whole log with no flight-phase
+gating, and shall return a skipped result when a column is missing or fewer than 10 such rows exist. It shall
+take the cell count and the rated capacity from the log, else from the parameters, and shall estimate the cell
+count from the highest voltage at 4.2 V per cell when neither gives it.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-008
+- TYPE: Parent
+  VALUE: SYS-010
+
+[REQUIREMENT]
+UID: HLR-ANL-016
+STATUS: Active
+TITLE: Battery findings
+STATEMENT: >>>
+The battery check shall report: voltage sag per cell at peak load, computed from the internal resistance fitted
+in 10 s windows, above 0.50 V (warning) or above 1.00 V (critical); a 1 s sustained current above 30 times the
+rated capacity (warning); a capacity implied by the fall in state of charge that is more than 15 percent below
+the rated capacity, when at least 30 percent of charge was used and the state of charge is not itself computed
+from the drawn current (warning); and a battery temperature above 60 degrees C (warning). Each finding shall
+carry a rule identifier beginning `battery.`.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-008
+- TYPE: Parent
+  VALUE: SYS-009
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Motor check
+
+[REQUIREMENT]
+UID: HLR-ANL-017
+STATUS: Active
+TITLE: Motor check inputs
+STATEMENT: >>>
+The motor check shall need the topic `esc_status` with a `timestamp` column and at least one per-ESC RPM column
+that reports a non-zero value, shall ignore ESC slots at or beyond `esc_count` and slots that never report
+anything but zero, shall treat a missing sample as no data and never as a stopped motor, and shall return a
+skipped result when there are no timestamps or no RPM telemetry. Balance and dropout rules shall apply to in-air
+samples; when the phases are not known, in-air shall mean more than half of the motors above 500 RPM.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-008
+- TYPE: Parent
+  VALUE: SYS-007
+- TYPE: Parent
+  VALUE: SYS-010
+
+[REQUIREMENT]
+UID: HLR-ANL-018
+STATUS: Active
+TITLE: Motor findings
+STATEMENT: >>>
+The motor check shall report: a spread of per-motor hover RPM (standard deviation over mean) above 0.08
+(warning) or above 0.15 (critical), naming the motor furthest from the mean; one motor's hover current more than
+20 percent above the mean (warning); an ESC temperature above 80 degrees C (warning, one per ESC); and a motor
+below 100 RPM for more than 100 ms in flight while the median of the others stays above 1000 RPM (critical, one
+per motor). Each finding shall carry a rule identifier beginning `motors.`.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-008
+- TYPE: Parent
+  VALUE: SYS-009
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Board power check
+
+[REQUIREMENT]
+UID: HLR-ANL-019
+STATUS: Active
+TITLE: Board power check
+STATEMENT: >>>
+The board power check shall need the topic `system_power` with a `timestamp` column and shall judge samples
+inside the armed windows only. It shall report a 5 V rail reading outside 4.3 V to 5.8 V on samples not powered
+from USB (critical, `power.vcc_out_of_range`) and a peripheral over-current flag (warning, `power.overcurrent`).
+It shall return a skipped result when fewer than 2 samples are armed or when the topic carries no voltage and no
+fault field. Its weight shall be 0.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-008
+- TYPE: Parent
+  VALUE: SYS-007
+- TYPE: Parent
+  VALUE: SYS-010
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Parameter check
+
+[REQUIREMENT]
+UID: HLR-ANL-020
+STATUS: Active
+TITLE: Parameter table chosen from the firmware in the log
+STATEMENT: >>>
+The parameter check shall take the firmware major and minor version from the flight metadata and use the
+shipped table of that autopilot (and, for ArduPilot, of that vehicle) whose version is nearest, preferring the
+later one on a tie. With no version, or an ArduPilot log whose vehicle is not copter, plane or rover, it shall
+use all tables of that autopilot merged to the widest range. A parameter set with no PX4 or ArduPilot marker
+shall be checked against the PX4 tables. It shall return a skipped result only when the log has no parameters.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers, data
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-014
+- TYPE: Parent
+  VALUE: SYS-010
+
+[REQUIREMENT]
+UID: HLR-ANL-021
+STATUS: Active
+TITLE: Parameter range findings
+STATEMENT: >>>
+For every finite numeric parameter that is not read-only in the table, the parameter check shall report a value
+below the firmware minimum or above the firmware maximum, and otherwise a value outside the tighter recommended
+range it holds, as `params.below_range` or `params.above_range`, naming which limit was broken, the table used
+when the limit is the firmware's, and the reason when the limit is a recommended one. The finding shall be
+critical when the value is further outside than half the width of the usable range or is negative where the
+minimum is 0 or more, else a warning. Multicopter parameters (`MC_`, `MPC_`) shall not be checked on a PX4
+fixed-wing or rover.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers, data
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-014
+- TYPE: Parent
+  VALUE: SYS-009
+- TYPE: Parent
+  VALUE: SYS-013
+
+[REQUIREMENT]
+UID: HLR-ANL-022
+STATUS: Active
+TITLE: Risky parameter combinations
+STATEMENT: >>>
+The parameter check shall report the fixed list of risky combinations for the log's autopilot: on PX4 a rate P
+gain above 0.3 with a rate D gain below 0.001 (roll, pitch), `MPC_XY_P` above 1.5 with `MPC_XY_VEL_P_ACC` below
+1.5, `BAT_LOW_THR` below `BAT_CRIT_THR`, and `COM_RC_LOSS_T` below 0.5 s; on ArduPilot a low battery failsafe
+not above the critical one (voltage, capacity; both set) and `ARMING_CHECK` equal to 0. A combination shall be
+reported only when every parameter it names is in the log.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-014
+
+[REQUIREMENT]
+UID: HLR-ANL-023
+STATUS: Active
+TITLE: Suggested parameter values
+STATEMENT: >>>
+A range finding shall carry one suggested change for its parameter: the firmware default from the table when
+that lies inside both the firmware and the recommended range, else the nearest edge of the range. A combination
+finding on PX4 shall suggest the firmware default of one named parameter when a default is known and it moves
+the value in the stated direction, and shall carry no suggestion otherwise. Values shall be shown and compared
+in their float32 decimal form.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-013
+- TYPE: Parent
+  VALUE: SYS-014
+
+[REQUIREMENT]
+UID: HLR-ANL-024
+STATUS: Proposed
+TITLE: Suggested values held inside the range of the log's own firmware
+STATEMENT: >>>
+The parameter check shall hold every suggested value inside the metadata range of the parameter for the firmware
+version in the log, and shall withhold the suggestion with a note when no table of that version is shipped or
+the value cannot be held inside the range.
+<<<
+RATIONALE: >>>
+As built, the suggestion for `BAT_LOW_THR` in the inverted-threshold combination is not bounded by the
+maximum, and suggestions are bounded by the nearest or merged table, which may not be the firmware in the log.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-016
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Parameter tables
+
+[REQUIREMENT]
+UID: HLR-ANL-025
+STATUS: Active
+TITLE: Shipped parameter tables
+STATEMENT: >>>
+The item shall ship one JSON table per firmware series: PX4 1.13, 1.14 and 1.15, and ArduPilot Copter, Plane and
+Rover 4.6 and 4.7. Each table shall record the autopilot, the vehicle, the exact firmware version, the address
+the metadata came from and the date generated, and shall map each parameter name to whichever of default,
+minimum, maximum, unit, type, reboot-required and read-only the metadata gives. The item shall also ship the
+hand-kept recommended ranges, each with its reason.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Tests load every table and use the fields. The list of files and their headers is checked by review of
+`flightmd_core/data/param_tables/`.
+<<<
+ALLOCATION: data, analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-039
+- TYPE: Parent
+  VALUE: SYS-014
+
+[REQUIREMENT]
+UID: HLR-ANL-026
+STATUS: Active
+TITLE: Tables generated from the firmware projects' metadata
+STATEMENT: >>>
+A script shall build the parameter tables from the metadata the firmware projects publish: the PX4
+`parameters.xml` of each listed release and the ArduPilot `apm.pdef.xml` of the latest stable release of the two
+newest series of each vehicle. It shall write each table in full or not at all, one parameter per line, and
+shall exit with status 1 and name what failed when a source could not be fetched or parsed.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test runs the script (it needs the network). Review checks `scripts/gen_param_tables.py` against LLR-ANL-088
+to LLR-ANL-094 and that the shipped tables carry the headers it writes.
+<<<
+ALLOCATION: tools, data
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-039
+
+[[/SECTION]]

@@ -37,12 +37,14 @@ LIPO_FULL_V = 4.2
 
 
 class BatteryAnalyser(BaseAnalyser):
+    """@relation(LLR-ANL-043, scope=class)"""
     name            = "battery"
     display_name    = "Battery Analysis"
     required_topics = ["battery_status"]
     weight          = 15.0
 
     def analyse(self, topics, params):
+        """@relation(LLR-ANL-053, LLR-ANL-054, scope=function)"""
         raw = topics["battery_status"]
         v_col = find_col(raw, ["voltage_v", "voltage_filtered_v", "voltage"])
         i_col = find_col(raw, ["current_a", "current_filtered_a", "current"])
@@ -89,10 +91,15 @@ class BatteryAnalyser(BaseAnalyser):
             health_score -= p
 
         temp_col = find_col(df, ["temperature", "temperature_filtered"])
+        has_temp = temp_col is not None and np.isfinite(df[temp_col].to_numpy(float)).any()
         if temp_col:
             f, p = self._temperature(df[temp_col].to_numpy(float), ts)
             findings += f
             health_score -= p
+
+        # flat current and no capacity or temperature: nothing was checked, so no clean 100 (PR-028)
+        if r_pack is None and not capacity_mah and not has_temp:
+            return self._skip("No current step, rated capacity or temperature in battery_status.")
 
         rem_pct = remaining * 100 if remaining is not None else np.full(len(ts), np.nan)
         ts_ms, v_ds, i_ds, r_ds = downsample(ts, voltage, current, rem_pct)
@@ -117,6 +124,7 @@ class BatteryAnalyser(BaseAnalyser):
 
     def _cells(self, df, params, voltage) -> tuple[int, str]:
         # todo: battery_status_1 / BAT2_N_CELLS once a second pack is analysed
+        """@relation(LLR-ANL-044, scope=function)"""
         if "cell_count" in df.columns:
             c = df["cell_count"].dropna()
             if len(c) and c.max() > 0:
@@ -128,7 +136,9 @@ class BatteryAnalyser(BaseAnalyser):
         return max(1, round(float(voltage.max()) / LIPO_FULL_V)), "estimated"
 
     def _capacity(self, df, params):
-        """Rated capacity in mAh, or None. PX4 -1 / 0 mean "not set"."""
+        """Rated capacity in mAh, or None. PX4 -1 / 0 mean "not set".
+
+        @relation(LLR-ANL-045, scope=function)"""
         if "capacity" in df.columns:
             c = df["capacity"].dropna()
             if len(c) and c.max() > 100:
@@ -139,6 +149,7 @@ class BatteryAnalyser(BaseAnalyser):
         return None
 
     def _remaining(self, df):
+        """@relation(LLR-ANL-046, scope=function)"""
         col = find_col(df, ["remaining", "remaining_capacity"])
         if col is None:
             return None
@@ -149,7 +160,9 @@ class BatteryAnalyser(BaseAnalyser):
         return r if np.isfinite(r).any() else None
 
     def _integrate(self, current, ts_s) -> float:
-        """mAh drawn, trapezoidal."""
+        """mAh drawn, trapezoidal.
+
+        @relation(LLR-ANL-047, scope=function)"""
         if len(current) < 2:
             return 0.0
         return float(np.sum((current[:-1] + current[1:]) / 2 * np.diff(ts_s))) / 3.6
@@ -157,7 +170,9 @@ class BatteryAnalyser(BaseAnalyser):
     def _sag(self, voltage, current, ts_s, n_cells):
         """Pack internal resistance (Ω) from windowed fits, and the sag per
         cell it implies at this flight's peak load. (None, None) when no
-        window had enough current change to measure it."""
+        window had enough current change to measure it.
+
+        @relation(LLR-ANL-048, scope=function)"""
         spread = np.percentile(current, 95) - np.percentile(current, 5)
         min_step = max(IR_MIN_STEP_A, 0.2 * spread)
         estimates = []
@@ -180,6 +195,7 @@ class BatteryAnalyser(BaseAnalyser):
         return r, r * max(0.0, peak - resting) / n_cells
 
     def _sag_finding(self, sag, r_pack, n_cells, cells_from, current, ts):
+        """@relation(LLR-ANL-049, scope=function)"""
         if sag > SAG_CRITICAL_PER_CELL:
             sev, penalty, thr = Severity.CRITICAL, 30.0, SAG_CRITICAL_PER_CELL
         elif sag > SAG_WARNING_PER_CELL:
@@ -215,6 +231,7 @@ class BatteryAnalyser(BaseAnalyser):
 
     def _c_rate(self, current, ts, capacity_mah):
         # 1 s median so a single current spike isn't "the C-rate"
+        """@relation(LLR-ANL-050, scope=function)"""
         n = max(1, int(round(1e6 / max(np.median(np.diff(ts)), 1.0))))
         sustained = pd.Series(current).rolling(n, min_periods=1).median().to_numpy()
         j = int(np.argmax(sustained))
@@ -238,6 +255,7 @@ class BatteryAnalyser(BaseAnalyser):
         )], 10.0, c_rate
 
     def _capacity_fade(self, current, ts_s, remaining, capacity_mah):
+        """@relation(LLR-ANL-051, scope=function)"""
         ok = np.isfinite(remaining)
         if ok.sum() < 10:
             return [], 0.0
@@ -275,6 +293,7 @@ class BatteryAnalyser(BaseAnalyser):
         )], 15.0
 
     def _temperature(self, temp, ts):
+        """@relation(LLR-ANL-052, scope=function)"""
         if not np.isfinite(temp).any():
             return [], 0.0
         peak = float(np.nanmax(temp))

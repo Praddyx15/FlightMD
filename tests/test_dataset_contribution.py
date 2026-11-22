@@ -56,6 +56,7 @@ async def run(log_path, contribute):
 
 
 class TestContributeToDatasetWiring:
+    # covers: HLR-API-027, LLR-API-050
     @pytest.mark.asyncio
     async def test_opted_in_saves_to_training_store(self, monkeypatch, log_path):
         calls = []
@@ -70,12 +71,14 @@ class TestContributeToDatasetWiring:
 
         assert calls == [(b"fake bytes", ".ulg", "px4_ulog", "d" * 64)]
 
+    # covers: HLR-API-027, LLR-API-050, LLR-API-105
     @pytest.mark.asyncio
     async def test_opted_in_really_stores_it(self, log_path):
         from api.training_data_store import training_data_store
         await run(log_path, contribute=True)
         assert training_data_store.stats().count == 1
 
+    # covers: HLR-API-027, LLR-API-050
     @pytest.mark.asyncio
     async def test_opted_out_does_not_save(self, monkeypatch, log_path):
         calls = []
@@ -85,6 +88,7 @@ class TestContributeToDatasetWiring:
 
         assert calls == []
 
+    # covers: HLR-API-027, LLR-API-050
     @pytest.mark.asyncio
     async def test_save_failure_does_not_fail_the_job(self, monkeypatch, log_path):
         def boom(*a):
@@ -95,6 +99,7 @@ class TestContributeToDatasetWiring:
 
         assert job_store.get("r1").status == JobStatus.COMPLETE
 
+    # covers: HLR-API-008, LLR-API-051
     @pytest.mark.asyncio
     async def test_temp_file_removed_after_success_and_failure(self, monkeypatch, log_path, tmp_path):
         monkeypatch.setattr(analysis_module.training_data_store, "save", lambda *a: "id")

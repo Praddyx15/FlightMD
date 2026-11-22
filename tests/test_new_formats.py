@@ -270,6 +270,7 @@ async def test_zip_compressed_log_end_to_end(tmp_path):
     assert json.loads(json_str)["overall_score"] == report.overall_score
 
 
+# covers: HLR-PRS-030, LLR-PRS-090
 def test_dji_dat_refused_with_unsupported_message(tmp_path):
     """Verifies that proprietary DJI .DAT files are rejected safely with an explanation."""
     dat_file = tmp_path / "FLY001.DAT"

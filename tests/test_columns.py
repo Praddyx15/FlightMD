@@ -13,6 +13,7 @@ from flightmd_core.services.columns import MIN_ROWS, ColumnBuffer
 
 
 class TestColumnBuffer:
+    # covers: HLR-INT-024, LLR-INT-024
     def test_rows_become_float_columns(self):
         buf = ColumnBuffer(["timestamp", "a", "b"], size=4)
         buf.append((1, 2.5, None))
@@ -27,6 +28,7 @@ class TestColumnBuffer:
         assert df["b"].iloc[1] == 4.0
         assert all(dt == np.float64 for dt in df.dtypes)
 
+    # covers: HLR-INT-024, LLR-INT-024
     def test_grows_past_the_size_hint(self):
         buf = ColumnBuffer(["t", "v"], size=0)
         n = MIN_ROWS * 5 + 3
@@ -37,6 +39,7 @@ class TestColumnBuffer:
         assert df["v"].iloc[-1] == (n - 1) * 2
         assert df["t"].is_monotonic_increasing
 
+    # covers: HLR-INT-024, LLR-INT-023
     def test_exact_size_hint_is_not_exceeded(self):
         buf = ColumnBuffer(["t"], size=MIN_ROWS * 2)
         block = buf._data
@@ -44,6 +47,7 @@ class TestColumnBuffer:
             buf.append((i,))
         assert buf._data is block
 
+    # covers: HLR-INT-024, LLR-INT-025
     def test_frame_is_a_copy(self):
         buf = ColumnBuffer(["t"])
         buf.append((1,))
@@ -52,15 +56,18 @@ class TestColumnBuffer:
         buf._data[0, 0] = 99
         assert df["t"].tolist() == [1.0]
 
+    # covers: HLR-INT-024, LLR-INT-025
     def test_empty_buffer_gives_empty_frame(self):
         df = ColumnBuffer(["t", "x"]).frame()
         assert df.empty
         assert list(df.columns) == ["t", "x"]
 
+    # covers: HLR-INT-024, LLR-INT-023
     def test_duplicate_columns_rejected(self):
         with pytest.raises(ValueError):
             ColumnBuffer(["t", "x", "x"])
 
+    # covers: HLR-INT-024, LLR-INT-024
     def test_text_value_is_an_error_not_a_silent_nan(self):
         buf = ColumnBuffer(["t"])
         with pytest.raises(ValueError):

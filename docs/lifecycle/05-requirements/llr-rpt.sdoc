@@ -1,0 +1,1263 @@
+[DOCUMENT]
+TITLE: Report low-level requirements
+UID: FMD-LLR-RPT
+VERSION: Issue 1
+DATE: 2026-11-20
+OPTIONS:
+  MARKUP: Markdown
+
+[GRAMMAR]
+IMPORT_FROM_FILE: @flightmd
+
+[TEXT]
+STATEMENT: >>>
+Low-level requirements of the report item, written from the code as built: `flightmd_core/models/`,
+`flightmd_core/services/` (`score_calculator.py`, `report_builder.py`, `explanation_engine.py`,
+`ai_enhancer.py`, `geo_export.py`, `geocoding.py`, `weather_lookup.py`, `airframes.py`),
+`flightmd_core/exporters/pdf.py` with its two templates, and `scripts/export_schema.py`. Parents are in
+`hlr-rpt.sdoc`. The design is `docs/lifecycle/06-design/lld-rpt.md`. Where the code does something surprising
+the statement says what the code does; the gaps are listed in section 6 of the design with their problem
+report numbers.
+<<<
+
+[[SECTION]]
+TITLE: Report models (flightmd_core/models/findings.py, metadata.py, __init__.py)
+
+[REQUIREMENT]
+UID: LLR-RPT-001
+STATUS: Active
+TITLE: Severity and Category values
+STATEMENT: >>>
+`Severity` is a string enum with the values `critical`, `warning`, `info`, `good`. `Category` is a string enum
+with the values `oscillation`, `vibration`, `ekf`, `battery`, `gps`, `parameters`, `motors`, `ascent_profile`,
+`system`.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-002
+
+[REQUIREMENT]
+UID: LLR-RPT-002
+STATUS: Active
+TITLE: ParamRecommendation fields
+STATEMENT: >>>
+`ParamRecommendation` has the required fields `param_name` (str), `current_value` (float), `suggested_value`
+(float), `change_direction` (str; the producers write `increase`, `decrease` or `set`, the model does not check
+it) and `reason` (str), and the optional `unit` (str, default None).
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-012
+
+[REQUIREMENT]
+UID: LLR-RPT-003
+STATUS: Active
+TITLE: Finding fields and defaults
+STATEMENT: >>>
+`Finding` has the required fields `category`, `severity`, `title`, `technical_summary`, `plain_english`,
+`recommendation` (str) and `confidence` (float), and the defaulted fields `id` (the first 8 characters of a new
+`uuid.uuid4()`), `timestamp_start_ms`, `timestamp_end_ms` (int or None), `t_start_s`, `t_end_s` (float or
+None), `chart_data` (dict or None), `param_changes` (list of `ParamRecommendation`, default empty), `kind`
+(str or None), `confidence_level` (str or None) and `params` (list of str, default empty).
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The schema test fixes the field list and defaults. The random `id` default is not in the schema and is checked
+by reading the model.
+<<<
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-002
+- TYPE: Parent
+  VALUE: HLR-RPT-031
+
+[REQUIREMENT]
+UID: LLR-RPT-004
+STATUS: Active
+TITLE: Confidence clamp
+STATEMENT: >>>
+On validation `Finding._fill_derived` sets `confidence` to `min(1.0, max(0.0, confidence))` when it is finite
+and to 0.0 when it is NaN or infinite.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-002
+
+[REQUIREMENT]
+UID: LLR-RPT-005
+STATUS: Active
+TITLE: Confidence level
+STATEMENT: >>>
+When `confidence_level` is None, `Finding._fill_derived` sets it from the clamped confidence: `high` at 0.75 or
+more, `medium` at 0.4 or more, else `low`. A level given by the producer is kept.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The test checks the `low` case only; the 0.75 and 0.4 thresholds are checked by reading the validator.
+<<<
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-002
+
+[REQUIREMENT]
+UID: LLR-RPT-006
+STATUS: Active
+TITLE: Seconds window from the millisecond window
+STATEMENT: >>>
+`Finding._fill_derived` sets `t_start_s` to `timestamp_start_ms / 1000.0` when `t_start_s` is None and
+`timestamp_start_ms` is not, and `t_end_s` from `timestamp_end_ms` in the same way. Values given by the producer
+are kept.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-002
+
+[REQUIREMENT]
+UID: LLR-RPT-007
+STATUS: Active
+TITLE: Params list includes the changed parameters
+STATEMENT: >>>
+`Finding._fill_derived` sets `params` to the names already in `params` followed by the `param_name` of each
+entry of `param_changes`, with empty names and repeats removed and first-seen order kept. The validator runs
+when a `Finding` is constructed or loaded, not when a field is assigned afterwards.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-002
+- TYPE: Parent
+  VALUE: HLR-RPT-015
+
+[REQUIREMENT]
+UID: LLR-RPT-008
+STATUS: Active
+TITLE: AnalyserResult fields and defaults
+STATEMENT: >>>
+`AnalyserResult` has the required fields `analyser` (str), `display_name` (str) and `findings` (list of
+`Finding`), and the defaulted fields `health_score` (float, 100.0), `skipped` (bool, False), `skip_reason`
+(str or None), `processing_ms` (int, 0), `key_metrics` (dict of str to float, empty) and `assessed` (bool,
+True).
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-003
+
+[REQUIREMENT]
+UID: LLR-RPT-009
+STATUS: Active
+TITLE: Skipped forces unassessed
+STATEMENT: >>>
+On validation `AnalyserResult._skipped_is_unassessed` sets `assessed` to False when `skipped` is true.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-003
+
+[REQUIREMENT]
+UID: LLR-RPT-010
+STATUS: Active
+TITLE: FlightMDReport fields
+STATEMENT: >>>
+`FlightMDReport` has the required fields `report_id` (str), `overall_score` (float), `score_label` (str),
+`letter_grade` (str), `executive_summary` (str), `metadata` (`FlightMetadata`), `findings` (list of `Finding`),
+`param_change_sheet` (list of `ParamRecommendation`), `analyser_results` (list of `AnalyserResult`),
+`processing_time_ms` (int), `file_name` (str) and `file_size_bytes` (int), and the defaulted fields
+`schema_version` (str, `"1.7"`), `assessed_fraction` (float or None) and `generated_at` (str or None). A loaded
+report keeps the `schema_version` stored in it.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-001
+- TYPE: Parent
+  VALUE: HLR-RPT-015
+
+[REQUIREMENT]
+UID: LLR-RPT-011
+STATUS: Active
+TITLE: FlightMetadata fields
+STATEMENT: >>>
+`FlightMetadata` has the required field `duration_seconds` (float, s) and the defaulted fields
+`firmware_version`, `hardware_id`, `airframe_name`, `vehicle_type`, `log_start_utc`, `px4_version`,
+`location_name`, `log_sha256`, `source_format`, `planning_brief_sha256` (str or None), `airframe_id` (int or
+None), `arm_count` (int, 0), `flight_modes_used`, `available_topics`, `parse_warnings` (list of str, empty),
+`max_altitude_m`, `max_speed_ms`, `total_distance_m` (float or None), `weather` (dict or None), `gps_path`
+(list of lists of float, or None), `gps_path_wind_speed_ms`, `gps_path_hdop` (list of float or None entries, or
+None), `gps_path_t_s` (list of float, or None) and `armed_windows` (list of lists of float, or None).
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-001
+
+[REQUIREMENT]
+UID: LLR-RPT-012
+STATUS: Active
+TITLE: utc_iso and MIN_EPOCH_US
+STATEMENT: >>>
+`utc_iso(epoch_us)` returns the UTC time of `epoch_us / 1e6` seconds since the epoch formatted
+`%Y-%m-%dT%H:%M:%SZ` (the fraction of a second is dropped). `MIN_EPOCH_US` is 1262304000000000
+(2010-01-01T00:00:00Z in microseconds).
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test in this item's files calls `utc_iso` directly. A review checks the format string, the UTC time zone and
+the constant.
+<<<
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-028
+
+[REQUIREMENT]
+UID: LLR-RPT-013
+STATUS: Active
+TITLE: Package exports
+STATEMENT: >>>
+`flightmd_core.models` exports `FlightMetadata`, `Severity`, `Category`, `ParamRecommendation`, `Finding`,
+`AnalyserResult` and `FlightMDReport`. `flightmd_core.services` exports `ULogParser`, `ScoreCalculator`,
+`ReportBuilder` and `ExplanationEngine`.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+The tests import from the submodules, not from the packages. A review reads the two `__all__` lists.
+<<<
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-001
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Score (flightmd_core/services/score_calculator.py)
+
+[REQUIREMENT]
+UID: LLR-RPT-014
+STATUS: Active
+TITLE: Weights
+STATEMENT: >>>
+`ScoreCalculator.__init__` takes an optional dict of module name to weight; when it is None the weights are
+`module_weights()` from the analyser registry (modules with weight 0 are absent from it; the built-in weights
+sum to 100).
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-004
+
+[REQUIREMENT]
+UID: LLR-RPT-015
+STATUS: Active
+TITLE: Weighted mean
+STATEMENT: >>>
+For each result that is assessed and whose weight is above 0, `ScoreCalculator.calculate` sets the result's
+`health_score` to `max(0.0, min(100.0, health_score))` and adds `health_score * weight` and `weight` to two
+sums. With a total weight above 0 it returns `(overall, label, grade)` where `overall` is the weighted sum
+divided by the total weight, held to 0 to 100 and rounded to 1 decimal place, and the label and grade are read
+from `BANDS` for that rounded value.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-004
+
+[REQUIREMENT]
+UID: LLR-RPT-016
+STATUS: Active
+TITLE: Which results are left out
+STATEMENT: >>>
+`ScoreCalculator.calculate` sets `assessed` to False on every result with `skipped` true, and leaves out of the
+sums every result whose module name has no weight or a weight of 0 or less, and every result with `assessed`
+false.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-004
+- TYPE: Parent
+  VALUE: HLR-RPT-003
+
+[REQUIREMENT]
+UID: LLR-RPT-017
+STATUS: Active
+TITLE: Nothing assessed
+STATEMENT: >>>
+`ScoreCalculator.calculate` returns `(0.0, "Not assessed", "-")` when the total weight of the results it
+counted is 0, which includes an empty result list.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-005
+
+[REQUIREMENT]
+UID: LLR-RPT-018
+STATUS: Active
+TITLE: Band table
+STATEMENT: >>>
+`BANDS` is the list `(90, "Excellent", "A")`, `(80, "Good", "B")`, `(70, "Caution", "C")`,
+`(60, "Caution", "D")`, `(50, "Warning", "E")`, `(0, "Critical", "F")`. `ScoreCalculator.get_letter_grade`
+and `ScoreCalculator._label` each return the grade or label of the first row whose floor is at or below the
+score, and `"F"` or `"Critical"` when no row matches (a negative or NaN score).
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-006
+
+[REQUIREMENT]
+UID: LLR-RPT-019
+STATUS: Active
+TITLE: Assessed fraction
+STATEMENT: >>>
+`ScoreCalculator.assessed_fraction` returns the sum of the weights of the results that are assessed and not
+skipped, divided by the sum of all weights, rounded to 3 decimal places; it returns 0.0 when the sum of all
+weights is 0 or less. A result whose module has no weight adds 0.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-007
+
+[REQUIREMENT]
+UID: LLR-RPT-020
+STATUS: Active
+TITLE: A NaN module score in the mean
+STATEMENT: >>>
+In `ScoreCalculator.calculate` a NaN `health_score` of an assessed, weighted module is set to 0.0 before it
+enters the mean; positive infinity is held to 100.0 and negative infinity to 0.0, and the result object keeps
+the value used.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+COMMENT: >>>
+Until problem report PR-002 was fixed, the clamp turned NaN into 100.0, so a broken module score counted as a
+perfect one.
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-004
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Report assembly (flightmd_core/services/report_builder.py)
+
+[REQUIREMENT]
+UID: LLR-RPT-021
+STATUS: Active
+TITLE: Sanitising results
+STATEMENT: >>>
+`ReportBuilder.build` calls `_sanitise_finding` on every finding of the `findings` argument and on every
+finding inside each result; for each result it replaces `key_metrics` by the entries whose value is not None
+and is finite (as float), and sets a `health_score` that is not finite to 0.0.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-013
+
+[REQUIREMENT]
+UID: LLR-RPT-022
+STATUS: Active
+TITLE: Sanitising one finding
+STATEMENT: >>>
+`ReportBuilder._sanitise_finding` replaces a `chart_data` that is not None by `clean(chart_data)` (numpy
+values to Python values, NaN and infinity to None, dict keys to str), removes from `param_changes` every entry
+whose `current_value` or `suggested_value` is not finite, and sets `params` to its current names followed by
+the names in the remaining `param_changes`, repeats removed, order kept.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Tests cover the chart data and the params list. No test passes a recommendation with a non-finite value; that
+filter is checked by reading the function.
+<<<
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-013
+- TYPE: Parent
+  VALUE: HLR-RPT-012
+
+[REQUIREMENT]
+UID: LLR-RPT-023
+STATUS: Active
+TITLE: Sanitising metadata
+STATEMENT: >>>
+`ReportBuilder._sanitise_metadata` dumps the metadata to a dict, applies `clean` to it, sets
+`duration_seconds` to 0.0 when it came out None, and validates the dict back into the same model class. A NaN
+inside `gps_path` or `gps_path_t_s` becomes None there and the validation raises (those lists take floats
+only); the caller prevents this by filling path NaN with 0.0 before the build.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The test covers `duration_seconds`, `max_altitude_m` and `gps_path_hdop`. The failure on a NaN in `gps_path` is
+checked by reading the model types and is not exercised.
+<<<
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-013
+
+[REQUIREMENT]
+UID: LLR-RPT-024
+STATUS: Active
+TITLE: Order of findings
+STATEMENT: >>>
+`ReportBuilder.build` sorts the `findings` argument with Python's stable sort on the key
+`(SEVERITY_ORDER[severity], -confidence)`, where `SEVERITY_ORDER` is critical 0, warning 1, info 2, good 3 and
+an unknown severity counts as 99. The findings inside `analyser_results` are not reordered.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-011
+
+[REQUIREMENT]
+UID: LLR-RPT-025
+STATUS: Active
+TITLE: Change sheet: first recommendation wins
+STATEMENT: >>>
+`ReportBuilder._deduplicate_params` walks the sorted findings and their `param_changes` in order and keeps,
+per `param_name`, a copy (`model_copy`) of the first recommendation met. A later recommendation for a kept name
+with the same `change_direction` is dropped. The sheet is the kept copies in first-met order. The
+recommendations on the findings are not modified.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-012
+
+[REQUIREMENT]
+UID: LLR-RPT-026
+STATUS: Active
+TITLE: Change sheet: conflict note
+STATEMENT: >>>
+For a later recommendation whose `change_direction` differs from the kept one, `_deduplicate_params` records
+the note `<direction> to <suggested_value in %g> (<finding title>)`, and after the walk sets the kept entry's
+`reason` to `<reason> Another check suggests: <notes joined by "; ">. Review before changing.`
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-012
+
+[REQUIREMENT]
+UID: LLR-RPT-027
+STATUS: Active
+TITLE: Report fields set by the builder
+STATEMENT: >>>
+`ReportBuilder.build` returns a `FlightMDReport` with `report_id` set to `str(uuid.uuid4())`, `overall_score`
+from the score tuple (0.0 when not finite), `score_label` and `letter_grade` from the tuple, the summary, file
+name and size as given, `metadata` from `_sanitise_metadata`, the sorted findings, the change sheet, the results,
+`processing_time_ms` set to the wall-clock milliseconds since `start_time_ms` (0 when `start_time_ms` is None
+or 0), `assessed_fraction` from a new default-weight `ScoreCalculator().assessed_fraction(results)`, and
+`generated_at` set to the current UTC time formatted `%Y-%m-%dT%H:%M:%SZ`.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-001
+- TYPE: Parent
+  VALUE: HLR-RPT-007
+- TYPE: Parent
+  VALUE: HLR-RPT-031
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Explanations (flightmd_core/services/explanation_engine.py)
+
+[REQUIREMENT]
+UID: LLR-RPT-028
+STATUS: Active
+TITLE: Template table
+STATEMENT: >>>
+`TEMPLATES` maps a `kind` to a pair (plain-English text, fallback recommendation) for 42 kinds: 3
+`oscillation.*`, 5 `vibration.*`, 4 `motors.*`, 7 `gps.*`, 9 `ekf.*`, 4 `battery.*`, 8 `params.*` and 2
+`power.*`. The texts are constants; no value from the finding is put into them. The `oscillation.rate_d`
+recommendation says to lower the rate D gain, never to raise it.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-008
+
+[REQUIREMENT]
+UID: LLR-RPT-029
+STATUS: Active
+TITLE: Plain-English text of one finding
+STATEMENT: >>>
+`ExplanationEngine._explain` looks `kind` (or the empty string when it is None) up in `TEMPLATES` and sets
+`plain_english` to the template text, or to `technical_summary` when there is no template. Any `plain_english`
+the producer set is overwritten in both cases.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-008
+
+[REQUIREMENT]
+UID: LLR-RPT-030
+STATUS: Active
+TITLE: Recommendation of one finding
+STATEMENT: >>>
+`ExplanationEngine._explain` leaves `recommendation` as it is unless it is empty or equal to
+`technical_summary`; then it sets it to the template recommendation for the `kind`, else to
+`CATEGORY_FALLBACK[category]` (texts exist for oscillation, vibration, motors, gps, ekf, battery and
+parameters; none for system and ascent_profile), else to `DEFAULT_RECOMMENDATION` ("Consult the log details or
+the autopilot's documentation for troubleshooting.").
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-009
+
+[REQUIREMENT]
+UID: LLR-RPT-031
+STATUS: Active
+TITLE: explain_findings and the constructor
+STATEMENT: >>>
+`ExplanationEngine.explain_findings` is a coroutine that applies `_explain` to each finding in place and
+returns the same list; it awaits nothing. The constructor accepts and ignores any arguments and sets
+`token_usage` to zero input and output tokens.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-008
+
+[REQUIREMENT]
+UID: LLR-RPT-032
+STATUS: Active
+TITLE: Summary when nothing was assessed
+STATEMENT: >>>
+When `score_label` equals `"Not assessed"`, `ExplanationEngine.generate_summary` returns one fixed text that
+begins "No health score: none of the analysis modules found data they could assess in this log, so this is not
+a clean bill of health." and contains no score, no finding and no digit.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-010
+
+[REQUIREMENT]
+UID: LLR-RPT-033
+STATUS: Active
+TITLE: Summary sentences
+STATEMENT: >>>
+Otherwise `generate_summary` joins with spaces: "Flight health score is `<score, no decimals>`/100
+(`<label>`) based on `<duration_seconds, no decimals>`s of log data."; then, if any finding is critical,
+"CRITICAL issue(s) detected: `<titles of the critical findings, comma separated>`. Action is required to ensure
+flight safety."; else if any is a warning, "Warning(s) detected: `<titles>`. Review the recommendations to
+optimize performance and reliability."; else if there are findings, "`<n>` minor note(s); no warnings or
+critical issues."; else "No anomalies detected in the checks that could run.". When criticals exist the
+warnings are not named.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-010
+
+[REQUIREMENT]
+UID: LLR-RPT-034
+STATUS: Active
+TITLE: Summary names the unassessed modules
+STATEMENT: >>>
+When `results` is given and any result has `assessed` false, `generate_summary` appends "Not assessed (no
+usable data): `<display names, comma separated>`." The same words are used for a module that was skipped
+because it raised an error.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-010
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Optional AI (flightmd_core/services/ai_enhancer.py)
+
+[REQUIREMENT]
+UID: LLR-RPT-035
+STATUS: Active
+TITLE: Provider constants
+STATEMENT: >>>
+The module constants are `DEFAULT_ANTHROPIC_MODEL` `"claude-sonnet-4-6"`, `DEFAULT_GROQ_MODEL`
+`"llama-3.3-70b-versatile"`, `GROQ_BASE_URL` `"https://api.groq.com/openai/v1"`, `REQUEST_TIMEOUT_S` 30.0
+(seconds) and `MAX_RETRIES` 2.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: No test reads these constants or makes a real provider call. A review reads the values.
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-023
+- TYPE: Parent
+  VALUE: HLR-RPT-026
+
+[REQUIREMENT]
+UID: LLR-RPT-036
+STATUS: Active
+TITLE: Provider selection
+STATEMENT: >>>
+`AIEnhancer.__init__` takes `provider`, `anthropic_api_key`, `groq_api_key`, `model` and the old `api_key`. A
+non-empty `api_key` with no `anthropic_api_key` is used as the Anthropic key and, when `provider` is None, sets
+the provider to `anthropic`. The provider is lower-cased and stripped and defaults to `groq`. For `groq` the
+model defaults to `DEFAULT_GROQ_MODEL` and a client is made only when `groq_api_key` is non-empty; for
+`anthropic` the model defaults to `DEFAULT_ANTHROPIC_MODEL` and a client is made only when `anthropic_api_key`
+is non-empty; any other provider logs a warning and makes no client.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-023
+
+[REQUIREMENT]
+UID: LLR-RPT-037
+STATUS: Active
+TITLE: Client creation
+STATEMENT: >>>
+`AIEnhancer._init_groq` imports `openai` and makes `openai.AsyncOpenAI(api_key, base_url=GROQ_BASE_URL,
+timeout=REQUEST_TIMEOUT_S, max_retries=MAX_RETRIES)`; `AIEnhancer._init_anthropic` imports `anthropic` and
+makes `anthropic.AsyncAnthropic(api_key, timeout=REQUEST_TIMEOUT_S, max_retries=MAX_RETRIES)`. Each sets the
+matching call function. On `ImportError` each logs a warning and leaves the client None. No request is sent
+when the client is made.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Tests make both clients with fake keys. The `ImportError` branch and the timeout and retry arguments are
+checked by reading the code.
+<<<
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-023
+
+[REQUIREMENT]
+UID: LLR-RPT-038
+STATUS: Active
+TITLE: is_configured and complete
+STATEMENT: >>>
+`AIEnhancer.is_configured` is true when a client exists. `AIEnhancer.complete(prompt, max_tokens, system)`
+raises `RuntimeError("AI enhancer is not configured")` when it is false; otherwise it awaits the provider call
+function with the prompt, `max_tokens` and the system prompt (default `SYSTEM_PROMPT`) and returns its text.
+It catches nothing.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-023
+
+[REQUIREMENT]
+UID: LLR-RPT-039
+STATUS: Active
+TITLE: Provider request shape
+STATEMENT: >>>
+`AIEnhancer._call_anthropic` calls `messages.create` with the model, `max_tokens`, the system prompt as
+`system` and one user message holding the prompt, and returns the joined text blocks, stripped.
+`AIEnhancer._call_openai_compatible` calls `chat.completions.create` with the model, `max_tokens` and a system
+message followed by a user message, and returns the first choice's content (empty string when None), stripped.
+Neither sends any other field.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+The tests replace the call function, so neither request is built under test. A review reads the two functions.
+<<<
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-023
+- TYPE: Parent
+  VALUE: HLR-RPT-026
+
+[REQUIREMENT]
+UID: LLR-RPT-040
+STATUS: Active
+TITLE: clean_text
+STATEMENT: >>>
+`clean_text(text, limit=300)` converts `text` to str, replaces each control character (U+0000 to U+001F,
+U+007F to U+009F) and each zero-width or bidirectional formatting character in its pattern by a space, removes
+the characters `<`, `>`, backtick, `{`, `}`, `[` and `]`, collapses all whitespace runs to one space and trims
+the ends, and when the result is longer than `limit` cuts it to `limit - 1` characters and appends one
+ellipsis character (U+2026).
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-022
+
+[REQUIREMENT]
+UID: LLR-RPT-041
+STATUS: Active
+TITLE: numbers_kept
+STATEMENT: >>>
+`numbers_kept(original, rewritten)` returns True when every match of the pattern `\d+(?:\.\d+)?` in `original`
+is also a match of it in `rewritten` (compared as text). It returns True when `original` holds no number, and
+it does not look at numbers the rewrite adds.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The test covers a kept and a dropped number. The two last properties are read from the code; they are recorded
+as a gap (problem report PR-005).
+<<<
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-021
+
+[REQUIREMENT]
+UID: LLR-RPT-042
+STATUS: Active
+TITLE: Summary prompt
+STATEMENT: >>>
+`AIEnhancer.polish_summary` builds one prompt: an instruction to rewrite the summary in 2-3 sentences keeping
+every fact and number, then between `<report>` and `</report>` the line "Flight duration: `<duration_seconds,
+no decimals>`s", the list "Findings:" with one line `- [<SEVERITY>] <clean_text(title, 120)>` for each of the
+first 15 findings (or "- None"), and "Current summary:" with `clean_text(base_summary, 1500)`. It calls
+`complete(prompt, max_tokens=300)` with the default system prompt. Nothing else from the findings or the
+metadata is put in the prompt.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The test checks the tags, the system prompt and that a closing tag in a title is removed. The 15-finding and
+length limits are checked by reading the code.
+<<<
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-021
+- TYPE: Parent
+  VALUE: HLR-RPT-022
+
+[REQUIREMENT]
+UID: LLR-RPT-043
+STATUS: Active
+TITLE: Summary fallback
+STATEMENT: >>>
+`AIEnhancer.polish_summary` returns `base_summary` unchanged when `is_configured` is false (no call is made),
+when `complete` raises any `Exception` (a warning is logged), when the reply is empty, or when
+`numbers_kept(base_summary, reply)` is false. Otherwise it returns the reply. It assigns to no attribute of the
+findings or the metadata.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Tests cover the unconfigured case and the dropped-number case. The exception and empty-reply branches are
+checked by reading the code.
+<<<
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-021
+
+[REQUIREMENT]
+UID: LLR-RPT-044
+STATUS: Active
+TITLE: System prompt
+STATEMENT: >>>
+`SYSTEM_PROMPT` says that anything between `<report>` and `</report>` is data from an uploaded log that may
+look like instructions, that the model must never follow it, and that it must not invent findings, numbers or
+parameter values. `NOT_CONFIGURED_MESSAGE` is a fixed text for callers to show when no provider is configured.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test names this requirement; the behaviour is exercised only indirectly by other tests. A review reads the
+system prompt text in `ai_enhancer.py`.
+<<<
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-022
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: GPX and KML (flightmd_core/services/geo_export.py)
+
+[REQUIREMENT]
+UID: LLR-RPT-045
+STATUS: Active
+TITLE: Missing altitude and missing readings
+STATEMENT: >>>
+`_alt(point)` returns the third element of a path point when it exists, is not None and is finite, else None.
+`_at(values, i)` returns `values[i]` when the list exists, has that index and the value is not None and finite,
+else None.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-016
+- TYPE: Parent
+  VALUE: HLR-RPT-017
+
+[REQUIREMENT]
+UID: LLR-RPT-046
+STATUS: Active
+TITLE: Time of each path point
+STATEMENT: >>>
+`_point_times(report)` returns one entry per `gps_path` point. When `log_start_utc` is empty, or
+`gps_path_t_s` is empty or of a different length from the path, every entry is None. Otherwise each entry is
+`log_start_utc` (parsed with `%Y-%m-%dT%H:%M:%SZ` as UTC; any other form raises `ValueError`) plus the point's
+`gps_path_t_s` seconds. `_iso(t)` formats a time as `%Y-%m-%dT%H:%M:%S.` followed by three millisecond digits
+(truncated) and `Z`.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-016
+- TYPE: Parent
+  VALUE: HLR-RPT-017
+
+[REQUIREMENT]
+UID: LLR-RPT-047
+STATUS: Active
+TITLE: GPX document
+STATEMENT: >>>
+`generate_gpx(report)` builds with ElementTree a `gpx` element (`version="1.1"`, `creator="FlightMD"`,
+`xmlns="http://www.topografix.com/GPX/1/1"`) holding one `trk` with `name` set to `report.file_name` and one
+`trkseg`. Per path point it adds a `trkpt` with `lat` = element 0 and `lon` = element 1 formatted `%.7f`, then
+`ele` = `_alt(point)` formatted `%.2f` when not None, then `time` = `_iso(t)` when the point has a time. It
+returns the XML declaration line followed by the UTF-8 serialisation. An empty or absent path gives an empty
+`trkseg`.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-016
+
+[REQUIREMENT]
+UID: LLR-RPT-048
+STATUS: Active
+TITLE: KML line
+STATEMENT: >>>
+`generate_kml(report)` builds a `kml` element (`xmlns="http://www.opengis.net/kml/2.2"`) with a `Document`
+whose `name` is `report.file_name` and a `Placemark` named "Flight Path" holding a `LineString` with
+`altitudeMode` `relativeToGround`, `extrude` 1 and `coordinates` set to the points joined by spaces, each
+`lon,lat,alt` with longitude and latitude `%.7f` and altitude `%.2f`, altitude 0 when `_alt` gives None. It
+returns the XML declaration line followed by the UTF-8 serialisation. The altitude written is the `gps_path`
+value unchanged, whatever its reference.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-017
+
+[REQUIREMENT]
+UID: LLR-RPT-049
+STATUS: Active
+TITLE: KML path points
+STATEMENT: >>>
+When the path is not empty and any of `gps_path_hdop`, `gps_path_wind_speed_ms` or `gps_path_t_s` is non-empty,
+`generate_kml` adds a `Folder` named "Path points" with `visibility` 0 holding one `Placemark` per path point:
+`visibility` 0, a `TimeStamp/when` = `_iso(t)` when the point has a time, an `ExtendedData` with a
+`Data name=...`/`value` (formatted `%g`) for each of `t_s`, `hdop` and `wind_speed_ms` that `_at` returns for
+the point, and a `Point` with `altitudeMode` `relativeToGround` and `coordinates` `lon,lat,alt` as for the line.
+Otherwise no folder is written.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-017
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Place name (flightmd_core/services/geocoding.py)
+
+[REQUIREMENT]
+UID: LLR-RPT-050
+STATUS: Active
+TITLE: Reverse geocoding request
+STATEMENT: >>>
+`reverse_geocode(lat, lon)` returns None without a request when either value is None or both are 0. Otherwise
+it sends one GET to `https://nominatim.openstreetmap.org/reverse` with the query `lat` and `lon` (each `%.5f`),
+`format=jsonv2` and `zoom=10`, the header `User-Agent: FlightMD/1.0 (flight log analyser)` and a timeout of
+2.0 s.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The test covers the None and 0,0 cases. No test reads the URL, header or timeout; they are checked by reading.
+<<<
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-025
+- TYPE: Parent
+  VALUE: HLR-RPT-026
+
+[REQUIREMENT]
+UID: LLR-RPT-051
+STATUS: Active
+TITLE: Reverse geocoding result
+STATEMENT: >>>
+`reverse_geocode` returns None and logs a warning when the request or the JSON decoding raises any
+`Exception`. From the answer's `address` it takes the first non-empty of `city`, `town`, `village`, `county`,
+`state` as the locality, and `country`. It returns "`<locality>, <country>`" when both exist, else whichever
+exists, else the answer's `display_name` (None when absent).
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-025
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Weather (flightmd_core/services/weather_lookup.py)
+
+[REQUIREMENT]
+UID: LLR-RPT-052
+STATUS: Active
+TITLE: Flight date
+STATEMENT: >>>
+`_flight_date(timestamp_utc)` returns None for an empty value; otherwise it parses the text with
+`datetime.fromisoformat` after replacing `Z` by `+00:00` and returns the date as `YYYY-MM-DD`. On `ValueError`
+it logs a warning and returns None.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: The test covers the missing date. The unparseable-text branch is checked by reading.
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-024
+
+[REQUIREMENT]
+UID: LLR-RPT-053
+STATUS: Active
+TITLE: When no weather lookup is made
+STATEMENT: >>>
+`fetch_weather(lat, lon, timestamp_utc)` returns the "unavailable" dict (`temperature_max_c`,
+`temperature_min_c`, `wind_speed_max_ms`, `rain_sum_mm` all None, `description` "Weather data unavailable")
+without any request when `lat` or `lon` is None, when both are 0, or when `_flight_date` returns None. A
+position with only one of the two equal to 0 is looked up.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-024
+
+[REQUIREMENT]
+UID: LLR-RPT-054
+STATUS: Active
+TITLE: Weather request
+STATEMENT: >>>
+`fetch_weather` builds the query `latitude` and `longitude` (each `%.4f`), `start_date` and `end_date` both
+the flight date, `daily=temperature_2m_max,temperature_2m_min,wind_speed_10m_max,rain_sum` and `timezone=auto`,
+and tries `https://archive-api.open-meteo.com/v1/archive` and then `https://api.open-meteo.com/v1/forecast`.
+`_get` sends a GET with the header `User-Agent: FlightMD/1.0` and a timeout of 2.0 s and decodes the JSON.
+A request that raises any `Exception` is logged and the next host is tried; an answer whose first
+`temperature_2m_max` and first `wind_speed_10m_max` are both None also moves on to the next host. When neither
+host gives data the "unavailable" dict is returned.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Tests cover the date in the query and the move to the forecast host. The header, the timeout and the exception
+branch are checked by reading.
+<<<
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-024
+- TYPE: Parent
+  VALUE: HLR-RPT-026
+
+[REQUIREMENT]
+UID: LLR-RPT-055
+STATUS: Active
+TITLE: Weather result
+STATEMENT: >>>
+From the first value of each daily list `fetch_weather` returns `temperature_max_c` and `temperature_min_c`
+as received (deg C), `wind_speed_max_ms` = the received wind (km/h) divided by 3.6 and rounded to 2 decimal
+places (None when absent), `rain_sum_mm` as received, and `description` = the parts that apply joined by ", ":
+"Temp: `<min>` deg C to `<max>` deg C" (written with the degree sign) when both exist, "Wind: `<m/s>` m/s max"
+when wind exists, "Rain: `<mm>` mm" when rain is above 0, "Dry" when rain is 0, and nothing for rain when it is
+None.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-024
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Airframe names (flightmd_core/services/airframes.py)
+
+[REQUIREMENT]
+UID: LLR-RPT-056
+STATUS: Active
+TITLE: PX4 airframe lookup
+STATEMENT: >>>
+`px4_airframe(autostart)` returns `(None, None)` when the value is None or cannot be turned into an int;
+otherwise it looks `str(int(autostart))` up in the table read once (cached) from the package file
+`data/px4_airframes.json` and returns the entry's `name` and `type` (type None when absent), or `(None, None)`
+when the id is not in the table.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-027
+
+[REQUIREMENT]
+UID: LLR-RPT-057
+STATUS: Active
+TITLE: Multirotor class and type names
+STATEMENT: >>>
+`_int(params, name)` returns the parameter as an int, or None when it is absent or not a number.
+`_multirotor(cls_map, cls, typ)` returns None when the class is not in the map; the class name alone when the
+class is one of 6, 8, 9, 10, 11, 13, 15, 16, 17 (frame type ignored by the firmware) or the type is not in
+`COPTER_TYPE`; else "`<class name> <type name>`". `COPTER_CLASS` names classes 1 to 17 and `COPTER_TYPE` types
+0 to 5 and 10 to 19.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-027
+
+[REQUIREMENT]
+UID: LLR-RPT-058
+STATUS: Active
+TITLE: ArduPilot frame name
+STATEMENT: >>>
+`ardupilot_frame(params, vehicle_type)` treats a None vehicle type as `Rover` when `ATC_STR_RAT_P` or
+`CRUISE_SPEED` is in the parameters, and `VTOL` as `Plane`. For `Sub` it returns `SUB_CONFIG[FRAME_CONFIG]`.
+For `Rover` it returns the `ROVER_CLASS` name of `FRAME_CLASS`, followed by the `ROVER_TYPE` name of
+`FRAME_TYPE` when both exist. For `Plane`, or when `Q_ENABLE` is in the parameters, it returns "QuadPlane
+`<multirotor name from Q_FRAME_CLASS and Q_FRAME_TYPE>`" (or "QuadPlane" alone) when `Q_ENABLE` is 1 or more,
+else "Plane" for a Plane and None otherwise. In every other case it returns the multirotor name from
+`FRAME_CLASS` and `FRAME_TYPE`, or None.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-027
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: PDF (flightmd_core/exporters/pdf.py and templates)
+
+[REQUIREMENT]
+UID: LLR-RPT-059
+STATUS: Active
+TITLE: Colour filters
+STATEMENT: >>>
+`severity_colour(severity)` returns the colour of `SEVERITY_COLOURS` for the severity's value, lower-cased
+(critical `#FF3D3D`, warning `#FF7A2F`, info `#3A9CF8`, good `#0DD97C`), else `#888888`.
+`score_colour(score)` returns `#888888` for None, else the colour of the first `SCORE_COLOURS` row whose floor
+is at or below the score: 90 `#0DD97C`, 75 `#3A9CF8`, 60 `#E8A020`, 40 `#FF7A2F`, 0 `#FF3D3D`. These floors are
+not the floors of `BANDS`.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: No test calls the colour filters. A review reads the two tables.
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-018
+
+[REQUIREMENT]
+UID: LLR-RPT-060
+STATUS: Active
+TITLE: Time filter
+STATEMENT: >>>
+`format_ms(ms)` returns an em dash for None, else the log-relative time as `MM:SS.t` (minutes and seconds two
+digits each, `t` the tenth of a second, truncated) from `ms / 1000`.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: No test calls `format_ms`. A review reads the function.
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-018
+
+[REQUIREMENT]
+UID: LLR-RPT-061
+STATUS: Active
+TITLE: Template environment
+STATEMENT: >>>
+`template_env()` returns one cached Jinja2 `Environment` that loads templates from `TEMPLATE_DIR` (the
+`templates` directory beside `pdf.py`, holding `report.html` and `airframe_record.html`), auto-escapes `html`
+and `xml` templates, and has the filters `severity_colour`, `score_colour` and `format_ms`. When Jinja2 cannot
+be imported it raises `RuntimeError(INSTALL_HINT)`.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-018
+- TYPE: Parent
+  VALUE: HLR-RPT-020
+
+[REQUIREMENT]
+UID: LLR-RPT-062
+STATUS: Active
+TITLE: HTML to PDF
+STATEMENT: >>>
+`_write_pdf(html)` imports WeasyPrint when called and raises `RuntimeError(INSTALL_HINT)` on `ImportError` or
+`OSError`; `INSTALL_HINT` names `pip install 'flightmd-core[pdf]'` and the Pango system libraries. It renders
+under one process-wide lock (one render at a time) with `base_url` = `TEMPLATE_DIR` and the stylesheet
+`BASE_CSS`: A4 pages with margins 20 mm top, 18 mm sides, 24 mm bottom, a bottom-centre footer "FlightMD · Page
+n of m", and a top-right header "Report" followed by the `report-id` string the template sets. No page carries
+a person's name or a protective marking.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Tests cover the missing-WeasyPrint error and the footer and header text of `BASE_CSS`. No test renders a PDF;
+the lock and the page geometry are checked by reading.
+<<<
+ALLOCATION: report
+COMMENT: >>>
+Problem report PR-018, fixed: the header read "CONFIDENTIAL" and the footer carried a personal name.
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-018
+- TYPE: Parent
+  VALUE: HLR-RPT-020
+
+[REQUIREMENT]
+UID: LLR-RPT-063
+STATUS: Active
+TITLE: Report rendering functions
+STATEMENT: >>>
+`render_report_html(report)` renders `report.html` with `report` and `generated_at` = `_now()`, the current
+UTC time formatted `%Y-%m-%d %H:%M UTC` (the time of rendering, not `report.generated_at`).
+`render_report_pdf(report)` returns `_write_pdf` of that HTML and logs the report id and the size in bytes.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The test renders the HTML and checks escaping. `_now` and `render_report_pdf` are checked by reading.
+<<<
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-018
+
+[REQUIREMENT]
+UID: LLR-RPT-064
+STATUS: Active
+TITLE: Report template content
+STATEMENT: >>>
+`report.html`, as rendered by `render_report_html`, shows in order: a header (report id, rendering time, file
+name, size in KB to 1 decimal; when `letter_grade` is "-" a grey dash, the label and "No module could assess
+this log", otherwise the overall score rounded to an integer, the label and "Grade <letter>" in the score
+colour; and when `assessed_fraction` is set, "Assessed: <n>% of the scoring weight"); "Flight Information"
+(duration `MM:SS`, arm events, flight modes, and when truthy max altitude in m, max speed in m/s, firmware,
+hardware; processing time in s; schema version); "Executive Summary"; "Findings" with the count and, when the
+list is empty, a grey line saying no module could assess the log and that this is not a clean result (letter
+grade "-"), a green line naming the assessed share when `assessed_fraction` is below 1, or the green line "No
+significant issues detected in this flight log." otherwise; "Parse Warnings" listing `metadata.parse_warnings`
+when there are any; per finding the severity, title, category, confidence as a percentage, start time (only
+when `timestamp_start_ms` is truthy), plain-English text, action, technical summary and a table of its
+parameter changes; "Parameter Change Sheet" when not empty; "Module Summary" with, per result, the display
+name, "Skipped" when skipped, "Not assessed" when not assessed, else "Ran", the score out of 100 only when
+assessed, the finding count, `processing_ms` and the skip reason; an "Internal Review Record" block; and the
+closing statement. It does not show the confidence level, weather, place name or SHA-256.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+COMMENT: >>>
+Problem report PR-004, fixed: before, an empty finding list always printed the green all-clear line, a module
+that was not assessed but not skipped showed "Ran" and its default score of 100, and grade, assessed share and
+parse warnings were not shown.
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-018
+
+[REQUIREMENT]
+UID: LLR-RPT-065
+STATUS: Active
+TITLE: Airframe record rendering
+STATEMENT: >>>
+`render_airframe_record_html(airframe_label, flights, config, total_flight_hours, hours_since_maintenance,
+maintenance_due)` renders `airframe_record.html` with those values and `generated_at` = `_now()`: a header with
+the label and the hours since maintenance (1 decimal) marked "Maintenance Due" or "Hours OK"; a statement that
+the record "is not a regulatory certification"; a summary (flight count, total hours to 2 decimals, maintenance
+interval or "Not set", last maintenance date or "None logged"); the flight history (date, file, duration in
+min, score, grade) or "No flights logged for this airframe yet."; the maintenance log (date, type, notes) or
+"No maintenance entries logged for this airframe yet."; and the checklist items when there are any.
+`render_airframe_record_pdf(**kwargs)` returns `_write_pdf` of that HTML and logs the size and flight count.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-019
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Schema export (scripts/export_schema.py)
+
+[REQUIREMENT]
+UID: LLR-RPT-066
+STATUS: Active
+TITLE: Schema export script
+STATEMENT: >>>
+`scripts/export_schema.py`, run as a script, reads the default of `FlightMDReport.schema_version`, writes
+`FlightMDReport.model_json_schema()` as JSON with an indent of 2, a final newline, UTF-8 and LF line ends to
+`docs/schema/flightmd-report-<version>.json.tmp`, replaces `docs/schema/flightmd-report-<version>.json` with it
+(`os.replace`) and prints the path. It creates the directory when missing and takes no arguments.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test runs the script. `tests/test_schema.py` checks its product: the published file equals the model's
+schema. A review reads the script.
+<<<
+ALLOCATION: tools
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-RPT-014
+
+[[/SECTION]]

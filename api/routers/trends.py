@@ -1,4 +1,6 @@
-"""Read-only views over finished reports: one airframe's history, and a two-flight diff."""
+"""Read-only views over finished reports: one airframe's history, and a two-flight diff.
+
+@relation(LLR-API-035, LLR-API-037, scope=file)"""
 
 from typing import Optional
 
@@ -13,6 +15,7 @@ router = APIRouter(tags=["Trends"])
 
 
 def _module_score(ar) -> Optional[float]:
+    """@relation(LLR-API-036, scope=function)"""
     # a skipped or unassessed module has no score; 100 would plot as "perfect"
     if ar.skipped or getattr(ar, "assessed", True) is False:
         return None
@@ -20,10 +23,12 @@ def _module_score(ar) -> Optional[float]:
 
 
 def _module_scores(report: FlightMDReport) -> dict:
+    """@relation(LLR-API-036, scope=function)"""
     return {ar.analyser: _module_score(ar) for ar in report.analyser_results}
 
 
 def _key_metrics(report: FlightMDReport) -> dict:
+    """@relation(LLR-API-035, scope=function)"""
     return {
         f"{ar.analyser}.{k}": v
         for ar in report.analyser_results
@@ -79,6 +84,7 @@ def get_diff(a: str = Query(...), b: str = Query(...)) -> dict:
 
 
 def _flight_summary(report: FlightMDReport) -> dict:
+    """@relation(LLR-API-037, scope=function)"""
     return {
         "report_id": report.report_id,
         "file_name": report.file_name,
@@ -89,6 +95,7 @@ def _flight_summary(report: FlightMDReport) -> dict:
 
 
 def _deltas(before: dict, after: dict, ndigits: int) -> dict:
+    """@relation(LLR-API-038, scope=function)"""
     out = {}
     for key in sorted(set(before) | set(after)):
         va, vb = before.get(key), after.get(key)
@@ -101,14 +108,17 @@ def _deltas(before: dict, after: dict, ndigits: int) -> dict:
 
 
 def _module_score_deltas(a: FlightMDReport, b: FlightMDReport) -> dict:
+    """@relation(LLR-API-038, scope=function)"""
     return _deltas(_module_scores(a), _module_scores(b), 2)
 
 
 def _key_metric_deltas(a: FlightMDReport, b: FlightMDReport) -> dict:
+    """@relation(LLR-API-038, scope=function)"""
     return _deltas(_key_metrics(a), _key_metrics(b), 4)
 
 
 def _findings_diff(a: FlightMDReport, b: FlightMDReport) -> dict:
+    """@relation(LLR-API-039, scope=function)"""
     # Titles carry the specific value ("... at 1.1 Hz"), so matching on title is
     # close to "same finding again". Same category in both is listed separately.
     titles_a = {f.title for f in a.findings}

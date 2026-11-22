@@ -5,6 +5,8 @@ add a line to docs/schema/CHANGELOG.md. tests/test_schema.py fails until the
 published file matches the model again.
 
     python scripts/export_schema.py
+
+@relation(LLR-RPT-066, scope=file)
 """
 
 import json

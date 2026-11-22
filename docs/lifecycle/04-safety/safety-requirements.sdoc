@@ -1,0 +1,165 @@
+[DOCUMENT]
+TITLE: FlightMD safety requirements
+UID: FMD-SAF
+VERSION: Issue 1
+DATE: 2026-11-20
+OPTIONS:
+  MARKUP: Markdown
+
+[GRAMMAR]
+IMPORT_FROM_FILE: @flightmd
+
+[TEXT]
+STATEMENT: >>>
+Requirements that come out of the hazard assessment (`hazard-assessment.md`) and the FMEA (`fmea.md`). The hazard is a wrong or misleading analysis result that leads to a wrong maintenance, airworthiness or operational decision. SOURCE names the failure conditions (FC-x.y) each one answers. Each is a parent of system requirements (`docs/lifecycle/03-system/system-requirements.sdoc`). Status Proposed means the requirement is needed and the current code does not meet it; the matrix lists those as open.
+<<<
+
+[REQUIREMENT]
+UID: SAF-001
+STATUS: Active
+TITLE: Not checked is never shown as healthy
+STATEMENT: >>>
+A health-check module that could not run, could not check anything or failed shall be reported as not assessed, with the reason, and shall not add to the health score. A report in which nothing could be assessed shall say so and shall not show a passing score or grade.
+<<<
+RATIONALE: >>>
+A false "clean" is the failure most likely to lead to a vehicle flying with a fault nobody looked for.
+<<<
+SOURCE: Hazard assessment FC-4.2, FC-5.1; FMEA AN-01, AN-02, SC-01
+
+[REQUIREMENT]
+UID: SAF-002
+STATUS: Active
+TITLE: Same log, same result
+STATEMENT: >>>
+Findings, severities, scores and parameter recommendations shall come only from fixed rules applied to the log, so that the same log analysed by the same version gives the same result.
+<<<
+SOURCE: Hazard assessment FC-4.1, FC-4.3, FC-10.1
+
+[REQUIREMENT]
+UID: SAF-003
+STATUS: Active
+TITLE: The format is identified, not assumed
+STATEMENT: >>>
+The log format shall be identified from the file's content. A file that is not recognised, or is recognised and cannot be analysed, shall be refused with the reason; no file shall be parsed as a format chosen from its name alone.
+<<<
+SOURCE: Hazard assessment FC-1.2
+
+[REQUIREMENT]
+UID: SAF-004
+STATUS: Active
+TITLE: Guesses and gaps are stated
+STATEMENT: >>>
+Whatever the parser skipped, could not decode or assumed, and any fallback the analysis took (no arming data, so the whole log treated as flight), shall be stated in the report in plain words.
+<<<
+SOURCE: Hazard assessment FC-2.1, FC-2.2, FC-3.1; FMEA PA-01 to PA-05
+
+[REQUIREMENT]
+UID: SAF-005
+STATUS: Active
+TITLE: Every finding carries its evidence
+STATEMENT: >>>
+Every finding shall carry the measured values behind it, the time window in the log where one applies, a confidence and the stable identifier of the rule that fired, so that a reader can check it against the log.
+<<<
+SOURCE: Hazard assessment FC-4.1, FC-4.3
+
+[REQUIREMENT]
+UID: SAF-006
+STATUS: Active
+TITLE: The optional AI changes no finding
+STATEMENT: >>>
+The optional AI shall not add, remove or alter a finding, a severity, a score or a parameter recommendation. It may only rewrite the summary text and answer questions from the report's content, and shall be off unless configured.
+<<<
+SOURCE: Hazard assessment FC-10.1, FC-10.2
+
+[REQUIREMENT]
+UID: SAF-007
+STATUS: Active
+TITLE: Parameter recommendations are bounded and do not contradict each other silently
+STATEMENT: >>>
+A recommended parameter value shall be a finite number, shall name the parameter the vehicle in the log actually uses, and where two checks pull one parameter in opposite directions the change sheet shall say so on the entry.
+<<<
+RATIONALE: >>>
+A recommendation is the one output a user may load into a vehicle. A wrong one can change how the vehicle flies.
+<<<
+SOURCE: Hazard assessment FC-6.1, FC-6.2; FMEA RP-02, AN-05
+
+[REQUIREMENT]
+UID: SAF-008
+STATUS: Proposed
+TITLE: A recommended value stays inside the firmware's documented range
+STATEMENT: >>>
+A recommended parameter value shall lie inside the range the firmware's own metadata gives for that parameter, for the firmware version in the log; when no metadata is held for that firmware the recommendation shall say so.
+<<<
+RATIONALE: >>>
+As built, each rule computes its own suggested value; no common check compares the suggestion with the metadata table before it reaches the change sheet (problem report PR-009).
+<<<
+SOURCE: Hazard assessment FC-6.1; FMEA AN-05
+
+[REQUIREMENT]
+UID: SAF-009
+STATUS: Active
+TITLE: A report names its input
+STATEMENT: >>>
+A report shall carry the SHA-256 of the log as uploaded, its file name and size, the detected format, the report schema version and the time it was generated.
+<<<
+SOURCE: Hazard assessment FC-7.1, FC-7.2
+
+[REQUIREMENT]
+UID: SAF-010
+STATUS: Proposed
+TITLE: A report names the engine that made it
+STATEMENT: >>>
+A report shall carry the version of the analysis engine that produced it, so that a decision can be traced to the rules in force.
+<<<
+RATIONALE: >>>
+As built the report carries the schema version only, and the package states two different versions (problem report PR-001).
+<<<
+SOURCE: Hazard assessment FC-7.2
+
+[REQUIREMENT]
+UID: SAF-011
+STATUS: Active
+TITLE: The report served is the report made
+STATEMENT: >>>
+The report returned for an identifier shall be the one generated for that upload, unchanged; a reused parse shall be keyed by the SHA-256 of the log so one log's data is never used for another.
+<<<
+SOURCE: Hazard assessment FC-7.1; FMEA ST-01, IN-04
+
+[REQUIREMENT]
+UID: SAF-012
+STATUS: Active
+TITLE: Display does not change values
+STATEMENT: >>>
+Unit and theme choices in the web application shall change only how values are shown. Every converted value shall be shown with its unit.
+<<<
+SOURCE: Hazard assessment FC-11.1
+
+[REQUIREMENT]
+UID: SAF-013
+STATUS: Active
+TITLE: Checks apply to flight, and say when they could not tell
+STATEMENT: >>>
+In-flight checks shall be applied to the part of the log where the vehicle was armed or in the air when the log says which part that is, and the report shall say when it could not tell.
+<<<
+SOURCE: Hazard assessment FC-3.1, FC-3.2
+
+[REQUIREMENT]
+UID: SAF-014
+STATUS: Active
+TITLE: Results on real logs are reviewed and guarded
+STATEMENT: >>>
+The engine's results on a set of real logs of every supported autopilot family shall be reviewed by a person and kept, and a change that alters them shall fail a check until the new results are reviewed.
+<<<
+SOURCE: Hazard assessment FC-2.1, FC-4.1, FC-4.2; section 6
+
+[REQUIREMENT]
+UID: SAF-015
+STATUS: Proposed
+TITLE: Limits of use are shown with every report
+STATEMENT: >>>
+Every report, on screen and in every export a person reads, shall state that it is advisory, that a clean report is not a release to service, and that parameter changes are to be reviewed and test-flown.
+<<<
+RATIONALE: >>>
+The proposed classification rests on assumptions A1 to A3 of the hazard assessment; nothing in the product tells the reader about them yet (open item OI-004).
+<<<
+SOURCE: Hazard assessment section 1 (assumptions A1 to A3), FC-4.2, FC-6.1

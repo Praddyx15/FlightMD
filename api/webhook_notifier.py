@@ -26,7 +26,9 @@ class UnsafeWebhookURLError(ValueError):
 
 
 def validate_webhook_url(url: str) -> list[str]:
-    """Return the host's resolved addresses, or raise UnsafeWebhookURLError."""
+    """Return the host's resolved addresses, or raise UnsafeWebhookURLError.
+
+    @relation(LLR-API-097, scope=function)"""
     if len(url) > MAX_URL_LEN or any(c.isspace() or ord(c) < 32 for c in url):
         raise UnsafeWebhookURLError("Webhook URL is too long or contains whitespace")
 
@@ -64,6 +66,7 @@ def validate_webhook_url(url: str) -> list[str]:
 
 
 def _open_connection(scheme: str, host: str, port, ip: str, timeout: float):
+    """@relation(LLR-API-099, scope=function)"""
     cls = http.client.HTTPSConnection if scheme == "https" else http.client.HTTPConnection
     conn = cls(host, port, timeout=timeout)
     # TLS still checks the cert against `host`; only the socket target is pinned
@@ -72,7 +75,9 @@ def _open_connection(scheme: str, host: str, port, ip: str, timeout: float):
 
 
 def send_alert_webhook(webhook_url: str, airframe_label: str, report_id: str, triggered: list[dict]) -> bool:
-    """POST the alert. Never raises; True only on a 2xx."""
+    """POST the alert. Never raises; True only on a 2xx.
+
+    @relation(LLR-API-098, LLR-API-099, scope=function)"""
     try:
         addrs = validate_webhook_url(webhook_url)
     except UnsafeWebhookURLError as e:

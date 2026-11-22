@@ -1,3 +1,4 @@
+// @relation(LLR-WEB-062, scope=file)
 import { getRequestConfig } from "next-intl/server";
 
 export const LOCALES = ["en"] as const;

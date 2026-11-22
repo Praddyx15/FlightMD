@@ -1,0 +1,1203 @@
+[DOCUMENT]
+TITLE: Flight-dynamics checks low-level requirements
+UID: FMD-LLR-DYN
+VERSION: Issue 1
+DATE: 2026-11-20
+OPTIONS:
+  MARKUP: Markdown
+
+[GRAMMAR]
+IMPORT_FROM_FILE: @flightmd
+
+[TEXT]
+STATEMENT: >>>
+As-built detail of the four flight-dynamics checks: `flightmd_core/analysers/oscillation.py`, `vibration.py`,
+`ekf.py` and `ascent_profile.py`. Each statement gives the function, its inputs and outputs and the constants
+with the numbers held in the code. Timestamps are log-relative microseconds unless a unit is given. "In flight"
+and "armed" mean inside the windows returned by `flight_phases` (the whole log when it has no arming data).
+`confidence(margin, duration, quality)` is the helper in `analysers/helpers.py`: it returns
+(0.5 + 0.5 x margin limited to 0..1) x (1 with no duration, else 0.4 + 0.6 x duration/2 s limited to 0..1) x
+(quality limited to 0..1), rounded to 3 places. The design is in `06-design/lld-dyn.md`.
+<<<
+
+[[SECTION]]
+TITLE: Oscillation (flightmd_core/analysers/oscillation.py)
+
+[REQUIREMENT]
+UID: LLR-DYN-001
+STATUS: Active
+TITLE: Oscillation module declaration
+STATEMENT: >>>
+`OscillationAnalyser` declares `name` `"oscillation"`, `display_name` `"Oscillation Analysis"`,
+`required_topics` `["vehicle_angular_velocity"]` and `weight` 20.0, so `is_applicable` returns False for a log
+without that topic.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-001
+
+[REQUIREMENT]
+UID: LLR-DYN-002
+STATUS: Active
+TITLE: Oscillation skip versus assessed
+STATEMENT: >>>
+`OscillationAnalyser.analyse` returns `_skip("Angular velocity topic has no timestamps.")` when the topic has no
+`timestamp` column. For each axis it drops rows with NaN in `timestamp` or the axis column, sorts by time, keeps
+the in-air rows and takes the sample rate as 1e6 divided by the median interval (0.0 with fewer than two rows or
+a median that is not positive). An axis is not assessed when the rate is below `MIN_RATE_HZ` = 10.0 Hz or when
+`_spectrogram` returns None. When no axis is assessed it returns a skip: "Angular rate is logged at <rate> Hz;
+oscillation analysis needs at least 10 Hz." if any axis was below the rate (which includes a rate of 0.0 from
+fewer than two in-flight rows), otherwise "Not enough angular-rate data (<phase>) for a 4 s analysis window."
+When at least one axis is assessed it returns an assessed result even if the other axes were not.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-001
+
+[REQUIREMENT]
+UID: LLR-DYN-003
+STATUS: Active
+TITLE: Rate column names
+STATEMENT: >>>
+`OscillationAnalyser.analyse` takes the roll rate from the first present of `rollspeed`, `xyz[0]`, `x`, the
+pitch rate from `pitchspeed`, `xyz[1]`, `y` and the yaw rate from `yawspeed`, `xyz[2]`, `z`, and leaves out an
+axis with none of its columns. Values are taken to be rad/s.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-001
+
+[REQUIREMENT]
+UID: LLR-DYN-004
+STATUS: Active
+TITLE: Window length, gap splitting and resampling
+STATEMENT: >>>
+`_spectrogram` sets the window length to 2 to the power round(log2(`SEGMENT_S` x rate)) samples with `SEGMENT_S`
+= 4.0 s (1024 samples at 250 Hz, 32 at 10 Hz; between 2.83 s and 5.66 s). It splits the samples wherever two
+consecutive timestamps are more than `GAP_FACTOR` = 5.0 nominal intervals apart, skips a stretch with fewer
+samples than one window or whose uniform grid (first to last timestamp, step 1e6/rate microseconds, end
+excluded) is shorter than one window, and interpolates each kept stretch linearly onto its grid. It returns None
+when no stretch is kept.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-002
+- TYPE: Parent
+  VALUE: HLR-DYN-001
+
+[REQUIREMENT]
+UID: LLR-DYN-005
+STATUS: Active
+TITLE: Spectrogram parameters and band
+STATEMENT: >>>
+`_spectrogram` computes `scipy.signal.spectrogram` on each stretch with a Hann window, `nperseg` equal to the
+window length, `noverlap` of half the window, `detrend="constant"`, `scaling="density"` and `mode="psd"`, and
+joins the columns of all stretches. The window centre times are the grid start plus the spectrogram times. The
+analysed band is every frequency bin from `FREQ_LOW` = 1.0 Hz to the lower of `FREQ_HIGH_CAP` = 100.0 Hz and
+0.8 x rate / 2. The result also holds the bin width in Hz, the rate and the window length in microseconds.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Tests check that a known sine is found within 1 Hz and with the right amplitude. The window, overlap, detrend
+and band values are checked by inspection of the call.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-002
+
+[REQUIREMENT]
+UID: LLR-DYN-006
+STATUS: Active
+TITLE: Peak, prominence and amplitude per window
+STATEMENT: >>>
+For each window `_worst` takes the band bin with the highest PSD as the peak, the median PSD of the band as the
+floor, and the prominence as peak PSD divided by the floor (floor not below 1e-30). The amplitude in deg/s is
+`degrees(sqrt(2 x p))` where p is the sum over the peak bin and two bins each side of the PSD above the floor
+(negative differences taken as 0) times the bin width. The amplitude of a window whose prominence is below
+`MIN_PROMINENCE` = 25.0 is set to 0.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-002
+
+[REQUIREMENT]
+UID: LLR-DYN-007
+STATUS: Active
+TITLE: Sustained value over three windows
+STATEMENT: >>>
+`_worst` smooths the per-window amplitude and prominence each with a centred rolling median over 3 windows
+(`min_periods` 1, so the first and last window use two values and a single-window log uses one). It selects the
+window with the highest smoothed amplitude and returns that smoothed amplitude as `amp_dps` and the smoothed
+prominence of the same window as `prominence`. `peak_hz` is the peak frequency of the selected window when the
+smoothed amplitude is above 0, otherwise the band frequency where the PSD averaged over all windows is highest.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-002
+- TYPE: Parent
+  VALUE: HLR-DYN-003
+
+[REQUIREMENT]
+UID: LLR-DYN-008
+STATUS: Active
+TITLE: Time span of an oscillation
+STATEMENT: >>>
+`_worst` marks every window whose unsmoothed amplitude is `AMP_MILD` = 5.0 deg/s or more and whose peak is
+within 2.0 Hz of `peak_hz`. `t0` is the earliest marked centre time less half a window and `t1` the latest plus
+half a window (both None when no window is marked). `duration_s` is the number of marked windows times half the
+window length in seconds.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-002
+- TYPE: Parent
+  VALUE: HLR-DYN-004
+
+[REQUIREMENT]
+UID: LLR-DYN-009
+STATUS: Active
+TITLE: Oscillation level
+STATEMENT: >>>
+`_level` returns `"NONE"` when `prominence` is below `MIN_PROMINENCE` = 25.0; otherwise `"SEVERE"` when
+`amp_dps` is `AMP_SEVERE` = 40.0 deg/s or more, `"MODERATE"` at `AMP_MODERATE` = 15.0 or more, `"MILD"` at
+`AMP_MILD` = 5.0 or more, and `"NONE"` below that. A NaN prominence or amplitude gives `"NONE"`.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-003
+
+[REQUIREMENT]
+UID: LLR-DYN-010
+STATUS: Active
+TITLE: Oscillation module score
+STATEMENT: >>>
+`OscillationAnalyser.analyse` starts `health_score` at 100.0 and for each axis whose level is not `"NONE"`
+subtracts `PENALTIES`: 30 for `SEVERE`, 15 for `MODERATE`, 5 for `MILD`, not going below 0.0, and adds one
+finding for that axis. An assessed log with no such axis returns 100.0 and no findings.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-003
+
+[REQUIREMENT]
+UID: LLR-DYN-011
+STATUS: Active
+TITLE: Oscillation key metrics
+STATEMENT: >>>
+For every assessed axis `OscillationAnalyser.analyse` writes three key metrics whether or not a finding fires:
+`<axis>_peak_hz` (Hz, 3 places), `<axis>_norm_amp` (the prominence, 3 places) and `<axis>_osc_amp_dps` (deg/s,
+2 places), with `<axis>` one of `roll`, `pitch`, `yaw`.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-004
+
+[REQUIREMENT]
+UID: LLR-DYN-012
+STATUS: Active
+TITLE: Spectrum chart
+STATEMENT: >>>
+`_chart` returns `frequencies` (Hz, from `CHART_FREQ_MIN` = 0.5 Hz up) and `amplitudes` (square root of the PSD
+averaged over all windows, rad/s per root Hz) of equal length, taking every n-th bin so that at most
+`CHART_MAX_BINS` = 512 remain, with non-finite values as None. The finding's `chart_data` adds `axis`,
+`peak_hz`, `norm_amp` and `amp_dps`.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-004
+
+[REQUIREMENT]
+UID: LLR-DYN-013
+STATUS: Active
+TITLE: Oscillation finding: severity, kind and text
+STATEMENT: >>>
+`_finding` maps `SEVERE` to critical, `MODERATE` to warning and `MILD` to info. `kind` is `oscillation.rate_p`
+when `peak_hz` is below `MID_BAND_HZ` = 12.0, `oscillation.rate_d` when it is below `HIGH_BAND_HZ` = 35.0, and
+`oscillation.mechanical` otherwise. The title is "<Axis>-Axis Oscillation at <Hz> Hz"; `technical_summary` and
+`plain_english` are the same sentence giving frequency, amplitude, level and its threshold, prominence, duration,
+phase description and sample rate. The category is `oscillation`.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-004
+- TYPE: Parent
+  VALUE: HLR-DYN-005
+
+[REQUIREMENT]
+UID: LLR-DYN-014
+STATUS: Active
+TITLE: Rate P recommendation
+STATEMENT: >>>
+In the P band `_finding` looks up the P gain name for the vehicle and axis. When the name exists and the
+parameter set holds it with a value above 0 it adds one `ParamRecommendation`: `current_value` rounded to 6
+places, `suggested_value` = `round(current x 0.87, 4)`, `change_direction` `"decrease"`, and the recommendation
+text "Reduce <name> from <current> to <new> (about 13%), then re-test." The suggested value has no lower or
+upper bound and is not checked against firmware metadata; it is 0.0 for a current value below about 0.0000575
+and equals the current value for some values below 0.0004. With no name, a missing parameter, or a value that is
+0, negative or NaN, no `ParamRecommendation` is made and the text is "Lower the <axis> rate P gain by about
+13%."
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Tests check the name, a lower suggested value, the direction, the text and that no value is made up for a
+missing parameter. The rounding, the absence of bounds and the zero/negative/NaN cases are checked by
+inspection.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-005
+
+[REQUIREMENT]
+UID: LLR-DYN-015
+STATUS: Active
+TITLE: Rate D recommendation
+STATEMENT: >>>
+In the D band `_finding` looks up the D gain name. When the name exists and the parameter set holds it with a
+value above 0 it adds one `ParamRecommendation`: `current_value` rounded to 6 places, `suggested_value` =
+`round(current x 0.85, 5)`, `change_direction` `"decrease"`, and the text "Reduce <name> from <current> to
+<new> (about 15%), or lower the D-term filter cutoff. Don't raise D for this one." The suggested value has no
+bound and is 0.0 for a current value below about 0.0000059. Otherwise no `ParamRecommendation` is made and the
+text is "Lower the <axis> rate D gain by about 15%, or lower the D-term filter cutoff.", also for a vehicle
+with no D gain name.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+One test checks a 22 Hz peak on a PX4 multirotor gives one decrease of `MC_ROLLRATE_D`. The factor, rounding and
+the generic text are checked by inspection.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-005
+
+[REQUIREMENT]
+UID: LLR-DYN-016
+STATUS: Active
+TITLE: Gain names by vehicle and what is withheld
+STATEMENT: >>>
+`_finding` takes the gain names from `rate_gain_names(vehicle_from_params(params), axis)`: PX4 multirotor
+`MC_ROLLRATE_P/D`, `MC_PITCHRATE_P/D`, `MC_YAWRATE_P/D`; PX4 fixed wing `FW_RR_P`, `FW_PR_P`, `FW_YR_P` with no
+D gain; ArduPilot multirotor `ATC_RAT_RLL_P/D`, `ATC_RAT_PIT_P/D`, `ATC_RAT_YAW_P/D`; ArduPilot fixed wing
+`RLL_RATE_P/D`, `PTCH_RATE_P/D` and none for yaw; none for VTOL, rover and unknown. `Finding.params` is the P
+name in the P band; in the D band the D name plus, for a multirotor, `IMU_DGYRO_CUTOFF` (PX4) or
+`ATC_RAT_<RLL|PIT|YAW>_FLTD` (ArduPilot). When no `ParamRecommendation` was made, the band is P or D and the
+vehicle has no P gain name, the text " (No <axis> gain is suggested for this vehicle type: <frame>,
+<autopilot>.)" is appended to the generic recommendation.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Tests check the names for PX4 multirotor, PX4 fixed wing and ArduPilot multirotor and that a rover and an
+unknown vehicle get no parameter change. The filter names and the appended note are checked by inspection.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-005
+
+[REQUIREMENT]
+UID: LLR-DYN-017
+STATUS: Active
+TITLE: Mechanical band advice
+STATEMENT: >>>
+For a peak at `HIGH_BAND_HZ` = 35.0 Hz or above `_finding` makes no `ParamRecommendation` for any vehicle, sets
+the recommendation to check props, motor mounts and flight-controller mounting and then set up a notch filter,
+and sets `Finding.params` to `IMU_GYRO_NF0_FRQ`, `IMU_GYRO_NF0_BW` for PX4, `INS_HNTCH_ENABLE`,
+`INS_HNTCH_FREQ` for ArduPilot and an empty list for an unknown autopilot.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test puts a peak at 35 Hz or above. Inspection checks the `else` branch of the band selection in `_finding`
+and the `NOTCH` table.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-005
+
+[REQUIREMENT]
+UID: LLR-DYN-018
+STATUS: Active
+TITLE: Oscillation confidence and time window
+STATEMENT: >>>
+`_finding` sets `confidence` to `confidence(amp / threshold - 1, duration_s, quality)`, where threshold is the
+limit of the level reached (40, 15 or 5 deg/s) and quality is the lower of 1.0 and (rate / 2) / (2 x peak_hz).
+It sets the finding's time window from `t0` and `t1` through `when`, which leaves out a value that is None or
+not finite.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The test checks only that the confidence is between 0 and 1. The formula is checked by inspection.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-004
+
+[REQUIREMENT]
+UID: LLR-DYN-019
+STATUS: Active
+TITLE: No random or clock input in the four modules
+STATEMENT: >>>
+`oscillation.py`, `vibration.py`, `ekf.py` and `ascent_profile.py` import no `random`, `time` or `datetime`
+module and call no random generator; they iterate lists, dict items in insertion order and `sorted` keys only.
+`EKFAnalyser.analyse` stores the autopilot name on the instance (`self._autopilot`) for `_advice` to read, so
+one instance is not safe to run on two logs at once.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test runs a check twice and compares the results. Inspection reads the import lists and every loop of the
+four modules.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-024
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Vibration (flightmd_core/analysers/vibration.py)
+
+[REQUIREMENT]
+UID: LLR-DYN-020
+STATUS: Active
+TITLE: Vibration module declaration
+STATEMENT: >>>
+`VibrationAnalyser` declares `name` `"vibration"`, `display_name` `"Vibration Analysis"`, `weight` 20.0,
+`required_any` `["vehicle_imu_status", "vibration", "sensor_accel"]` and `optional_topics` `["vehicle_status",
+"vehicle_land_detected"]`, so `is_applicable` returns False when none of the three bare topic names is present.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-007
+
+[REQUIREMENT]
+UID: LLR-DYN-021
+STATUS: Active
+TITLE: Topic instances
+STATEMENT: >>>
+`_instances` returns `(index, topic, frame)` in index order for every topic whose name matches the pattern
+(`sensor_accel`, `vehicle_imu_status` or `vibration`, bare or with a `_<n>` suffix) and whose frame is not None
+and has a `timestamp` column. The bare name is index 0; when both the bare name and `_0` are present the bare
+one is used, whatever the order of the topics.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-007
+
+[REQUIREMENT]
+UID: LLR-DYN-022
+STATUS: Active
+TITLE: Counter increase in flight
+STATEMENT: >>>
+`counter_increase` drops non-finite values, returns 0 with fewer than two left, and otherwise returns the
+integer sum of the positive steps between consecutive values where both samples are in flight. A step down is
+counted as 0 (a counter restart).
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-010
+- TYPE: Parent
+  VALUE: HLR-DYN-009
+
+[REQUIREMENT]
+UID: LLR-DYN-023
+STATUS: Active
+TITLE: Vibration source priority and skip
+STATEMENT: >>>
+`VibrationAnalyser.analyse` uses the IMU list of `_imu_status` if it is not empty, else that of `_vibe`, else
+that of `_raw`; sources are not mixed. When all three are empty it returns `_skip("Not enough vibration or
+accelerometer data <phase>.")`. `_vibe` is told the vehicle is PX4 only when `vehicle_from_params(params)`
+gives autopilot `"px4"`; ArduPilot and unknown are treated alike.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+A test checks that the PX4 metric is used when raw data is also present. The skip and the treatment of an
+unknown autopilot are checked by inspection.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-007
+
+[REQUIREMENT]
+UID: LLR-DYN-024
+STATUS: Active
+TITLE: PX4 vibration metric
+STATEMENT: >>>
+For each `vehicle_imu_status` instance with an `accel_vibration_metric` column `_imu_status` takes the in-flight
+rows and skips the instance with fewer than `MIN_METRIC_SAMPLES` = 10 finite values. The level is the
+`LEVEL_PERCENTILE` = 95th percentile of the finite values in m/s2 and the limits are `PX4_LIMITS` = (4.905,
+9.81). It also records the 95th percentile of `gyro_vibration_metric` when that column has a value, and the
+in-flight increase of `accel_error_count` plus `gyro_error_count` as `errors`. The source is `"px4_metric"`.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-008
+- TYPE: Parent
+  VALUE: HLR-DYN-007
+
+[REQUIREMENT]
+UID: LLR-DYN-025
+STATUS: Active
+TITLE: Autopilot vibration topic, not PX4
+STATEMENT: >>>
+For each `vibration` instance on a vehicle that is not PX4, `_vibe` uses the columns present among
+`vibration_x`, `vibration_y`, `vibration_z` (m/s2), takes the in-flight rows with at least one finite value and
+skips the instance with fewer than 10. The series is the largest axis value per row, the level its 95th
+percentile, the limits `ARDU_LIMITS` = (30.0, 60.0) and the source `"vibe"`. The per-axis 95th percentiles go
+into the finding text.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-008
+
+[REQUIREMENT]
+UID: LLR-DYN-026
+STATUS: Active
+TITLE: Autopilot vibration topic, PX4
+STATEMENT: >>>
+On a PX4 vehicle `_vibe` reads `vibration_z` only (PX4 puts gyro metrics in x and y), applies `PX4_LIMITS` =
+(4.905, 9.81) m/s2 and marks the source `"px4_metric"`. An instance without `vibration_z` is skipped.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-008
+
+[REQUIREMENT]
+UID: LLR-DYN-027
+STATUS: Active
+TITLE: Level from raw accelerometer data
+STATEMENT: >>>
+For each `sensor_accel` instance with x, y and z columns (`x`/`xyz[0]`, `y`/`xyz[1]`, `z`/`xyz[2]`) `_raw`
+drops rows with a NaN in time or any axis, keeps the in-flight rows and skips the instance with fewer than
+`MIN_RAW_SAMPLES` = 50. The sample rate is 1e6 over the median interval (250.0 Hz if it cannot be computed). It
+subtracts from each axis a centred rolling mean of max(3, round(`HPF_CUTOFF_S` = 0.2 s x rate)) samples
+(`min_periods` 1). The level is the square root of the mean over all rows of the sum of the three squared
+residuals (m/s2), with limits `ARDU_LIMITS` = (30.0, 60.0). The series for timing and the chart is the same
+quantity over a centred window of max(1, round(`RMS_WINDOW_S` = 1.0 s x rate)) samples. No minimum sample rate
+is required.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Tests check that gravity and a steady offset are not counted and that 10, 45 and about 70 m/s2 of white noise
+give no finding, a warning and a critical finding. The window lengths and the absence of a rate check are
+checked by inspection.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-008
+
+[REQUIREMENT]
+UID: LLR-DYN-028
+STATUS: Active
+TITLE: Vibration level finding
+STATEMENT: >>>
+`_level_finding` returns None when the level is at or below the warning limit. Above the critical limit it
+returns a critical finding of `kind` `vibration.critical`, otherwise a warning of `kind` `vibration.elevated`,
+both of category `vibration`. The time window runs from the first to the last sample whose series value is above
+the warning limit (no window when there is none). `confidence` is `confidence(level / limit - 1, n x dt)` with
+limit the one crossed, n the number of samples above the warning limit and dt the median sample interval in
+seconds. The text gives the level, the metric, the statistic, the limit and the peak of the series.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-008
+- TYPE: Parent
+  VALUE: HLR-DYN-012
+
+[REQUIREMENT]
+UID: LLR-DYN-029
+STATUS: Active
+TITLE: IMU sensor error finding
+STATEMENT: >>>
+`VibrationAnalyser.analyse` adds an info finding of `kind` `vibration.imu_errors` for each IMU whose `errors`
+count is `IMU_ERROR_MIN` = 10 or more, with `confidence(errors / 10 - 1)`. Only the `vehicle_imu_status` source
+sets `errors`.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-011
+
+[REQUIREMENT]
+UID: LLR-DYN-030
+STATUS: Active
+TITLE: Clip count sources
+STATEMENT: >>>
+`_clip_counts` returns per IMU index `(count, source text, from a counter, in-flight sample count)`. It takes,
+in this order and never replacing an index already filled: the summed in-flight `counter_increase` of every
+`accel_clipping*` column of `vehicle_imu_status` instance n for index n; the in-flight `counter_increase` of a
+`clipping_<k>` column of any `vibration` instance for index k; and for a `sensor_accel` instance the result of
+`_raw_clips`. Clip counts are read from all three topics whichever source gave the level.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-010
+
+[REQUIREMENT]
+UID: LLR-DYN-031
+STATUS: Active
+TITLE: Clips from raw accelerometer data
+STATEMENT: >>>
+`_raw_clips` returns, when the frame has `clip_counter*` columns, the sum of their in-flight values (NaN as 0)
+marked as a counter. Otherwise it needs x, y and z columns and at least 50 in-flight rows without NaN (else
+None), and for each axis whose largest absolute value is `CLIP_MIN_RANGE` = 75.0 m/s2 or more counts the samples
+at `CLIP_PLATEAU` = 0.99 of that value or more, adding the count to the total only when it is 3 or more; the
+total is marked as not from a counter.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-010
+
+[REQUIREMENT]
+UID: LLR-DYN-032
+STATUS: Active
+TITLE: Clipping finding
+STATEMENT: >>>
+For each IMU index in ascending order `VibrationAnalyser.analyse` adds a finding of `kind`
+`vibration.clipping`. From a counter: none for a count of 0 or less, info below `CLIP_COUNTER_WARNING` = 100,
+warning at 100 or more, with `confidence(count / 100 - 1)`. From the plateau fallback: none when the count is
+below `CLIP_MIN_COUNT` = 10 or below `CLIP_MIN_FRACTION` = 0.001 of the in-flight samples, otherwise a warning
+with `confidence(count / max(10, 0.001 x samples) - 1)`.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-010
+
+[REQUIREMENT]
+UID: LLR-DYN-033
+STATUS: Active
+TITLE: IMU disagreement
+STATEMENT: >>>
+With two or more IMUs in the list `VibrationAnalyser.analyse` takes the spread as the highest level less the
+lowest and adds a warning of `kind` `vibration.imu_mismatch` when the spread is above `MISMATCH_FRACTION` = 0.5
+times the warning limit of the first IMU (2.4525 m/s2 for the PX4 metric, 15.0 m/s2 otherwise), with
+`confidence(spread / limit - 1)`. The constant `IMU_CONSISTENCY_THRESH` is not used.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-011
+
+[REQUIREMENT]
+UID: LLR-DYN-034
+STATUS: Active
+TITLE: Vibration module score
+STATEMENT: >>>
+`VibrationAnalyser.analyse` starts `health_score` at 100.0 and subtracts 30 for each critical and 15 for each
+warning level finding, 5 for each sensor-error finding, 15 for each warning and 5 for each info clipping finding
+and 15 for an IMU disagreement. The result carries the score limited to not below 0.0.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-012
+
+[REQUIREMENT]
+UID: LLR-DYN-035
+STATUS: Active
+TITLE: Vibration key metrics
+STATEMENT: >>>
+`VibrationAnalyser.analyse` writes `vibration_vs_limit` (level over warning limit of the IMU where that ratio is
+highest, 3 places) and `total_clip_count` (sum of all counts from `_clip_counts`). When that IMU's source is
+`"px4_metric"` it writes `max_accel_vibration_metric` (highest level, m/s2, 3 places) and, when a gyro metric
+was read, `max_gyro_vibration_metric` (4 places); otherwise it writes `max_imu_rms` (highest level, m/s2, 3
+places).
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test names this requirement; the behaviour is exercised only indirectly by other tests. A review reads the
+key metrics built in `VibrationAnalyser.analyse`.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-012
+
+[REQUIREMENT]
+UID: LLR-DYN-036
+STATUS: Active
+TITLE: In-flight rows
+STATEMENT: >>>
+`_in_flight` drops rows without a timestamp, sorts by time, drops rows where all the named columns are NaN and
+returns the rows whose timestamp is inside an in-air window of `flight_phases(topics)`. `_raw`, `_clip_counts`
+and `_raw_clips` apply the same in-air mask to their own rows.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-009
+
+[REQUIREMENT]
+UID: LLR-DYN-037
+STATUS: Active
+TITLE: Vibration chart data
+STATEMENT: >>>
+Each IMU entry holds a chart of at most 500 points made with `downsample`: `timestamps` in ms and `vibe` (the
+series), the per-axis series `x`, `y`, `z` for the non-PX4 `vibration` topic and for raw data, the `warn` and
+`crit` limits, and for raw data the per-axis and combined RMS. Level and sensor-error findings carry their own
+IMU's chart with `instance`; clipping and disagreement findings carry `{"instances": {topic: chart}}`.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The test checks that a finding's chart has an `x` or an `instances` key. The other keys are checked by
+inspection.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-012
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Estimator health (flightmd_core/analysers/ekf.py)
+
+[REQUIREMENT]
+UID: LLR-DYN-038
+STATUS: Active
+TITLE: EKF module declaration
+STATEMENT: >>>
+`EKFAnalyser` declares `name` `"ekf"`, `display_name` `"EKF Health Analysis"`, `weight` 20.0, `required_any`
+`["estimator_status", "estimator_innovation_test_ratios", "ekf_test_ratios"]` and `optional_topics`
+`["vehicle_status", "vehicle_land_detected"]`, so `is_applicable` is True with any one of the three and False
+with none.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-013
+
+[REQUIREMENT]
+UID: LLR-DYN-039
+STATUS: Active
+TITLE: Armed rows
+STATEMENT: >>>
+`_armed_rows` sorts the frame by `timestamp` and keeps the rows inside the armed windows. When the log has no
+arming data and the named solution column is present, it also drops every row before the first row whose
+solution value is finite and has bit 0 (attitude) set; when no row has it, all rows are kept.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-013
+
+[REQUIREMENT]
+UID: LLR-DYN-040
+STATUS: Active
+TITLE: Flag columns
+STATEMENT: >>>
+`_bits` returns `(None, None)` when the column is absent or has one or no non-null value, so that check is not
+run. Otherwise it returns the non-null values as 64-bit integers with their timestamps; rows with a null flag
+are left out, not read as all bits clear.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test supplies a flags column with missing values. Inspection checks `_bits` and that each caller tests for
+None.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-013
+
+[REQUIREMENT]
+UID: LLR-DYN-041
+STATUS: Active
+TITLE: EKF inputs, ratio source and skip
+STATEMENT: >>>
+`EKFAnalyser.analyse` takes the armed rows of `estimator_status` (solution column `solution_status_flags`) and
+of `ekf_test_ratios` (solution column `solution_status`, else `flags`), ignoring a topic with no `timestamp`.
+The ratio table is `estimator_innovation_test_ratios` limited to armed time when that topic has a `timestamp`;
+else `estimator_status` when it has a column ending `_test_ratio`; else `ekf_test_ratios`. When each of the
+three has fewer than 2 rows it returns `_skip("No EKF status samples <phase>.")`. Otherwise it returns an
+assessed result, also when none of the columns it checks is present or every checked value is NaN; the result
+is then 100.0 with no findings.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Tests check the ratio topic, the `estimator_status` ratios and `ekf_test_ratios` used alone. The skip and the
+assessed result with nothing checked are found by inspection; no test drives them.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-013
+- TYPE: Parent
+  VALUE: HLR-DYN-014
+
+[REQUIREMENT]
+UID: LLR-DYN-042
+STATUS: Active
+TITLE: Innovation check flags
+STATEMENT: >>>
+For each bit 0 to 12 of `innovation_check_flags` set in any armed sample `_innov_flags` adds one finding of
+`kind` `ekf.innovation_rejected` titled "EKF Innovation Failure: <label>" (0 Horizontal Velocity, 1 Vertical
+Velocity, 2 Horizontal Position, 3 Vertical Position, 4 to 6 Magnetometer X/Y/Z, 7 Yaw, 8 Airspeed, 9 Synthetic
+Sideslip, 10 Height Above Ground, 11 and 12 Optical Flow X/Y). It is a warning with penalty 15 when the longest
+run of set samples lasts `SUSTAINED_FAILURE_S` = 0.5 s or more, else info with penalty 5. A run lasts from its
+first sample to the next sample after it. The time window runs from the start of the first run to the end of the
+last.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-014
+
+[REQUIREMENT]
+UID: LLR-DYN-043
+STATUS: Active
+TITLE: Solution validity bits
+STATEMENT: >>>
+`_solution_flags` judges bit 0 (Attitude) and bit 5 (Vertical Position, Absolute) over all armed samples, and
+bits 1 (Horizontal Velocity), 2 (Vertical Velocity), 3 (Horizontal Position, Relative) and 4 (Horizontal
+Position, Absolute) only from the first sample where the bit is set, skipping a bit that is never set. When the
+bit is clear in `INVALID_MIN_FRACTION` = 0.01 or more of the judged samples it adds a warning of `kind`
+`ekf.solution_invalid` with penalty 15 and `confidence(fraction / 0.1 - 1, longest run in s)`.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-015
+
+[REQUIREMENT]
+UID: LLR-DYN-044
+STATUS: Active
+TITLE: GPS glitch and accelerometer error bits by source
+STATEMENT: >>>
+`_solution_flags` adds a warning of `kind` `ekf.gps_glitch` (penalty 15) when the glitch bit is set in any armed
+sample and a critical finding of `kind` `ekf.accel_error` (penalty 30) when the accelerometer-error bit is set
+in any armed sample, each with `confidence(episodes / 3, longest run in s)`. `EKFAnalyser.analyse` passes glitch
+bit 10 and accelerometer bit 11 for `estimator_status.solution_status_flags`; glitch bit 14 and no accelerometer
+bit for `ekf_test_ratios.solution_status`; and for `ekf_test_ratios.flags` (used only when `solution_status` is
+absent) bits 10 and 11 when the autopilot is `"px4"`, else glitch bit 15 and no accelerometer bit, which is
+also what an unknown autopilot gets.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-015
+
+[REQUIREMENT]
+UID: LLR-DYN-045
+STATUS: Active
+TITLE: ArduPilot filter faults
+STATEMENT: >>>
+For each bit 0 to 7 of `fault_status` set in any armed sample `_ap_faults` adds a finding of `kind`
+`ekf.filter_fault`: critical with penalty 30 for bit 0 (attitude NaN) and bit 1 (velocity NaN); warning with
+penalty 15 for bits 2 to 4 (bad magnetometer X/Y/Z), 5 (bad airspeed), 6 (bad sideslip) and 7 (filter not
+initialised). Confidence is `confidence(episodes / 3, longest run in s)`.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-016
+
+[REQUIREMENT]
+UID: LLR-DYN-046
+STATUS: Active
+TITLE: ArduPilot measurement timeouts
+STATEMENT: >>>
+For bits 0 (Position), 1 (Velocity), 2 (Height) and 3 (Magnetometer) of `timeout_status` `_ap_timeouts` skips a
+bit that is set in every armed sample, judges from the first sample where it is clear, and adds a warning of
+`kind` `ekf.sensor_timeout` with penalty 15 when the longest run of set samples lasts 0.5 s or more. Bits 4
+(airspeed) and 5 (drag) are not judged.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-016
+
+[REQUIREMENT]
+UID: LLR-DYN-047
+STATUS: Active
+TITLE: Ratio columns
+STATEMENT: >>>
+`_ratio_groups` takes every column of the ratio table whose name does not start with `timestamp` and matches
+`RATIO_COL`: a name starting with `gps`, `ev`, `rng`, `baro`, `aux`, `flow`, `heading`, `mag`, `gravity`,
+`drag`, `airspeed`, `beta` or `hagl` followed by lower-case letters, digits or underscores and an optional
+`[n]`, or a lower-case name ending `_test_ratio`. Columns that differ only in `[n]` are merged into one series
+by the element-wise larger value, ignoring NaN. Any other column is ignored.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-014
+
+[REQUIREMENT]
+UID: LLR-DYN-048
+STATUS: Active
+TITLE: Test ratio above 1.0
+STATEMENT: >>>
+For each ratio series with a value above `RATIO_REJECT` = 1.0 `_innov_ratios` adds a finding of `kind`
+`ekf.innovation_ratio` titled "EKF Innovation Ratio Exceeded: <label>": a warning with penalty 15 when the
+longest run above 1.0 lasts 0.5 s or more, else info with penalty 5, with `confidence(peak - 1, longest)`, the
+longest run as its time window and its own chart (`timestamps`, `ratio`, `col`, at most 500 points). A series
+with any value above 1.0 is not passed to `_near_limit`. NaN values count as not above the limit.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-014
+
+[REQUIREMENT]
+UID: LLR-DYN-049
+STATUS: Active
+TITLE: Test ratio near the limit
+STATEMENT: >>>
+For a ratio series with no value above 1.0 `_near_limit` returns a warning of `kind`
+`ekf.innovation_ratio_high` (penalty 10 added by the caller) when the longest run above `RATIO_NEAR` = 0.64
+lasts `NEAR_LIMIT_MIN_S` = 2.0 s or more, with `confidence(peak / 0.64 - 1, longest)`; otherwise None. The same
+limit applies to PX4 and ArduPilot ratios.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-014
+
+[REQUIREMENT]
+UID: LLR-DYN-050
+STATUS: Active
+TITLE: Wind jump
+STATEMENT: >>>
+When `estimator_status` has the columns `wind_vel_n` or `wind[0]` and `wind_vel_e` or `wind[1]`, `_wind` takes
+the wind speed as the hypotenuse of the two and adds one warning of `kind` `ekf.wind_jump` with penalty 10 when
+the absolute change between two consecutive armed samples is above `WIND_CHANGE_THRESH` = 5.0 m/s at least once,
+whatever the time between the samples. Confidence is `confidence(biggest / 5.0 - 1)`; the window runs from the
+first jump to the sample after the last.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-017
+
+[REQUIREMENT]
+UID: LLR-DYN-051
+STATUS: Active
+TITLE: EKF module score
+STATEMENT: >>>
+`EKFAnalyser.analyse` starts `health_score` at 100.0 and subtracts the summed penalties of each group limited to
+a cap: innovation flags 60.0; `estimator_status` solution flags 45.0; `ekf_test_ratios` solution flags 45.0;
+filter faults 45.0; timeouts 30.0; test ratios 30.0; wind 10.0. The result carries the score limited to not
+below 0.0.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Tests check 100.0 for a clean log and a lower score with a finding. The caps are checked by inspection.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-018
+
+[REQUIREMENT]
+UID: LLR-DYN-052
+STATUS: Active
+TITLE: EKF advice text and named parameters
+STATEMENT: >>>
+`_advice` returns the `SENSOR_ADVICE` sentence for the sensor group (`gps`, `height`, `mag`, `airspeed`,
+`range`, `flow`), or `GENERIC_RATIO_ADVICE` for no known group, and appends " Make sure EKF2_GPS_DELAY matches
+the receiver." with `params` `["EKF2_GPS_DELAY"]` only for the pair (`px4`, `gps`); every other pair gives an
+empty `params`. No function in `ekf.py` makes a `ParamRecommendation`.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-019
+
+[REQUIREMENT]
+UID: LLR-DYN-053
+STATUS: Active
+TITLE: EKF key metric and shared chart
+STATEMENT: >>>
+`EKFAnalyser.analyse` writes the key metric `max_innovation_ratio` (highest finite value over all ratio series,
+4 places) when a series has a finite value, and no key metric otherwise. A finding without its own chart gets
+`{"timestamps": ms, "innov_ratios": {series: values}}` downsampled to at most 500 points, or the timestamps of
+the first table with 2 or more rows and an empty `innov_ratios` when there are no ratio series.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Tests check the key metric. The shared chart is checked by inspection.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-018
+
+[REQUIREMENT]
+UID: LLR-DYN-054
+STATUS: Active
+TITLE: EKF confidence for flag and timeout findings
+STATEMENT: >>>
+`_innov_flags` and `_ap_timeouts` set `confidence(longest / 0.5 - 1, longest)` with `longest` the longest run in
+seconds. Every EKF finding's confidence is the value of the `confidence` helper, between 0 and 1.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The test checks the range and the level name. The formulas are checked by inspection.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-018
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Ascent profile (flightmd_core/analysers/ascent_profile.py)
+
+[REQUIREMENT]
+UID: LLR-DYN-055
+STATUS: Active
+TITLE: Ascent module declaration
+STATEMENT: >>>
+`AscentProfileAnalyser` declares `name` `"ascent_profile"`, `display_name` `"Ascent & Recovery Analysis"`,
+`required_topics` `["vehicle_gps_position"]` and `optional_topics` `["sensor_accel",
+"vehicle_angular_velocity"]`. It sets no `weight` (base default 0.0) and passes no `health_score`, so an
+assessed result carries 100.0 whatever its findings.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test reads these attributes or the score. Inspection checks the class body and the `AnalyserResult` call.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-020
+- TYPE: Parent
+  VALUE: HLR-DYN-023
+
+[REQUIREMENT]
+UID: LLR-DYN-056
+STATUS: Active
+TITLE: GPS rows used and input skips
+STATEMENT: >>>
+`AscentProfileAnalyser.analyse` returns `_skip("GPS topic missing altitude or timestamp data.")` when
+`vehicle_gps_position` lacks `alt` or `timestamp`. It keeps rows whose `alt` is not null, whose `fix_type` is 3
+or more when that column exists, and whose `lat` and `lon` are not both 0 when both columns exist, sorted by
+time. With fewer than 10 such rows it returns `_skip("Not enough GPS samples with a 3D fix to characterise a
+flight profile.")`. Altitude is `alt` / 1000 in metres and time is `timestamp` / 1e6 in seconds. The rows are
+not limited to armed or in-air time.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-020
+
+[REQUIREMENT]
+UID: LLR-DYN-057
+STATUS: Active
+TITLE: Single apogee
+STATEMENT: >>>
+`_find_apogee` returns None when the altitude range is below `MIN_PROMINENCE_M` = 5.0 m. Otherwise it calls
+`scipy.signal.find_peaks` with a prominence of the larger of 5.0 m and `PEAK_PROMINENCE_FRACTION` = 0.15 of the
+range and returns the index of the peak when exactly one is found, else None. On None `analyse` returns a skip
+whose reason says the profile has no single dominant peak.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-020
+
+[REQUIREMENT]
+UID: LLR-DYN-058
+STATUS: Active
+TITLE: Reference altitude and qualification
+STATEMENT: >>>
+`AscentProfileAnalyser.analyse` takes the altitude of the first kept GPS row as the launch altitude, the apogee
+height as the peak altitude less it, the time to apogee as the peak time less the time of the first kept row,
+and the final height as the last altitude less the launch altitude. It returns a skip ("Single altitude peak at
+<h>m AGL with no high-G boost phase ...") when the apogee height is below `MIN_QUALIFYING_APOGEE_M` = 300.0 m
+and `_analyse_launch` returned no `peak_boost_g`.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-020
+- TYPE: Parent
+  VALUE: HLR-DYN-021
+
+[REQUIREMENT]
+UID: LLR-DYN-059
+STATUS: Active
+TITLE: Apogee finding and result
+STATEMENT: >>>
+For a qualifying log `AscentProfileAnalyser.analyse` adds a finding of severity good, `kind` `ascent.apogee`,
+category `ascent_profile`, confidence 1.0, at the apogee time, and writes the key metrics `apogee_altitude_m`
+and `time_to_apogee_s` (1 place each) together with those of `_analyse_launch` and `_analyse_deployment`. The
+findings are those of the launch, then the apogee, then the deployment.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-021
+
+[REQUIREMENT]
+UID: LLR-DYN-060
+STATUS: Active
+TITLE: Boost detection
+STATEMENT: >>>
+`_analyse_launch` reads x, y, z of `sensor_accel` (m/s2), takes the magnitude, and among the samples between the
+first GPS time and the apogee time finds the run of consecutive samples above `LAUNCH_G_THRESHOLD` = 2.5 x
+9.80665 m/s2 with the most samples. When that run lasts `MIN_BOOST_DURATION_S` = 0.2 s or more (first to last
+sample) it returns a finding of severity good, `kind` `ascent.boost`, confidence 1.0, over the run, and the key
+metrics `peak_boost_g` (peak magnitude / 9.80665, 2 places) and `boost_duration_s` (2 places). It returns
+nothing when a column or `timestamp` is missing, no sample is in the ascent, or no run is long enough.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-021
+
+[REQUIREMENT]
+UID: LLR-DYN-061
+STATUS: Active
+TITLE: Boost stability
+STATEMENT: >>>
+`_analyse_boost_stability` reads the three rate columns of `vehicle_angular_velocity` inside the boost run,
+needs 5 samples or more and a mean rate magnitude of 1e-6 rad/s or more (else no result), writes the key metric
+`boost_gyro_rate_cv` (standard deviation over mean of the magnitude, 3 places) and returns a warning of `kind`
+`ascent.boost_asymmetric` over the boost when it is above `ASYMMETRIC_LOADING_CV_WARNING` = 0.6, with
+confidence the lower of 1.0 and cv / 1.2.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-021
+
+[REQUIREMENT]
+UID: LLR-DYN-062
+STATUS: Active
+TITLE: Descent rate and deployment finding
+STATEMENT: >>>
+`_analyse_deployment` returns nothing with fewer than 5 samples from the apogee on or an apogee height of 0 or
+less. It takes the descent rate (m/s, positive down) as the height lost between consecutive samples over their
+time difference (a difference of 0 or less taken as 0.001 s) and, when there are 40 or more rates, smooths it
+with a centred rolling median of int(count / 20) samples. When `_find_deployment_index` returns an index it adds
+a finding of severity good, `kind` `ascent.deployment`, confidence 0.9, at that time, and the key metrics
+`parachute_deployment_altitude_m` (height interpolated at that time) and `time_from_apogee_to_deployment_s`
+(1 place each).
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-022
+
+[REQUIREMENT]
+UID: LLR-DYN-063
+STATUS: Active
+TITLE: Low deployment
+STATEMENT: >>>
+`_analyse_deployment` adds a warning of `kind` `ascent.low_deployment`, confidence 0.7, when the deployment
+height is below `LOW_DEPLOYMENT_ALTITUDE_FRACTION` = 0.1 of the apogee height.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-022
+
+[REQUIREMENT]
+UID: LLR-DYN-064
+STATUS: Active
+TITLE: No deployment
+STATEMENT: >>>
+When `_find_deployment_index` returns None, `_analyse_deployment` returns one critical finding of `kind`
+`ascent.no_deployment`, confidence 0.85, with no time window, if the final height is at or below
+`LANDING_ALTITUDE_FRACTION` = 0.1 of the apogee height; otherwise it returns no finding.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-022
+
+[REQUIREMENT]
+UID: LLR-DYN-065
+STATUS: Active
+TITLE: Deployment index
+STATEMENT: >>>
+`_find_deployment_index` returns the first index i for which the samples from time i to time i +
+`DEPLOYMENT_WINDOW_S` = 3.0 s number 3 or more, the rate at i is above 1.0 m/s, the median rate of the later
+half of those samples is `MIN_CANOPY_DESCENT_MS` = 1.0 m/s or more, and the rate at i divided by that median is
+`DEPLOYMENT_SPEED_RATIO` = 2.5 or more. It returns None when no index qualifies, which includes every log with
+fewer than 3 rate samples in any 3.0 s.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-DYN-022
+
+[[/SECTION]]

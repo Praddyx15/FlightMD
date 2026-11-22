@@ -4,6 +4,8 @@ Airframe config and maintenance log.
 Every route here needs the airframe's X-Airframe-Token. The first write to an
 unclaimed airframe claims it instead, and that response carries
 `airframe_token`, the only time the token is ever shown.
+
+@relation(LLR-API-040, LLR-API-041, LLR-API-042, LLR-API-043, scope=file)
 """
 
 from datetime import datetime
@@ -61,6 +63,7 @@ class MaintenanceEntryBody(BaseModel):
 
 
 def _label_or_400(label: str) -> str:
+    """@relation(LLR-API-041, scope=function)"""
     normalised = normalise_airframe_label(label)
     if not normalised:
         raise HTTPException(status_code=400, detail="Invalid airframe label.")
@@ -68,6 +71,7 @@ def _label_or_400(label: str) -> str:
 
 
 def _config_response(config: afs.AirframeConfig, label: str, new_token: Optional[str] = None) -> dict:
+    """@relation(LLR-API-044, scope=function)"""
     flights = job_store.list_by_airframe_with_created_at(label)
     status = afs.compute_maintenance_status(config, flights)
     out = {

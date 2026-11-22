@@ -1,3 +1,4 @@
+// @relation(LLR-WEB-001, LLR-WEB-002, LLR-WEB-003, LLR-WEB-004, LLR-WEB-005, LLR-WEB-006, LLR-WEB-007, LLR-WEB-008, LLR-WEB-009, LLR-WEB-010, LLR-WEB-011, LLR-WEB-012, LLR-WEB-013, scope=file)
 import type {
   AirframeConfigResponse,
   AlertRule,

@@ -35,6 +35,8 @@ bit 14. MAVLink EKF_STATUS_REPORT (ArduPilot tlogs) has bit 10 for
 
 Only armed time counts: before init every flag is 0, which used to read as
 "solution invalid" on every log.
+
+@relation(LLR-DYN-048, scope=file)
 """
 
 import re
@@ -159,7 +161,9 @@ WIND_CHANGE_THRESH = 5.0       # m/s in one step
 
 def _armed_rows(df, phases, sol_col=None):
     """Rows of df in armed time; with no arming data, from the first row
-    with an attitude solution on."""
+    with an attitude solution on.
+
+    @relation(LLR-DYN-039, scope=function)"""
     df = df.sort_values("timestamp").reset_index(drop=True)
     keep = phases.mask(df["timestamp"].to_numpy(float), "armed")
     if not phases.known and sol_col and sol_col in df.columns:
@@ -172,7 +176,9 @@ def _armed_rows(df, phases, sol_col=None):
 
 
 def _bits(df, col):
-    """(flags as int, timestamps) for the rows that have the column."""
+    """(flags as int, timestamps) for the rows that have the column.
+
+    @relation(LLR-DYN-040, scope=function)"""
     if col not in df.columns or df[col].notna().sum() <= 1:
         return None, None
     have = df[col].notna().to_numpy()
@@ -180,6 +186,7 @@ def _bits(df, col):
 
 
 class EKFAnalyser(BaseAnalyser):
+    """@relation(LLR-DYN-038, scope=class)"""
     name            = "ekf"
     display_name    = "EKF Health Analysis"
     weight          = 20.0
@@ -187,6 +194,7 @@ class EKFAnalyser(BaseAnalyser):
     optional_topics = ["vehicle_status", "vehicle_land_detected"]
 
     def analyse(self, topics, params):
+        """@relation(LLR-DYN-041, LLR-DYN-051, LLR-DYN-053, scope=function)"""
         phases = flight_phases(topics)
         autopilot = vehicle_from_params(params).autopilot
         self._autopilot = autopilot
@@ -301,12 +309,15 @@ class EKFAnalyser(BaseAnalyser):
         )
 
     def _advice(self, group):
-        """(recommendation, params) for a sensor group."""
+        """(recommendation, params) for a sensor group.
+
+        @relation(LLR-DYN-052, scope=function)"""
         text = SENSOR_ADVICE.get(group, GENERIC_RATIO_ADVICE)
         extra, params = PARAM_ADVICE.get((getattr(self, "_autopilot", "unknown"), group), ("", []))
         return text + extra, list(params)
 
     def _innov_flags(self, flags, ts):
+        """@relation(LLR-DYN-042, LLR-DYN-054, scope=function)"""
         findings, penalty = [], 0.0
         for bit, (label, group) in INNOV_FLAGS.items():
             on = (flags & (1 << bit)) != 0
@@ -337,6 +348,7 @@ class EKFAnalyser(BaseAnalyser):
         return findings, penalty
 
     def _solution_flags(self, sol, ts, source, glitch_bit, accel_bit):
+        """@relation(LLR-DYN-043, LLR-DYN-044, scope=function)"""
         findings, penalty = [], 0.0
         n = len(sol)
 
@@ -406,6 +418,7 @@ class EKFAnalyser(BaseAnalyser):
         return findings, penalty
 
     def _ap_faults(self, fs, ts):
+        """@relation(LLR-DYN-045, scope=function)"""
         findings, penalty = [], 0.0
         for bit, (label, group, sev) in AP_FAULTS.items():
             on = (fs & (1 << bit)) != 0
@@ -438,6 +451,7 @@ class EKFAnalyser(BaseAnalyser):
         return findings, penalty
 
     def _ap_timeouts(self, tmo, ts):
+        """@relation(LLR-DYN-046, scope=function)"""
         findings, penalty = [], 0.0
         for bit, (label, group) in AP_TIMEOUTS.items():
             on = (tmo & (1 << bit)) != 0
@@ -474,7 +488,9 @@ class EKFAnalyser(BaseAnalyser):
 
     def _ratio_groups(self, ratio_df) -> dict[str, np.ndarray]:
         """Ratio columns grouped by field (gps_hpos[0] and [1] -> gps_hpos,
-        worst of the two)."""
+        worst of the two).
+
+        @relation(LLR-DYN-047, scope=function)"""
         groups: dict[str, np.ndarray] = {}
         for col in ratio_df.columns:
             if col.startswith("timestamp") or not RATIO_COL.match(col):
@@ -524,6 +540,7 @@ class EKFAnalyser(BaseAnalyser):
         return findings, penalty
 
     def _near_limit(self, label, v, ts, rec, names, base):
+        """@relation(LLR-DYN-049, scope=function)"""
         high = v > RATIO_NEAR
         if not high.any():
             return None
@@ -554,6 +571,7 @@ class EKFAnalyser(BaseAnalyser):
         )
 
     def _wind(self, wn, we, ts):
+        """@relation(LLR-DYN-050, scope=function)"""
         speed = np.hypot(wn, we)
         delta = np.abs(np.diff(speed))
         jumps = np.flatnonzero(delta > WIND_CHANGE_THRESH)

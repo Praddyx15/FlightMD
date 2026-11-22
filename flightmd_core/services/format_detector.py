@@ -12,6 +12,8 @@ Works out which log format a file is, from its first bytes:
 The extension is never trusted on its own; anything that doesn't match is rejected.
 .gz / .zip uploads are unpacked first (compressed.open_log), so they never get here.
 PARSERS maps every id to its parser class.
+
+@relation(LLR-INT-012, scope=file)
 """
 
 import os
@@ -57,6 +59,8 @@ PARSERS: dict[str, type] = {
 
 
 class UnsupportedFormatError(ValueError):
+    """@relation(LLR-INT-010, scope=class)"""
+
     def __init__(self, message: str, format_id: str | None = None):
         super().__init__(message)
         # set when the format was recognised but can't be analysed (dji_dat)
@@ -65,7 +69,10 @@ class UnsupportedFormatError(ValueError):
 
 def _tlog_frame_len(buf: bytes, pos: int):
     """Length of the timestamp + MAVLink frame starting at pos, or None if it isn't one.
-    Returns -1 when buf ends before the frame does."""
+    Returns -1 when buf ends before the frame does.
+
+    @relation(LLR-INT-006, scope=function)
+    """
     if pos + 8 >= len(buf):
         return -1
     # timestamp is big-endian usec; anything with a non-zero top byte is past year 2280
@@ -90,7 +97,10 @@ def _tlog_frame_len(buf: bytes, pos: int):
 
 def _check_tlog(buf: bytes, complete: bool):
     """True if buf starts with TLOG_FRAMES_NEEDED valid tlog records (or is a whole tiny
-    tlog made of complete records), False if it isn't a tlog, None if buf is too short to tell."""
+    tlog made of complete records), False if it isn't a tlog, None if buf is too short to tell.
+
+    @relation(LLR-INT-007, scope=function)
+    """
     pos = frames = 0
     while frames < TLOG_FRAMES_NEEDED:
         if complete and frames and pos == len(buf):
@@ -106,6 +116,7 @@ def _check_tlog(buf: bytes, complete: bool):
 
 
 def _check_dataflash(buf: bytes) -> bool:
+    """@relation(LLR-INT-002, scope=function)"""
     if buf[:2] != DATAFLASH_HEAD or len(buf) < 3 or buf[2] != DATAFLASH_FMT:
         return False
     # FMT body: type, length, 4-char name. The name is upper-case ASCII, nul padded.
@@ -114,6 +125,7 @@ def _check_dataflash(buf: bytes) -> bool:
 
 
 def _check_text_dataflash(buf: bytes) -> bool:
+    """@relation(LLR-INT-004, scope=function)"""
     if b"\x00" in buf:
         return False
     # Mission Planner exports sometimes start with a blank line or a BOM
@@ -132,6 +144,8 @@ def detect_format_from_header(header: bytes, filename: str = "", complete: bool 
 
     Raises UnsupportedFormatError if the format can't be determined, or for a DJI .DAT,
     which is recognised but not supported (format_id="dji_dat").
+
+    @relation(LLR-INT-001, LLR-INT-003, LLR-INT-005, LLR-INT-008, LLR-INT-009, LLR-INT-010, scope=function)
     """
     ext = os.path.splitext(filename)[1].lower()
 
@@ -176,7 +190,10 @@ def detect_format_from_header(header: bytes, filename: str = "", complete: bool 
 
 
 def detect_format(file_path: str) -> str:
-    """Inspect a log on disk and return its format name. Raises UnsupportedFormatError."""
+    """Inspect a log on disk and return its format name. Raises UnsupportedFormatError.
+
+    @relation(LLR-INT-011, scope=function)
+    """
     with open(file_path, "rb") as f:
         header = f.read(HEADER_BYTES)
     complete = len(header) < HEADER_BYTES

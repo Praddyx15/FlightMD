@@ -36,6 +36,7 @@ class ContributionStats:
 
 
 def file_sha256(path: str) -> str:
+    """@relation(LLR-API-105, scope=function)"""
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
@@ -44,11 +45,13 @@ def file_sha256(path: str) -> str:
 
 
 def contribution_id_for(log_sha256: str) -> str:
+    """@relation(LLR-API-103, scope=function)"""
     # content hash as the id: the same log contributed twice is stored once
     return log_sha256[:32]
 
 
 def anonymise(report: FlightMDReport) -> dict:
+    """@relation(LLR-API-104, scope=function)"""
     data = report.model_dump(mode="json")
     data["file_name"] = ""
     data["report_id"] = ""
@@ -61,7 +64,9 @@ def anonymise(report: FlightMDReport) -> dict:
 class TrainingDataStore:
     def save(self, log_path: str, file_suffix: str, log_format: str, report: FlightMDReport,
              log_sha256: Optional[str] = None) -> str:
-        """Store the log and the stripped report. Returns the contribution id."""
+        """Store the log and the stripped report. Returns the contribution id.
+
+        @relation(LLR-API-105, scope=function)"""
         sha = log_sha256 or file_sha256(log_path)
         contribution_id = contribution_id_for(sha)
         database = db.get()
@@ -82,7 +87,9 @@ class TrainingDataStore:
         return contribution_id
 
     def delete(self, contribution_id: str) -> bool:
-        """Withdraw a contribution. False if there was nothing under that id."""
+        """Withdraw a contribution. False if there was nothing under that id.
+
+        @relation(LLR-API-106, scope=function)"""
         database = db.get()
         row = database.query_one("SELECT blob_key FROM contributions WHERE contribution_id = ?", (contribution_id,))
         if row is None:
@@ -94,6 +101,7 @@ class TrainingDataStore:
         return True
 
     def stats(self) -> ContributionStats:
+        """@relation(LLR-API-107, scope=function)"""
         row = db.get().query_one("SELECT COUNT(*), COALESCE(SUM(size_bytes), 0) FROM contributions")
         return ContributionStats(count=row[0], total_bytes=row[1])
 

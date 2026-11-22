@@ -1,0 +1,604 @@
+[DOCUMENT]
+TITLE: Report high-level requirements
+UID: FMD-HLR-RPT
+VERSION: Issue 1
+DATE: 2026-11-20
+OPTIONS:
+  MARKUP: Markdown
+
+[GRAMMAR]
+IMPORT_FROM_FILE: @flightmd
+
+[TEXT]
+STATEMENT: >>>
+Behaviour of the report item as seen at its interfaces, written from the code as built: the report data model
+(`flightmd_core/models/`), scoring, explanations, report assembly, the optional AI summary, flight context
+(weather, place name, airframe name), the GPX, KML and PDF exports and the schema export script. Parents are
+system requirements (`docs/lifecycle/03-system/system-requirements.sdoc`). Low-level requirements are in
+`llr-rpt.sdoc`, the design in `docs/lifecycle/06-design/lld-rpt.md`, the interfaces in
+`docs/lifecycle/03-system/icd/icd-report-and-exports.md` and `icd-external-services.md`.
+<<<
+
+[[SECTION]]
+TITLE: Report data model
+
+[REQUIREMENT]
+UID: HLR-RPT-001
+STATUS: Active
+TITLE: The report identifies itself and its input
+STATEMENT: >>>
+A report (`FlightMDReport`) shall carry a `report_id` (a UUID), `schema_version` (`"1.7"`), `file_name`,
+`file_size_bytes` (bytes), `generated_at` (UTC, `YYYY-MM-DDTHH:MM:SSZ`), `processing_time_ms` and, in its
+metadata, fields for the SHA-256 of the log (`log_sha256`), the detected format (`source_format`) and a planning
+brief SHA-256 (`planning_brief_sha256`). The report item fills `report_id`, `schema_version`, `generated_at` and
+`processing_time_ms`; the caller supplies the others.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-020
+- TYPE: Parent
+  VALUE: SYS-019
+- TYPE: Parent
+  VALUE: SYS-024
+
+[REQUIREMENT]
+UID: HLR-RPT-002
+STATUS: Active
+TITLE: What a finding carries
+STATEMENT: >>>
+A finding (`Finding`) shall carry a category, a severity (`critical`, `warning`, `info`, `good`), a title, a
+technical summary, a plain-English text, a recommendation, a confidence held between 0.0 and 1.0 with a level
+(`high`, `medium`, `low`), an optional time window in log-relative milliseconds and the same window in seconds,
+optional chart data, parameter changes, the rule identifier `kind` and the list of parameter names the finding
+touches. A confidence that is not finite shall become 0.0.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-009
+
+[REQUIREMENT]
+UID: HLR-RPT-003
+STATUS: Active
+TITLE: A skipped module is never assessed
+STATEMENT: >>>
+A module result (`AnalyserResult`) shall carry `skipped`, `skip_reason` and `assessed`. A result with
+`skipped` true shall always have `assessed` false, whatever the producer set.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-010
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Scoring
+
+[REQUIREMENT]
+UID: HLR-RPT-004
+STATUS: Active
+TITLE: Overall score is the weighted mean of assessed modules
+STATEMENT: >>>
+The overall score shall be the mean of the `health_score` values (each held to 0 to 100) of the module results
+that are assessed and have a weight above 0, weighted by the module weights, rounded to one decimal place.
+Skipped, unassessed and zero-weight modules shall not change it. Each module's own `health_score` is used as the
+module computed it.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-011
+
+[REQUIREMENT]
+UID: HLR-RPT-005
+STATUS: Active
+TITLE: Nothing assessed gives no score and no grade
+STATEMENT: >>>
+When no weighted module was assessed (all skipped, all failed, none present, or only zero-weight modules ran)
+the score shall be 0.0 with the label `Not assessed` and the grade `-`.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-011
+- TYPE: Parent
+  VALUE: SYS-010
+
+[REQUIREMENT]
+UID: HLR-RPT-006
+STATUS: Active
+TITLE: Label and grade come from one band table
+STATEMENT: >>>
+The label and the letter grade shall both be read from one table of score floors: 90 `Excellent`/`A`, 80
+`Good`/`B`, 70 `Caution`/`C`, 60 `Caution`/`D`, 50 `Warning`/`E`, 0 `Critical`/`F`. A score equal to a floor
+belongs to that band.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-011
+
+[REQUIREMENT]
+UID: HLR-RPT-007
+STATUS: Active
+TITLE: Share of the weight assessed
+STATEMENT: >>>
+The report shall carry `assessed_fraction`: the weight of the modules that were assessed divided by the total
+weight of all registered modules, 0.0 to 1.0, rounded to three decimal places.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-011
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Explanations and summary
+
+[REQUIREMENT]
+UID: HLR-RPT-008
+STATUS: Active
+TITLE: Plain-English text from templates keyed by kind
+STATEMENT: >>>
+The plain-English text of a finding shall be the fixed template text for its `kind`. The title shall never be
+used to choose a template. A finding whose `kind` is absent or has no template (which includes every finding
+of the ascent profile module and of a plugin with its own kinds) shall get its technical summary as its
+plain-English text.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-013
+- TYPE: Parent
+  VALUE: SYS-012
+
+[REQUIREMENT]
+UID: HLR-RPT-009
+STATUS: Active
+TITLE: The module's own recommendation is kept
+STATEMENT: >>>
+A recommendation set by the module shall be kept unchanged. Only when it is empty, or equal to the technical
+summary, shall it be replaced: by the template recommendation for the `kind`, else by a fixed text for the
+category, else by one fixed default text.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-013
+
+[REQUIREMENT]
+UID: HLR-RPT-010
+STATUS: Active
+TITLE: Executive summary from fixed sentences
+STATEMENT: >>>
+The executive summary shall be built from fixed sentences: the score, label and log duration; the titles of the
+critical findings, or else of the warnings, or else a count of minor notes, or else a statement that no anomaly
+was detected in the checks that could run; and the display names of the modules that were not assessed. When
+the label is `Not assessed` the summary shall instead say that there is no health score and that this is not a
+clean bill of health, and shall quote no score.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-010
+- TYPE: Parent
+  VALUE: SYS-012
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Report assembly
+
+[REQUIREMENT]
+UID: HLR-RPT-011
+STATUS: Active
+TITLE: Findings most severe first
+STATEMENT: >>>
+The report's `findings` list shall be ordered critical, warning, info, good, and within one severity by
+confidence from high to low; findings equal on both keep the order they arrived in.
+<<<
+RATIONALE: >>>
+No system requirement asks for an order. The change sheet's rule that the first recommendation for a parameter
+wins depends on this order, and readers of the report see the worst finding first.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+DERIVED: Yes
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-012
+
+[REQUIREMENT]
+UID: HLR-RPT-012
+STATUS: Active
+TITLE: One change-sheet entry per parameter
+STATEMENT: >>>
+The parameter change sheet shall hold at most one entry per parameter name: the recommendation of the first
+finding (in report order) that names it. A later recommendation for the same parameter with a different
+direction shall be noted in the kept entry's reason, ending "Review before changing."; a later one with the
+same direction is dropped without a note. A recommendation whose current or suggested value is not finite shall
+appear neither on its finding nor on the sheet. Building the sheet shall not change the recommendations shown on
+the findings.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-015
+
+[REQUIREMENT]
+UID: HLR-RPT-013
+STATUS: Active
+TITLE: Every number in the report is valid JSON
+STATEMENT: >>>
+Report assembly shall replace NaN and infinity by null in chart data and metadata, drop non-finite key metrics,
+set a non-finite module `health_score` or overall score to 0.0, and set a missing or non-finite
+`duration_seconds` to 0.0, so that the report serialises with no NaN or infinity.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-019
+
+[REQUIREMENT]
+UID: HLR-RPT-031
+STATUS: Active
+TITLE: What in a report is not a function of the log
+STATEMENT: >>>
+Scoring, explanation and assembly shall use no random or learned element. The only report values the report
+item produces that differ between two runs on the same log are `report_id` (random UUID), each `Finding.id`
+when the module did not set one (random, 8 characters), `generated_at` and `processing_time_ms`. The weather,
+the place name and an AI-rewritten summary come from outside services and are not covered by this statement.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test in this item's files analyses one log twice and compares. A review checks that `uuid` and the clock are
+used only for the four fields named, and that sorting is stable. `AnalyserResult.processing_ms` also varies; it
+is set by the analysers item.
+<<<
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-012
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Schema
+
+[REQUIREMENT]
+UID: HLR-RPT-014
+STATUS: Active
+TITLE: Published JSON Schema matches the model
+STATEMENT: >>>
+The JSON Schema of `FlightMDReport` shall be published as `docs/schema/flightmd-report-<schema_version>.json`
+by `scripts/export_schema.py`, and `docs/schema/CHANGELOG.md` shall have a section for the current
+`schema_version`. The published file shall equal the schema the model generates.
+<<<
+VERIFICATION: Test
+ALLOCATION: report, tools
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-019
+
+[REQUIREMENT]
+UID: HLR-RPT-015
+STATUS: Active
+TITLE: Reports of older schema versions still load
+STATEMENT: >>>
+A report written under an older schema version shall load into the current model: fields added later are
+optional or have defaults, the stored `schema_version` is kept, and `Finding.params` is filled from
+`param_changes` on load.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-019
+
+[REQUIREMENT]
+UID: HLR-RPT-029
+STATUS: Proposed
+TITLE: The report carries the engine version
+STATEMENT: >>>
+The report shall carry the version of the analysis engine that produced it.
+<<<
+RATIONALE: >>>
+Not built: `FlightMDReport` has `schema_version` only and no engine version field.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-021
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Exports
+
+[REQUIREMENT]
+UID: HLR-RPT-016
+STATUS: Active
+TITLE: GPX export of the flight path
+STATEMENT: >>>
+`generate_gpx` shall return a GPX 1.1 document (UTF-8 bytes) with one track named after the file name and one
+track point per `gps_path` point: `lat` and `lon` attributes in decimal degrees to 7 decimal places, `ele` in
+metres to 2 decimal places when the point has a finite altitude, and `time` in UTC with milliseconds when the
+report has `log_start_utc` and a `gps_path_t_s` list of the same length as the path. With no absolute start
+time no `time` element is written. A report with no path gives a valid document with no points. The file name
+is XML-escaped.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-022
+
+[REQUIREMENT]
+UID: HLR-RPT-017
+STATUS: Active
+TITLE: KML export of the flight path
+STATEMENT: >>>
+`generate_kml` shall return a KML 2.2 document (UTF-8 bytes) named after the file name with the path as one
+`LineString` whose coordinates are `lon,lat,alt` (degrees to 7 places, metres to 2 places, altitude 0 when the
+point has none), altitude mode `relativeToGround`, and, when the report has per-point time, HDOP or wind, a
+hidden folder with one point per path point carrying its UTC time and the values `t_s`, `hdop` and
+`wind_speed_ms` that exist for it. A missing reading is left out, not written as 0.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-022
+
+[REQUIREMENT]
+UID: HLR-RPT-018
+STATUS: Active
+TITLE: PDF report
+STATEMENT: >>>
+`render_report_pdf` shall return an A4 PDF of a report holding: report id, time of rendering, file name and
+size, overall score and label, flight information, the executive summary, every finding (severity, title,
+category, confidence, start time, plain-English text, action, technical detail and its parameter changes), the
+parameter change sheet, a module summary, a review block and a closing statement that the report is an
+engineering analysis aid, not a regulatory or compliance document, and does not replace the judgement of a
+qualified engineer. Text from the report is HTML-escaped.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The tests render the HTML only (escaping, no leftover template syntax); no test renders a PDF or checks the
+sections. A review reads `templates/report.html` against this statement.
+<<<
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-022
+
+[REQUIREMENT]
+UID: HLR-RPT-019
+STATUS: Active
+TITLE: Airframe record PDF
+STATEMENT: >>>
+`render_airframe_record_pdf` shall return an A4 PDF for one airframe holding its label, hours since last
+maintenance with a due or OK state, a statement that the record is not a regulatory certification, a summary,
+the flight history, the maintenance log and the pre-flight checklist, from the values the caller passes.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-030
+
+[REQUIREMENT]
+UID: HLR-RPT-020
+STATUS: Active
+TITLE: PDF export without the optional packages
+STATEMENT: >>>
+When Jinja2 or WeasyPrint (or WeasyPrint's system libraries) is not installed, the PDF functions shall raise
+`RuntimeError` with a message naming the `flightmd-core[pdf]` extra. Nothing else in the report item needs
+those packages.
+<<<
+RATIONALE: >>>
+No system requirement covers the optional install. The caller needs one error type to turn into a message.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+DERIVED: Yes
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-022
+
+[REQUIREMENT]
+UID: HLR-RPT-030
+STATUS: Proposed
+TITLE: Limits of use on the report and its exports
+STATEMENT: >>>
+The report data, the PDF and the text exports a person reads shall state that the report is advisory, that a
+clean report is not a release to service, and that parameter changes need review and a test flight.
+<<<
+RATIONALE: >>>
+Not built. The PDF's closing statement (HLR-RPT-018) says it is not a regulatory document and does not replace
+an engineer's judgement; it does not say the three things above, and the report JSON, GPX and KML carry no
+statement at all.
+<<<
+VERIFICATION: Inspection
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-026
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Optional AI summary
+
+[REQUIREMENT]
+UID: HLR-RPT-021
+STATUS: Active
+TITLE: The AI may only reword the summary
+STATEMENT: >>>
+`AIEnhancer.polish_summary` shall take the rule-based summary, the findings and the metadata and return one
+string. It shall not change any finding, score or metadata it is given. It shall return the rule-based summary
+unchanged when no provider is configured, when the provider call raises any error (which includes a timeout),
+when the reply is empty, or when any number in the rule-based summary is missing from the reply.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Tests cover the unconfigured case and a reply that drops a number. The error path and the absence of writes to
+the findings are checked by reading `polish_summary`.
+<<<
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-023
+
+[REQUIREMENT]
+UID: HLR-RPT-022
+STATUS: Active
+TITLE: Log-derived text goes to the AI as data
+STATEMENT: >>>
+Text that came from a log shall reach a prompt only after `clean_text` (control and bidirectional characters
+replaced by spaces; the characters `<`, `>`, backtick, braces and square brackets removed; one line; length
+capped) and inside `<report>` tags, under a system prompt that tells the model to treat that content as data
+and never to follow it.
+<<<
+RATIONALE: >>>
+No system requirement names prompt injection. Finding titles and other strings come from an uploaded file and
+could carry instructions aimed at the model.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+DERIVED: Yes
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-023
+
+[REQUIREMENT]
+UID: HLR-RPT-023
+STATUS: Active
+TITLE: AI is off unless a key for the chosen provider is given
+STATEMENT: >>>
+`AIEnhancer` shall be configured only when the chosen provider is `groq` (the default) or `anthropic` and a
+key for that provider was passed and its client library is installed. Otherwise `is_configured` is false,
+`polish_summary` returns its input and `complete` raises `RuntimeError`. `complete` gives the API one
+provider-neutral completion call; provider errors pass through it to the caller.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-023
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Flight context
+
+[REQUIREMENT]
+UID: HLR-RPT-024
+STATUS: Active
+TITLE: Weather of the flight day
+STATEMENT: >>>
+`fetch_weather` shall return, for a latitude, longitude and UTC start time, a dict with the day's maximum and
+minimum temperature (deg C), maximum wind speed (m/s), rain sum (mm) and a description, from the Open-Meteo
+archive service or, when that has no data for the day, its forecast service. It shall never raise. With no
+position (None or 0,0), no usable date, no network or no data it shall return the same keys with null values
+and the description "Weather data unavailable", and it shall never look up a date other than the flight's.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-024
+
+[REQUIREMENT]
+UID: HLR-RPT-025
+STATUS: Active
+TITLE: Place name
+STATEMENT: >>>
+`reverse_geocode` shall return a place name at town level ("locality, country") for a latitude and longitude
+from OpenStreetMap Nominatim, or `None` for no position (None or 0,0) and on any failure. It shall never raise.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-024
+
+[REQUIREMENT]
+UID: HLR-RPT-026
+STATUS: Active
+TITLE: Where the report item can reach the network
+STATEMENT: >>>
+The report item shall make outbound requests only from `fetch_weather` (Open-Meteo, 2.0 s timeout per request,
+at most two requests), `reverse_geocode` (Nominatim, 2.0 s timeout, one request) and the `AIEnhancer` provider
+calls (Groq or Anthropic, 30 s timeout, 2 retries). These functions do not read the offline setting themselves;
+the caller keeps offline mode by not calling them.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+The tests replace `urlopen` and the provider call; none checks that no other module opens a connection. A review
+searches the item's files for `urllib`, `socket`, `requests`, `httpx`, `openai` and `anthropic`. Offline mode
+itself is tested with the orchestrator, which owns the check.
+<<<
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-025
+
+[REQUIREMENT]
+UID: HLR-RPT-027
+STATUS: Active
+TITLE: Airframe name from the parameters
+STATEMENT: >>>
+The report item shall give the parsers a name for the airframe: for PX4 the name and frame type for a
+`SYS_AUTOSTART` id from a table shipped with the package, and for ArduPilot a frame name from `FRAME_CLASS` and
+`FRAME_TYPE` (`Q_FRAME_CLASS`/`Q_FRAME_TYPE` for a quadplane, `FRAME_CONFIG` for a submarine), by vehicle type.
+An unknown id or missing parameters give no name.
+<<<
+RATIONALE: >>>
+No system requirement asks for an airframe name; it fills `FlightMetadata.airframe_name` for the reader.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+DERIVED: Yes
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-004
+
+[REQUIREMENT]
+UID: HLR-RPT-028
+STATUS: Active
+TITLE: One text form for UTC times, and a floor for a set clock
+STATEMENT: >>>
+The report item shall give the parsers one function that turns a UTC epoch time in microseconds into the text
+`YYYY-MM-DDTHH:MM:SSZ` (whole seconds, truncated) used for `log_start_utc`, and one constant,
+1 262 304 000 000 000 us (2010-01-01T00:00:00Z), below which a clock is taken as never set.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test in this item's files calls `utc_iso`; the parser tests use it through `log_start_utc`. A review checks
+the format string and the constant.
+<<<
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-004
+- TYPE: Parent
+  VALUE: SYS-024
+
+[[/SECTION]]

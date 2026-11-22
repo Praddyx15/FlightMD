@@ -28,6 +28,7 @@ def tmpdirs(tmp_path, monkeypatch):
     return root
 
 
+# covers: HLR-INT-004, LLR-INT-013
 def test_plain_log_is_returned_as_is(tmp_path, tmpdirs):
     p = tmp_path / "flight.ulg"
     p.write_bytes(LOG)
@@ -38,6 +39,7 @@ def test_plain_log_is_returned_as_is(tmp_path, tmpdirs):
     assert list(tmpdirs.iterdir()) == []
 
 
+# covers: HLR-INT-004, HLR-INT-005, LLR-INT-014, LLR-INT-016
 def test_gzip(tmp_path, tmpdirs):
     p = tmp_path / "flight.ulg.gz"
     p.write_bytes(gzip.compress(LOG))
@@ -50,6 +52,7 @@ def test_gzip(tmp_path, tmpdirs):
     assert list(tmpdirs.iterdir()) == []
 
 
+# covers: HLR-INT-004, LLR-INT-016
 def test_gzip_detected_by_content_not_name(tmp_path, tmpdirs):
     p = tmp_path / "upload.bin"
     p.write_bytes(gzip.compress(LOG))
@@ -59,6 +62,7 @@ def test_gzip_detected_by_content_not_name(tmp_path, tmpdirs):
     cleanup()
 
 
+# covers: HLR-INT-004, HLR-INT-005, LLR-INT-014
 def test_zip_with_one_log(tmp_path, tmpdirs):
     z = make_zip(tmp_path / "logs.zip", [("2026-05-01/flight.bin", LOG)])
     path, cleanup = open_log(z, 10 * MB)
@@ -69,6 +73,7 @@ def test_zip_with_one_log(tmp_path, tmpdirs):
     assert list(tmpdirs.iterdir()) == []
 
 
+# covers: HLR-INT-004, HLR-INT-005, LLR-INT-017
 def test_zip_ignores_os_clutter_and_folders(tmp_path, tmpdirs):
     z = make_zip(tmp_path / "logs.zip", [
         ("logs/", b""),
@@ -82,6 +87,7 @@ def test_zip_ignores_os_clutter_and_folders(tmp_path, tmpdirs):
     cleanup()
 
 
+# covers: HLR-INT-005, HLR-INT-006, LLR-INT-019
 def test_stored_zip(tmp_path, tmpdirs):
     z = make_zip(tmp_path / "logs.zip", [("a.ulg", LOG)], method=zipfile.ZIP_STORED)
     path, cleanup = open_log(z, 10 * MB)
@@ -95,6 +101,7 @@ def test_stored_zip(tmp_path, tmpdirs):
     [("a.ulg", LOG), ("b.ulg", LOG)],
     [("a.ulg", LOG), ("notes.txt", b"flew well")],
 ])
+# covers: HLR-INT-004, HLR-INT-005, LLR-INT-017
 def test_zip_needs_exactly_one_file(tmp_path, tmpdirs, entries):
     z = make_zip(tmp_path / "logs.zip", entries)
     with pytest.raises(ValueError, match="exactly one"):
@@ -102,6 +109,7 @@ def test_zip_needs_exactly_one_file(tmp_path, tmpdirs, entries):
     assert list(tmpdirs.iterdir()) == []
 
 
+# covers: HLR-INT-004, HLR-INT-005, LLR-INT-017
 @pytest.mark.parametrize("name", ["../flight.ulg", "logs/../../flight.ulg", "/etc/flight.ulg", "C:/flight.ulg", "..\\flight.ulg"])
 def test_zip_path_traversal_is_refused(tmp_path, tmpdirs, name):
     z = make_zip(tmp_path / "logs.zip", [(name, LOG)])
@@ -110,6 +118,7 @@ def test_zip_path_traversal_is_refused(tmp_path, tmpdirs, name):
     assert list(tmpdirs.iterdir()) == []
 
 
+# covers: HLR-INT-005, HLR-INT-006, LLR-INT-019
 def test_zip_bomb_by_declared_ratio(tmp_path, tmpdirs):
     z = make_zip(tmp_path / "bomb.zip", [("flight.ulg", b"\x00" * (8 * MB))])
     assert os.path.getsize(z) < 64 * 1024
@@ -118,6 +127,7 @@ def test_zip_bomb_by_declared_ratio(tmp_path, tmpdirs):
     assert list(tmpdirs.iterdir()) == []
 
 
+# covers: HLR-INT-005, HLR-INT-006, LLR-INT-019
 def test_zip_with_lying_header_stops_at_the_ratio_cap(tmp_path, tmpdirs, monkeypatch):
     # header checks pass when the sizes in the central directory lie; the stream cap still holds
     z = make_zip(tmp_path / "bomb.zip", [("flight.ulg", b"\x00" * (8 * MB))])
@@ -134,6 +144,7 @@ def test_zip_with_lying_header_stops_at_the_ratio_cap(tmp_path, tmpdirs, monkeyp
     assert list(tmpdirs.iterdir()) == []
 
 
+# covers: HLR-INT-004, HLR-INT-006, LLR-INT-016, LLR-INT-021
 def test_gzip_bomb(tmp_path, tmpdirs):
     p = tmp_path / "bomb.ulg.gz"
     p.write_bytes(gzip.compress(b"\x00" * (16 * MB)))
@@ -142,6 +153,7 @@ def test_gzip_bomb(tmp_path, tmpdirs):
     assert list(tmpdirs.iterdir()) == []
 
 
+# covers: HLR-INT-006, LLR-INT-021
 def test_over_the_size_cap(tmp_path, tmpdirs):
     data = os.urandom(3 * MB)   # incompressible, so the ratio check doesn't fire first
     p = tmp_path / "big.ulg.gz"
@@ -154,6 +166,7 @@ def test_over_the_size_cap(tmp_path, tmpdirs):
     assert list(tmpdirs.iterdir()) == []
 
 
+# covers: HLR-INT-005, LLR-INT-015
 @pytest.mark.parametrize("inner", ["flight.ulg.gz", "more.zip"])
 def test_nested_archive_by_name(tmp_path, tmpdirs, inner):
     z = make_zip(tmp_path / "logs.zip", [(inner, gzip.compress(LOG))])
@@ -161,6 +174,7 @@ def test_nested_archive_by_name(tmp_path, tmpdirs, inner):
         open_log(z, 10 * MB)
 
 
+# covers: HLR-INT-005, LLR-INT-015
 def test_nested_archive_by_content(tmp_path, tmpdirs):
     inner = io.BytesIO()
     with zipfile.ZipFile(inner, "w") as zf:
@@ -172,6 +186,7 @@ def test_nested_archive_by_content(tmp_path, tmpdirs):
     assert list(tmpdirs.iterdir()) == []
 
 
+# covers: HLR-INT-005, LLR-INT-022
 def test_truncated_gzip(tmp_path, tmpdirs):
     p = tmp_path / "cut.ulg.gz"
     p.write_bytes(gzip.compress(LOG)[:-30])
@@ -180,6 +195,7 @@ def test_truncated_gzip(tmp_path, tmpdirs):
     assert list(tmpdirs.iterdir()) == []
 
 
+# covers: HLR-INT-005, LLR-INT-022
 def test_corrupt_zip(tmp_path, tmpdirs):
     p = tmp_path / "bad.zip"
     p.write_bytes(b"PK\x03\x04" + b"\x00" * 100)

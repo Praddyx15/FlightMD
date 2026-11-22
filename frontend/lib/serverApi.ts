@@ -1,3 +1,4 @@
+// @relation(LLR-WEB-014, scope=file)
 import type { FlightMDReport } from "./types";
 
 // Server-side only. API_URL is the API as the Next server reaches it (a service name in

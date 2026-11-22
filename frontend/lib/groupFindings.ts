@@ -1,3 +1,4 @@
+// @relation(LLR-WEB-041, LLR-WEB-042, scope=file)
 import type { Category, Finding, Severity } from "./types";
 import { SEVERITY_ORDER } from "./utils";
 

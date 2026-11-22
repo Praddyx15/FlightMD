@@ -23,44 +23,53 @@ def tlog_record(ts_us=1_700_000_000_000_000, payload=b"\x00" * 9, msgid=0, v2=Tr
     return struct.pack(">Q", ts_us) + frame
 
 
+# covers: HLR-INT-001, LLR-INT-001
 def test_px4_ulog_magic_detected():
     assert detect_format_from_header(ULOG_HEADER, "flight.ulg") == "px4_ulog"
 
 
+# covers: HLR-INT-001, LLR-INT-001
 def test_px4_ulog_magic_detected_regardless_of_extension():
     assert detect_format_from_header(ULOG_HEADER, "weird_name.dat") == "px4_ulog"
 
 
+# covers: HLR-INT-002, LLR-INT-001, LLR-INT-010
 def test_ulog_needs_the_full_magic():
     with pytest.raises(UnsupportedFormatError):
         detect_format_from_header(b"ULog\x01\x00\x00\x00", "flight.ulg")
 
 
+# covers: HLR-INT-001, LLR-INT-002
 def test_ardupilot_bin_detected():
     assert detect_format_from_header(DATAFLASH_HEADER, "flight.bin") == "ardupilot_bin"
 
 
+# covers: HLR-INT-002, LLR-INT-002
 def test_dataflash_head_without_fmt_rejected():
     with pytest.raises(UnsupportedFormatError):
         detect_format_from_header(b"\xA3\x95\x01\x00\x00\x00\x00\x00", "flight.bin")
 
 
+# covers: HLR-INT-001, LLR-INT-006, LLR-INT-007
 @pytest.mark.parametrize("v2", [True, False])
 def test_tlog_detected_from_frames(v2):
     data = b"".join(tlog_record(1_700_000_000_000_000 + i, v2=v2) for i in range(3))
     assert detect_format_from_header(data, "anything.dat", complete=True) == "mavlink_tlog"
 
 
+# covers: HLR-INT-001, LLR-INT-006
 def test_signed_v2_frames_detected():
     rec = tlog_record()
     signed = rec[:10] + b"\x01" + rec[11:] + b"\x00" * 13  # incompat flag 1 = 13-byte signature
     assert detect_format_from_header(signed * 3, "flight.tlog", complete=True) == "mavlink_tlog"
 
 
+# covers: HLR-INT-001, LLR-INT-007
 def test_tiny_complete_tlog_detected():
     assert detect_format_from_header(tlog_record(), "flight.tlog", complete=True) == "mavlink_tlog"
 
 
+# covers: HLR-INT-002, LLR-INT-006
 def test_stx_without_timestamp_is_not_a_tlog():
     # what the old detector accepted: a raw MAVLink stream / anything starting 0xFD
     data = bytes([0xFD, 0x09, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00]) * 100
@@ -68,6 +77,7 @@ def test_stx_without_timestamp_is_not_a_tlog():
         detect_format_from_header(data, "flight.tlog", complete=True)
 
 
+# covers: HLR-INT-002, LLR-INT-007
 @pytest.mark.parametrize("encoding", ["utf-16-be", "utf-16-le"])
 def test_utf16_text_rejected(encoding):
     data = "﻿just some notes, not a log\n".encode(encoding) * 50
@@ -75,54 +85,64 @@ def test_utf16_text_rejected(encoding):
         detect_format_from_header(data, "flight.tlog", complete=True)
 
 
+# covers: HLR-INT-002, HLR-INT-003, LLR-INT-007
 def test_garbage_named_tlog_rejected():
     data = bytes(range(256)) * 20
     with pytest.raises(UnsupportedFormatError):
         detect_format_from_header(data, "flight.tlog", complete=True)
 
 
+# covers: HLR-INT-003, LLR-INT-007, LLR-INT-008
 def test_truncated_tlog_rejected():
     data = tlog_record() + tlog_record()[:12]
     with pytest.raises(UnsupportedFormatError):
         detect_format_from_header(data, "flight.tlog", complete=True)
 
 
+# covers: HLR-INT-003, LLR-INT-008
 def test_short_tlog_header_accepted_provisionally():
     # the upload route only has a few bytes; detect_format() re-checks on disk
     assert detect_format_from_header(tlog_record()[:8], "flight.tlog") == "mavlink_tlog"
 
 
+# covers: HLR-INT-003, LLR-INT-008
 def test_short_tlog_header_needs_the_extension():
     with pytest.raises(UnsupportedFormatError):
         detect_format_from_header(tlog_record()[:8], "flight.bin")
 
 
+# covers: HLR-INT-002, LLR-INT-010
 @pytest.mark.parametrize("data", [b"", b"U", b"ULo", b"\xA3"])
 def test_truncated_input_rejected(data):
     with pytest.raises(UnsupportedFormatError):
         detect_format_from_header(data, "flight.ulg", complete=True)
 
 
+# covers: HLR-INT-002, LLR-INT-010
 def test_garbage_content_with_ulg_extension_is_rejected():
     with pytest.raises(UnsupportedFormatError):
         detect_format_from_header(b"\x00\x01\x02\x03\x00\x00\x00\x00", "bad.ulg")
 
 
+# covers: HLR-INT-002, LLR-INT-010
 def test_garbage_content_with_bin_extension_is_rejected():
     with pytest.raises(UnsupportedFormatError):
         detect_format_from_header(b"\x00\x01\x02\x03\x00\x00\x00\x00", "bad.bin")
 
 
+# covers: HLR-INT-002, LLR-INT-010
 def test_text_log_extension_rejected_with_helpful_message():
     with pytest.raises(UnsupportedFormatError, match="text-format"):
         detect_format_from_header(b"not a binary log at all ", "mission_planner_export.log")
 
 
+# covers: HLR-INT-002, LLR-INT-010
 def test_unrecognized_format_rejected():
     with pytest.raises(UnsupportedFormatError):
         detect_format_from_header(b"random bytes", "flight.xyz")
 
 
+# covers: HLR-INT-001, LLR-INT-011
 def test_detect_format_on_disk(tmp_path):
     good = tmp_path / "a.tlog"
     good.write_bytes(b"".join(tlog_record(1_700_000_000_000_000 + i * 1000) for i in range(50)))
@@ -141,20 +161,24 @@ TEXT_LOG = (
 )
 
 
+# covers: HLR-INT-001, LLR-INT-004
 @pytest.mark.parametrize("prefix", [b"", b"\r\n", b"\xef\xbb\xbf"])
 def test_text_dataflash_detected(prefix):
     assert detect_format_from_header(prefix + TEXT_LOG, "export.log", complete=True) == "ardupilot_log"
 
 
+# covers: HLR-INT-001, LLR-INT-004
 def test_text_dataflash_detected_regardless_of_extension():
     assert detect_format_from_header(TEXT_LOG, "flight.txt", complete=True) == "ardupilot_log"
 
 
+# covers: HLR-INT-002, LLR-INT-004, LLR-INT-010
 def test_text_mentioning_fmt_later_is_not_a_log():
     with pytest.raises(UnsupportedFormatError, match="text-format"):
         detect_format_from_header(b"notes\n" + TEXT_LOG, "export.log", complete=True)
 
 
+# covers: HLR-INT-001, LLR-INT-003
 def test_blackbox_detected():
     head = bw.BlackboxWriter().header().bytes()
     assert detect_format_from_header(head[:4096], "btfl_001.bbl") == "betaflight_bbl"
@@ -162,6 +186,7 @@ def test_blackbox_detected():
     assert detect_format_from_header(b"\x00\xff" * 50 + head[:3000], "LOG00007.TXT") == "betaflight_bbl"
 
 
+# covers: HLR-INT-001, LLR-INT-009
 @pytest.mark.parametrize("version", [3, 6, 10, 12])
 def test_dji_txt_detected(version):
     recs = [dw.record(dw.OSD, dw.osd(47.0, 8.0, 1.0), version, seed=k)[0] for k in range(5)]
@@ -170,6 +195,7 @@ def test_dji_txt_detected(version):
     assert detect_format_from_header(data, "renamed.bin", complete=True) == "dji_txt"
 
 
+# covers: HLR-INT-001, LLR-INT-009
 def test_dji_txt_v13_detected():
     recs = [dw.key_storage(dw.BASE_FEATURE, b"k" * 32, 13)]
     recs += [dw.record(dw.CUSTOM, dw.custom(1_780_000_000_000), 13)[0] for _ in range(3)]
@@ -177,6 +203,7 @@ def test_dji_txt_v13_detected():
     assert detect_format_from_header(data, "DJIFlightRecord.txt", complete=True) == "dji_txt"
 
 
+# covers: HLR-INT-003, LLR-INT-009
 def test_short_dji_header_accepted_provisionally_only_as_txt():
     recs = [dw.record(dw.OSD, dw.osd(47.0, 8.0, 1.0), 10)[0] for _ in range(5)]
     head = dw.build(recs, 10)[:120]
@@ -185,6 +212,7 @@ def test_short_dji_header_accepted_provisionally_only_as_txt():
         detect_format_from_header(head, "flight.bin")
 
 
+# covers: HLR-INT-002, LLR-INT-005
 @pytest.mark.parametrize("head", [
     b"\x00" * 16 + b"BUILD" + b"\x00" * 200,
     b"LOGH" + b"\x01" * 200,
@@ -195,18 +223,21 @@ def test_dji_dat_recognised_and_refused(head):
     assert e.value.format_id == "dji_dat"
 
 
+# covers: HLR-INT-002, LLR-INT-010
 def test_unknown_format_has_no_format_id():
     with pytest.raises(UnsupportedFormatError) as e:
         detect_format_from_header(b"random bytes", "flight.xyz")
     assert e.value.format_id is None
 
 
+# covers: HLR-INT-001, LLR-INT-012
 def test_parsers_cover_every_format():
     ids = {"px4_ulog", "ardupilot_bin", "ardupilot_log", "mavlink_tlog", "betaflight_bbl", "dji_txt", "dji_dat"}
     assert set(PARSERS) == ids
     assert all(callable(getattr(cls, "parse", None)) for cls in PARSERS.values())
 
 
+# covers: HLR-INT-001, LLR-INT-011
 def test_detect_new_formats_on_disk(tmp_path):
     bbl = tmp_path / "a.bbl"
     bbl.write_bytes(bw.BlackboxWriter().header().bytes())

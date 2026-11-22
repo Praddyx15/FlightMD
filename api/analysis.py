@@ -48,6 +48,8 @@ def public_error(e: Exception) -> str:
 
     The parsers raise ValueError with a usable message for bad input; anything
     else is our bug, and its text (with temp paths in it) stays in the log.
+
+    @relation(LLR-API-048, scope=function)
     """
     if isinstance(e, (ValueError, UnsupportedFormatError)):
         msg = _PATHS.sub("<file>", str(e)).strip()
@@ -56,6 +58,7 @@ def public_error(e: Exception) -> str:
 
 
 def remove_file(path: Optional[str]) -> None:
+    """@relation(LLR-API-051, scope=function)"""
     if path:
         try:
             os.unlink(path)
@@ -64,7 +67,9 @@ def remove_file(path: Optional[str]) -> None:
 
 
 async def run_job(job: AnalysisJob) -> None:
-    """Runs one analysis and always removes job.log_path afterwards. Never raises."""
+    """Runs one analysis and always removes job.log_path afterwards. Never raises.
+
+    @relation(LLR-API-049, LLR-API-050, LLR-API-051, scope=function)"""
     settings = get_settings()
     outcome = "error"
     try:
@@ -133,7 +138,9 @@ async def run_job(job: AnalysisJob) -> None:
 
 
 async def _check_alert_rules(airframe_label: str, report_id: str, report) -> None:
-    """Fire the airframe's webhook for any breached rule. Never raises."""
+    """Fire the airframe's webhook for any breached rule. Never raises.
+
+    @relation(LLR-API-052, scope=function)"""
     try:
         config = await run_in_threadpool(afs.airframe_store.get, airframe_label)
         if not config.alert_rules or not config.webhook_url:

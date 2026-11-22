@@ -1,3 +1,4 @@
+// @relation(LLR-WEB-061, scope=file)
 import { ArrowDown, ArrowUp, Minus } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { DASH, fmtNum } from "@/lib/format";

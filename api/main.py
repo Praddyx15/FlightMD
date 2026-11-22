@@ -1,3 +1,9 @@
+"""
+FastAPI application: middleware, routers, start-up and the expiry sweep.
+
+@relation(LLR-API-004, LLR-API-012, scope=file)
+"""
+
 import asyncio
 import json
 import logging
@@ -40,6 +46,7 @@ UPLOAD_OVERHEAD_BYTES = 64 * 1024
 
 
 def _sweep() -> None:
+    """@relation(LLR-API-007, LLR-API-008, scope=function)"""
     # this sweep is what makes "untagged reports expire after an hour" true
     for report_id in job_store.cleanup_expired(REPORT_TTL_SECONDS):
         export_cache.drop(report_id)
@@ -50,6 +57,7 @@ def _sweep() -> None:
 
 
 def _remove_old_uploads(max_age_s: Optional[float]) -> None:
+    """@relation(LLR-API-006, LLR-API-008, scope=function)"""
     # spool files whose job died before its own cleanup ran; None = all of them
     folder = os.path.join(db.get().data_dir, "uploads")
     if not os.path.isdir(folder):
@@ -65,6 +73,7 @@ def _remove_old_uploads(max_age_s: Optional[float]) -> None:
 
 
 async def _cleanup_loop():
+    """@relation(LLR-API-008, scope=function)"""
     while True:
         await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
         try:
@@ -74,6 +83,7 @@ async def _cleanup_loop():
 
 
 def _startup() -> None:
+    """@relation(LLR-API-006, scope=function)"""
     database = db.get()
     # the engine's topic cache reads the same variable; keep it pointing at our dir
     # even when the setting only came from .env
@@ -90,6 +100,7 @@ def _startup() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """@relation(LLR-API-005, scope=function)"""
     trusted_networks(settings.trusted_proxies)   # a typo in TRUSTED_PROXIES should stop the boot, not 500 every request
     logger.info(f"FlightMD API v{settings.app_version} starting up")
     logger.info(f"CORS origins: {settings.cors_origins_list}")
@@ -123,6 +134,7 @@ metrics.instrument(app)
 
 @app.middleware("http")
 async def request_log(request: Request, call_next):
+    """@relation(LLR-API-001, LLR-API-002, scope=function)"""
     # One JSON line per request. Route template only, never the raw path
     # (labels and ids live there), and no IPs or filenames.
     request_id = uuid.uuid4().hex[:12]
@@ -150,6 +162,7 @@ async def request_log(request: Request, call_next):
 
 
 def _log_request(request: Request, request_id: str, status: int, start: float) -> None:
+    """@relation(LLR-API-003, scope=function)"""
     route = request.scope.get("route")
     access_log.info(json.dumps({
         "request_id": request_id,

@@ -1,0 +1,486 @@
+[DOCUMENT]
+TITLE: Flight-dynamics checks high-level requirements
+UID: FMD-HLR-DYN
+VERSION: Issue 1
+DATE: 2026-11-20
+OPTIONS:
+  MARKUP: Markdown
+
+[GRAMMAR]
+IMPORT_FROM_FILE: @flightmd
+
+[TEXT]
+STATEMENT: >>>
+Behaviour of the four flight-dynamics checks as built: rate-loop oscillation, vibration, estimator (EKF) health
+and the ascent profile. Code: `flightmd_core/analysers/oscillation.py`, `vibration.py`, `ekf.py` and
+`ascent_profile.py`. Each check takes the topic tables and the parameter set of one log and returns one
+`AnalyserResult`. Low-level requirements are in `llr-dyn.sdoc`; the design is in `06-design/lld-dyn.md`.
+All times are log-relative microseconds on input; findings carry milliseconds and seconds.
+<<<
+
+[[SECTION]]
+TITLE: Oscillation
+
+[REQUIREMENT]
+UID: HLR-DYN-001
+STATUS: Active
+TITLE: Oscillation inputs and not assessed
+STATEMENT: >>>
+The oscillation check shall take the topic `vehicle_angular_velocity` (a `timestamp` column and roll, pitch and
+yaw rate in rad/s). It shall return a not-assessed result with a reason, and no score, when the topic is absent,
+when it has no `timestamp` column, when no axis is logged at 10 Hz or more in flight, or when no in-flight
+stretch without a gap is long enough for one analysis window of about 4 s.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-008
+- TYPE: Parent
+  VALUE: SYS-010
+
+[REQUIREMENT]
+UID: HLR-DYN-002
+STATUS: Active
+TITLE: Oscillation found per window, in flight
+STATEMENT: >>>
+The oscillation check shall use in-air samples only, shall look for the largest narrow spectral peak in
+overlapping windows of about 4 s between 1 Hz and the lower of 100 Hz and 0.4 times the sample rate, and shall
+report its frequency in Hz, its amplitude in deg/s and the time span over which it is present, so that a short
+burst in a long log is found and the amplitude does not depend on the length of the log.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Tests cover burst detection, time span, frequency and amplitude. No test in `tests/test_oscillation.py` supplies
+arming data, so the in-air restriction is checked by inspection of `OscillationAnalyser.analyse`.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-007
+- TYPE: Parent
+  VALUE: SYS-008
+
+[REQUIREMENT]
+UID: HLR-DYN-003
+STATUS: Active
+TITLE: Oscillation severity and module score
+STATEMENT: >>>
+For each axis the oscillation check shall raise at most one finding: info at an amplitude of 5 deg/s or more,
+warning at 15 deg/s or more and critical at 40 deg/s or more, and only when the peak is at least 25 times the
+median power in the band, both taken as the median of three neighbouring windows. The module score shall be 100
+less 5, 15 or 30 for each axis with an info, warning or critical finding, not below 0.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-008
+
+[REQUIREMENT]
+UID: HLR-DYN-004
+STATUS: Active
+TITLE: What an oscillation finding and result carry
+STATEMENT: >>>
+An oscillation finding shall carry the category `oscillation`, a `kind` of `oscillation.rate_p`,
+`oscillation.rate_d` or `oscillation.mechanical`, the axis and frequency in its title, the measured amplitude,
+threshold, prominence and duration in its text, the time window when one is known, a confidence from 0 to 1 and
+the spectrum for a chart. The result shall carry, for every assessed axis and whether or not a finding fired,
+the peak frequency, the prominence and the amplitude as key metrics.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-009
+
+[REQUIREMENT]
+UID: HLR-DYN-005
+STATUS: Active
+TITLE: Oscillation advice by band and vehicle
+STATEMENT: >>>
+The oscillation check shall attribute a peak below 12 Hz to the rate P gain, a peak from 12 Hz to below 35 Hz to
+the rate D gain or D-term filtering, and a peak at 35 Hz or above to a mechanical cause with no gain change. It
+shall name the P or D gain of the autopilot and frame type found in the parameter set (PX4 or ArduPilot,
+multirotor or fixed wing) and shall give a numeric change only when that gain is in the log with a value above
+zero: the P gain times 0.87, or the D gain times 0.85. It shall give no numeric change for a VTOL, a rover, an
+unknown vehicle, ArduPilot fixed-wing yaw or a PX4 fixed-wing D gain.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Tests cover the P band for PX4 multirotor, PX4 fixed wing, ArduPilot multirotor, rover and an unknown vehicle,
+and the D band for PX4 multirotor. The mechanical band, VTOL, ArduPilot fixed wing and the D-band filter names
+are checked by inspection of `_finding` and of `RATE_GAINS` in `vehicle.py`.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-013
+
+[REQUIREMENT]
+UID: HLR-DYN-006
+STATUS: Proposed
+TITLE: Recommended gain held inside the firmware range
+STATEMENT: >>>
+The oscillation check shall hold a recommended gain value inside the firmware metadata range for that parameter,
+or withhold it with a note, and shall not recommend a value equal to the current value or equal to zero.
+<<<
+RATIONALE: >>>
+Not built. As built the value is the current value times 0.87 or 0.85, rounded to 4 or 5 decimal places, with no
+lower bound (LLR-DYN-014, LLR-DYN-015).
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-016
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Vibration
+
+[REQUIREMENT]
+UID: HLR-DYN-007
+STATUS: Active
+TITLE: Vibration sources and not assessed
+STATEMENT: >>>
+The vibration check shall take its level from the first of these that gives enough in-flight samples: the PX4
+`vehicle_imu_status` vibration metric (10 samples), the autopilot `vibration` topic (10 samples), raw
+`sensor_accel` (50 samples), each for every logged IMU instance. It shall return a not-assessed result with a
+reason when none of the three topics is present or none gives enough in-flight samples.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Tests cover the priority of the PX4 metric over raw data and the absent-topic case. No test drives the
+not-enough-samples skip; it is checked by inspection of `VibrationAnalyser.analyse`.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-008
+- TYPE: Parent
+  VALUE: SYS-010
+
+[REQUIREMENT]
+UID: HLR-DYN-008
+STATUS: Active
+TITLE: Vibration limits per source
+STATEMENT: >>>
+The vibration check shall raise a warning when an IMU's level is above the first limit and a critical finding
+when it is above the second: 4.905 and 9.81 m/s2 for the PX4 accelerometer vibration metric (also when a PX4
+vehicle reports it as `vibration_z`), 30 and 60 m/s2 for the `vibration` topic of any other vehicle and for the
+level computed from raw accelerometer data. The level shall be the 95th percentile of the in-flight samples for
+the autopilot's own metrics and the whole-flight RMS of the three axes after removing content below about 5 Hz
+for raw data.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-008
+
+[REQUIREMENT]
+UID: HLR-DYN-009
+STATUS: Active
+TITLE: Vibration counted in flight only
+STATEMENT: >>>
+The vibration check shall count levels, clipping and sensor errors from in-air samples only, and shall treat the
+whole log as flight when the log carries no arming data.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-007
+
+[REQUIREMENT]
+UID: HLR-DYN-010
+STATUS: Active
+TITLE: Accelerometer clipping
+STATEMENT: >>>
+The vibration check shall report accelerometer clipping in flight per IMU, from the autopilot's clip counters
+where logged (info for 1 to 99 clips, warning for 100 or more) and otherwise from raw samples that sit flat at a
+range limit of 75 m/s2 or more (warning when at least 10 samples and at least 0.1 % of the in-flight samples).
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-008
+
+[REQUIREMENT]
+UID: HLR-DYN-011
+STATUS: Active
+TITLE: IMU disagreement and sensor errors
+STATEMENT: >>>
+The vibration check shall raise a warning when the levels of two or more IMU instances differ by more than half
+the warning limit of the source in use, and an info finding for an IMU whose driver error counters rose by 10 or
+more in flight.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-008
+
+[REQUIREMENT]
+UID: HLR-DYN-012
+STATUS: Active
+TITLE: Vibration score and what the result carries
+STATEMENT: >>>
+The vibration module score shall be 100 less 30 for each critical and 15 for each warning level finding, 5 for
+each sensor-error finding, 15 or 5 for each warning or info clipping finding and 15 for an IMU disagreement, not
+below 0. Every finding shall carry the category `vibration`, a `kind`, a confidence from 0 to 1 and chart data.
+The result shall carry the worst level as a fraction of its warning limit, the total clip count and the highest
+level as key metrics.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-008
+- TYPE: Parent
+  VALUE: SYS-009
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Estimator (EKF) health
+
+[REQUIREMENT]
+UID: HLR-DYN-013
+STATUS: Active
+TITLE: EKF inputs, armed time and not assessed
+STATEMENT: >>>
+The EKF check shall take any of `estimator_status`, `estimator_innovation_test_ratios` and `ekf_test_ratios`,
+shall use samples from armed time only (with no arming data: from the first sample with a valid attitude
+solution), and shall return a not-assessed result with a reason when none of the topics is present or none has
+two or more armed samples.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Tests cover the armed-time restriction, the no-arming-data rule and the absent-topic case. No test drives the
+fewer-than-two-samples skip; it is checked by inspection of `EKFAnalyser.analyse`.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-007
+- TYPE: Parent
+  VALUE: SYS-008
+- TYPE: Parent
+  VALUE: SYS-010
+
+[REQUIREMENT]
+UID: HLR-DYN-014
+STATUS: Active
+TITLE: Innovation rejections and test ratios
+STATEMENT: >>>
+The EKF check shall report each innovation check the estimator failed (PX4 `innovation_check_flags` bits 0 to
+12) and each innovation test ratio above 1.0, as a warning when the longest run lasts 0.5 s or more and as info
+otherwise. It shall report as a warning a test ratio that never exceeds 1.0 and stays above 0.64 for 2.0 s or
+more. All ratios are read on one scale on which 1.0 means the measurement was rejected.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-008
+
+[REQUIREMENT]
+UID: HLR-DYN-015
+STATUS: Active
+TITLE: Solution validity, GPS glitch and accelerometer error
+STATEMENT: >>>
+The EKF check shall raise a warning for each solution estimate (attitude, absolute vertical position, and once
+first valid: horizontal and vertical velocity, relative and absolute horizontal position) that is invalid for 1 %
+or more of the armed samples, a warning when the estimator's GPS-glitch flag is set in any armed sample, and a
+critical finding when a PX4 estimator's bad-accelerometer flag is set in any armed sample. The GPS-glitch bit
+shall be chosen by source: bit 10 for PX4, bit 14 for an ArduPilot dataflash log, bit 15 for an ArduPilot
+telemetry log.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-008
+
+[REQUIREMENT]
+UID: HLR-DYN-016
+STATUS: Active
+TITLE: ArduPilot filter faults and measurement timeouts
+STATEMENT: >>>
+From `ekf_test_ratios` the EKF check shall report each ArduPilot filter fault bit (0 to 7) set in any armed
+sample, critical for a NaN attitude or velocity estimate and warning otherwise, and shall raise a warning for a
+position, velocity, height or magnetometer timeout that lasts 0.5 s or more after that measurement had been
+received at least once.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-008
+
+[REQUIREMENT]
+UID: HLR-DYN-017
+STATUS: Active
+TITLE: Wind estimate jumps
+STATEMENT: >>>
+The EKF check shall raise a warning when the horizontal wind speed estimate in `estimator_status` changes by
+more than 5.0 m/s between two consecutive armed samples.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-008
+
+[REQUIREMENT]
+UID: HLR-DYN-018
+STATUS: Active
+TITLE: EKF score and what the result carries
+STATEMENT: >>>
+The EKF module score shall be 100 less a penalty per finding, with the penalties of each group of findings
+capped (innovation flags 60, each solution-flag source 45, filter faults 45, timeouts 30, test ratios 30, wind
+10), not below 0. Every finding shall carry the category `ekf`, a `kind`, a confidence from 0 to 1 with its
+level, a time window and chart data. The result shall carry the highest test ratio as a key metric when a ratio
+was logged.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Tests check that a clean log scores 100, that a finding lowers the score, the confidence range and the chart
+lengths. The caps are checked by inspection of `EKFAnalyser.analyse`.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-008
+- TYPE: Parent
+  VALUE: SYS-009
+
+[REQUIREMENT]
+UID: HLR-DYN-019
+STATUS: Active
+TITLE: EKF advice by sensor and autopilot
+STATEMENT: >>>
+An EKF finding tied to a sensor (GPS, height, magnetometer, airspeed, range finder, optical flow) shall
+recommend checking that sensor. The advice shall name a parameter only where the code holds one for that
+autopilot: `EKF2_GPS_DELAY` for GPS findings on PX4, none otherwise. The EKF check shall make no numeric
+parameter recommendation.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-013
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Ascent profile
+
+[REQUIREMENT]
+UID: HLR-DYN-020
+STATUS: Active
+TITLE: Ascent profile scope and not assessed
+STATEMENT: >>>
+The ascent-profile check shall take `vehicle_gps_position` (altitude in mm) and shall assess a log only when its
+altitude trace has exactly one dominant peak and either the peak is 300 m or more above the first valid GPS
+altitude or a boost above 2.5 g lasting 0.2 s or more is found before the peak. In every other case (no altitude
+or timestamp column, fewer than 10 samples with a 3D fix, no single peak, a low peak with no boost) it shall
+return a not-assessed result with the reason.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-008
+- TYPE: Parent
+  VALUE: SYS-010
+
+[REQUIREMENT]
+UID: HLR-DYN-021
+STATUS: Active
+TITLE: Apogee and boost
+STATEMENT: >>>
+For an assessed log the ascent-profile check shall report the apogee height above the first valid GPS altitude
+and the time to it, and where `sensor_accel` shows a boost its peak in g and its duration, as findings of
+severity good with their time and as key metrics. Where `vehicle_angular_velocity` covers the boost it shall
+raise a warning when the coefficient of variation of the angular-rate magnitude during the boost is above 0.6.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-008
+- TYPE: Parent
+  VALUE: SYS-009
+
+[REQUIREMENT]
+UID: HLR-DYN-022
+STATUS: Active
+TITLE: Parachute deployment
+STATEMENT: >>>
+The ascent-profile check shall report a parachute deployment where the descent rate falls by a factor of 2.5 or
+more within 3.0 s and stays at 1.0 m/s or more afterwards, with its height and time after apogee; shall raise a
+warning when that height is below 10 % of the apogee height; and shall raise a critical finding when no
+deployment is found and the log ends at or below 10 % of the apogee height. It shall make no such claim when the
+log ends higher.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-008
+
+[REQUIREMENT]
+UID: HLR-DYN-023
+STATUS: Active
+TITLE: Ascent profile is not scored
+STATEMENT: >>>
+The ascent-profile check shall have a weight of 0 in the overall score and shall not compute a module score: its
+result carries the default score of 100 whatever its findings.
+<<<
+RATIONALE: >>>
+No system requirement asks for an unscored check. The module applies to few flights and the code keeps it out of
+the weighted mean of SYS-011 so that it neither dilutes nor is diluted by the other checks.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test reads the weight or the score of this module. Inspection checks that `AscentProfileAnalyser` sets no
+`weight` (the base class default is 0.0) and passes no `health_score` to `AnalyserResult`.
+<<<
+ALLOCATION: analysers
+DERIVED: Yes
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-011
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: All four checks
+
+[REQUIREMENT]
+UID: HLR-DYN-024
+STATUS: Active
+TITLE: Fixed rules only
+STATEMENT: >>>
+The four checks shall compute their findings, severities, scores, key metrics and recommendations from the log
+data, the parameter set and constants held in the code only, with no random number, no clock and no dependence
+on set ordering.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test in the four assigned test files runs a check twice and compares. Inspection checks that the modules
+import no `random`, `time` or `datetime`, call no random generator and iterate only lists, dicts in insertion
+order and sorted keys. The `id` of a `Finding` is random; it is set by the model in `models/findings.py`, outside
+this item.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-012
+
+[[/SECTION]]

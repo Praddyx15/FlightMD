@@ -68,13 +68,16 @@ def blob_dir(database):
 
 
 class TestSave:
+    # covers: HLR-API-027, LLR-API-103, LLR-API-105
     def test_id_is_the_content_hash_prefix(self, store, log_file):
         cid = store.save(log_file(), ".ulg", "px4_ulog", make_report())
         assert cid == hashlib.sha256(b"fake log bytes").hexdigest()[:32]
 
+    # covers: HLR-API-027, LLR-API-105
     def test_a_given_hash_is_used_as_is(self, store, log_file):
         assert store.save(log_file(), ".ulg", "px4_ulog", make_report(), "f" * 64) == "f" * 32
 
+    # covers: HLR-API-027, HLR-API-030, LLR-API-078, LLR-API-105
     def test_writes_raw_log_blob_and_row(self, store, log_file, database):
         cid = store.save(log_file(), ".ulg", "px4_ulog", make_report())
         with open(os.path.join(blob_dir(database), f"{cid}.ulg"), "rb") as f:
@@ -83,6 +86,7 @@ class TestSave:
         assert row["log_format"] == "px4_ulog"
         assert row["size_bytes"] == len(b"fake log bytes")
 
+    # covers: HLR-API-027, LLR-API-104
     def test_stored_report_excludes_uploader_identity(self, store, log_file, database):
         cid = store.save(log_file(), ".ulg", "px4_ulog", make_report())
         raw = database.query_one("SELECT report_json FROM contributions WHERE contribution_id = ?", (cid,))[0]
@@ -96,23 +100,27 @@ class TestSave:
         assert report["metadata"]["location_name"] is None
         assert report["report_id"] == ""
 
+    # covers: HLR-API-027, LLR-API-105
     def test_the_source_file_is_left_alone(self, store, log_file):
         path = log_file()
         store.save(path, ".ulg", "px4_ulog", make_report())
         with open(path, "rb") as f:
             assert f.read() == b"fake log bytes"
 
+    # covers: HLR-API-027, LLR-API-103
     def test_different_logs_get_different_ids(self, store, log_file):
         id_a = store.save(log_file(b"a", "a.ulg"), ".ulg", "px4_ulog", make_report())
         id_b = store.save(log_file(b"b", "b.ulg"), ".ulg", "px4_ulog", make_report())
         assert id_a != id_b
 
+    # covers: HLR-API-027, LLR-API-105
     def test_same_log_twice_is_stored_once(self, store, log_file):
         id_a = store.save(log_file(b"same", "a.ulg"), ".ulg", "px4_ulog", make_report())
         id_b = store.save(log_file(b"same", "b.ulg"), ".ulg", "px4_ulog", make_report())
         assert id_a == id_b
         assert store.stats().count == 1
 
+    # covers: HLR-API-027, LLR-API-105
     def test_failed_blob_write_leaves_no_row(self, store, log_file, database, monkeypatch):
         class Broken:
             def put(self, key, src):
@@ -125,15 +133,18 @@ class TestSave:
 
 
 class TestDelete:
+    # covers: HLR-API-027, LLR-API-106
     def test_removes_blob_and_row(self, store, log_file, database):
         cid = store.save(log_file(), ".ulg", "px4_ulog", make_report())
         assert store.delete(cid) is True
         assert store.stats().count == 0
         assert os.listdir(blob_dir(database)) == []
 
+    # covers: HLR-API-027, LLR-API-106
     def test_unknown_id(self, store):
         assert store.delete("0" * 32) is False
 
+    # covers: HLR-API-027, LLR-API-106
     def test_failed_blob_delete_keeps_the_row(self, store, log_file, monkeypatch):
         cid = store.save(log_file(), ".ulg", "px4_ulog", make_report())
 
@@ -148,11 +159,13 @@ class TestDelete:
 
 
 class TestStats:
+    # covers: HLR-API-027, LLR-API-107
     def test_empty_store_reports_zero(self, store):
         stats = store.stats()
         assert stats.count == 0
         assert stats.total_bytes == 0
 
+    # covers: HLR-API-027, LLR-API-107
     def test_counts_logs_and_bytes(self, store, log_file):
         store.save(log_file(b"12345", "a.ulg"), ".ulg", "px4_ulog", make_report())
         store.save(log_file(b"1234567890", "b.bin"), ".bin", "ardupilot_bin", make_report())
@@ -162,12 +175,14 @@ class TestStats:
 
 
 class TestBlobStores:
+    # covers: HLR-API-030, LLR-API-077
     def test_local_keys_cannot_leave_the_directory(self, tmp_path):
         store = blobs.LocalBlobStore(str(tmp_path))
         for key in ("../x", "a/b", "..", "", ".hidden"):
             with pytest.raises(ValueError):
                 store.exists(key)
 
+    # covers: HLR-API-030, LLR-API-078
     def test_local_put_exists_delete(self, tmp_path):
         src = tmp_path / "src.bin"
         src.write_bytes(b"abc")
@@ -178,6 +193,7 @@ class TestBlobStores:
         store.delete("k.bin")
         assert not store.exists("k.bin")
 
+    # covers: HLR-API-030, LLR-API-079, LLR-API-080
     def test_s3_is_used_when_a_bucket_is_set(self, monkeypatch, tmp_path):
         calls = []
 
@@ -205,6 +221,7 @@ class TestBlobStores:
         assert calls[0] == ("client", "s3", {"endpoint_url": "https://s3.example.com", "region_name": None})
         assert calls[1:] == [("put", "logs", "contrib/abc.ulg"), ("delete", "logs", "contrib/abc.ulg")]
 
+    # covers: HLR-API-030, LLR-API-079
     def test_s3_without_boto3_says_what_to_install(self, monkeypatch):
         monkeypatch.setitem(sys.modules, "boto3", None)
         with pytest.raises(RuntimeError, match=r"flightmd-core\[s3\]"):

@@ -41,6 +41,7 @@ def sample(name, **labels):
 
 
 class TestAuth:
+    # covers: HLR-API-026, LLR-API-101
     @pytest.mark.asyncio
     async def test_open_when_no_token_is_set(self, client):
         resp = await client.get("/metrics")
@@ -48,6 +49,7 @@ class TestAuth:
         assert resp.headers["content-type"].startswith("text/plain")
         assert "flightmd_analyses_total" in resp.text
 
+    # covers: HLR-API-026, LLR-API-101
     @pytest.mark.asyncio
     async def test_token_required_when_set(self, client, monkeypatch):
         from api.config import get_settings
@@ -59,22 +61,26 @@ class TestAuth:
         resp = await client.get("/metrics", headers={"Authorization": "Bearer s3cret"})
         assert resp.status_code == 200
 
+    # covers: HLR-API-026, LLR-API-102
     @pytest.mark.asyncio
     async def test_not_in_the_openapi_schema(self, client):
         assert "/metrics" not in (await client.get("/openapi.json")).json()["paths"]
 
 
 class TestCounters:
+    # covers: HLR-API-026, LLR-API-100
     def test_unknown_formats_and_outcomes_are_bucketed(self):
         before = sample("flightmd_analyses_total", format="other", outcome="error")
         metrics.count_analysis("../../etc/passwd", "something-new")
         assert sample("flightmd_analyses_total", format="other", outcome="error") == before + 1
 
+    # covers: HLR-API-026, LLR-API-100
     def test_duration_histogram(self):
         before = sample("flightmd_analysis_duration_seconds_count", format="px4_ulog")
         metrics.observe_duration("px4_ulog", 3.2)
         assert sample("flightmd_analysis_duration_seconds_count", format="px4_ulog") == before + 1
 
+    # covers: HLR-API-026, LLR-API-051, LLR-API-100
     @pytest.mark.asyncio
     async def test_finished_job_is_counted(self, client, monkeypatch, tmp_path):
         import api.analysis as analysis_module
@@ -91,6 +97,7 @@ class TestCounters:
                                   file_size=1, log_format="ardupilot_bin"))
         assert sample("flightmd_analyses_total", format="ardupilot_bin", outcome="rejected") == before + 1
 
+    # covers: HLR-API-026, LLR-API-102
     @pytest.mark.asyncio
     async def test_labels_never_carry_ids_or_filenames(self, client, monkeypatch):
         import api.routers.analyse as analyse_module

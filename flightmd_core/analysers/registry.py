@@ -11,6 +11,8 @@ It declares what it needs (required_topics / required_any / required_columns /
 formats) and its score weight on the class; see docs/plugins.md. A plugin
 that fails to import, isn't a BaseAnalyser, or reuses a built-in name is
 left out with a warning, never allowed to stop an analysis.
+
+@relation(LLR-ANL-007, scope=file)
 """
 
 import logging
@@ -45,6 +47,7 @@ BUILTINS: list[type[BaseAnalyser]] = [
 
 
 def plugin_classes() -> list[type[BaseAnalyser]]:
+    """@relation(LLR-ANL-008, LLR-ANL-009, scope=function)"""
     taken = {c.name for c in BUILTINS}
     out = []
     for ep in entry_points(group=ENTRY_POINT_GROUP):
@@ -66,12 +69,15 @@ def plugin_classes() -> list[type[BaseAnalyser]]:
 
 
 def analyser_classes() -> list[type[BaseAnalyser]]:
+    """@relation(LLR-ANL-007, scope=function)"""
     return BUILTINS + plugin_classes()
 
 
 def load_analysers(metadata=None) -> list[BaseAnalyser]:
     """Fresh instances of every analyser. Pass the log's FlightMetadata so
-    modules that care about firmware version or log format can see it."""
+    modules that care about firmware version or log format can see it.
+
+    @relation(LLR-ANL-010, scope=function)"""
     out = []
     for cls in analyser_classes():
         try:
@@ -85,5 +91,7 @@ def load_analysers(metadata=None) -> list[BaseAnalyser]:
 
 
 def module_weights() -> dict[str, float]:
-    """name -> score weight; modules with weight 0 are left out."""
+    """name -> score weight; modules with weight 0 are left out.
+
+    @relation(LLR-ANL-011, scope=function)"""
     return {c.name: float(c.weight) for c in analyser_classes() if c.weight and c.weight > 0}

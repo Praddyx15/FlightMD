@@ -1,0 +1,585 @@
+[DOCUMENT]
+TITLE: Log parsers high-level requirements
+UID: FMD-HLR-PRS
+VERSION: Issue 1
+DATE: 2026-11-20
+OPTIONS:
+  MARKUP: Markdown
+
+[GRAMMAR]
+IMPORT_FROM_FILE: @flightmd
+
+[TEXT]
+STATEMENT: >>>
+High-level requirements of the log parsers item (PRS), written from the code as built. The item is the six
+modules `ulog_parser.py`, `ardupilot_parser.py`, `ardupilot_text_parser.py`, `mavlink_telemetry_parser.py`,
+`betaflight_parser.py` and `dji_parser.py` under `flightmd_core/services/`. Each turns one log file into the
+internal form (topics, parameters, flight metadata). Low-level requirements are in `llr-prs.sdoc`, the design in
+`06-design/lld-prs.md`, the input formats in `03-system/icd/icd-log-formats.md`. Where the code does less than
+its system requirement asks, the requirement states what the code does and the gap is listed in the design,
+section 6.
+<<<
+
+[[SECTION]]
+TITLE: Common interface and internal form
+
+[REQUIREMENT]
+UID: HLR-PRS-001
+STATUS: Active
+TITLE: One parser interface
+STATEMENT: >>>
+Each parser class (`ULogParser`, `ArduPilotBinParser`, `ArduPilotTextParser`, `MavlinkTelemetryParser`,
+`BetaflightParser`, `DJIParser`) shall offer `parse(path)` that returns a tuple of topics (a dict of topic name
+to pandas DataFrame), parameters (a dict of name to float) and one `FlightMetadata`, and shall raise
+`FileNotFoundError` when the path does not exist.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-004
+- TYPE: Parent
+  VALUE: SYS-001
+
+[REQUIREMENT]
+UID: HLR-PRS-002
+STATUS: Active
+TITLE: One log-relative clock in microseconds
+STATEMENT: >>>
+Every topic shall carry a `timestamp` column in microseconds on a clock that is zero at the start of the log.
+The source clock is: PX4 ULog, the logger's boot clock minus the ULog start timestamp; dataflash, `TimeUS`
+(or `TimeMS` x 1000) minus the earliest time seen; telemetry log, vehicle boot time aligned to the ground
+station receive clock, minus the earliest sample; blackbox, the main-frame `time` field with the 32-bit
+rollover removed, minus the first accepted main frame; DJI, the index of the latest OSD record x 100 000.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-004
+
+[REQUIREMENT]
+UID: HLR-PRS-003
+STATUS: Active
+TITLE: PX4 names and units for the shared columns
+STATEMENT: >>>
+The parsers shall use these names and units wherever the source log holds the quantity:
+`vehicle_gps_position.lat` and `.lon` in degrees x 1e7, `.alt` in millimetres, `.hdop` as a plain ratio,
+`.eph` and `.epv` in metres, `.fix_type` on the 0 to 6 scale with 3 meaning a 3D fix;
+`battery_status.voltage_v` in volts, `.current_a` in amperes, `.remaining` from 0 to 1, `.temperature` in
+degrees Celsius, `.voltage_cell_v[k]` in volts; `vehicle_angular_velocity` and `vehicle_rates_setpoint` in
+rad/s; `sensor_accel` in m/s^2; `vehicle_status.arming_state` with 2 for armed and 1 for disarmed and
+`.nav_state` in PX4 numbering; `vehicle_land_detected.landed` as a boolean.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-004
+
+[REQUIREMENT]
+UID: HLR-PRS-004
+STATUS: Active
+TITLE: Instances of the same sensor
+STATEMENT: >>>
+When a log holds several instances of one sensor (IMU, battery, GPS receiver, EKF core), the first instance
+shall be stored under the bare topic name and each other instance under `<name>_<instance number>`, with no
+row of one instance mixed into another.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-004
+
+[REQUIREMENT]
+UID: HLR-PRS-005
+STATUS: Active
+TITLE: Parse progress
+STATEMENT: >>>
+`ULogParser.parse`, `ArduPilotBinParser.parse`, `ArduPilotTextParser.parse` and `MavlinkTelemetryParser.parse`
+shall accept an optional `progress` callable and call it during the parse with the fraction done, a number
+from 0 to 1. `BetaflightParser.parse` and `DJIParser.parse` take no such argument and report no progress.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-028
+
+[REQUIREMENT]
+UID: HLR-PRS-006
+STATUS: Active
+TITLE: No limits inside the parsers
+STATEMENT: >>>
+The parsers shall apply no size, row-count or time limit of their own. `BetaflightParser` and `DJIParser` read
+the whole file into memory; the other parsers read through pyulog or pymavlink and hold every wanted sample in
+memory. Bounding the work is left to the caller (file size limit and parser process time limit).
+<<<
+RATIONALE: >>>
+As built. SYS-003 allocates the limits to intake, report and api; this requirement records that the parsers
+depend on them and add none.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test exercises a limit inside a parser because there is none. A review checks that no parser truncates,
+samples or stops on size, and that the caller runs the parse in a process it can stop.
+<<<
+ALLOCATION: parsers
+DERIVED: Yes
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-003
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: PX4 ULog
+
+[REQUIREMENT]
+UID: HLR-PRS-007
+STATUS: Active
+TITLE: ULog topics
+STATEMENT: >>>
+`ULogParser` shall read a PX4 ULog through pyulog, load by default only the 17 topics the analysers use, give
+the data of renamed topics (`angular_velocity`, `sensor_gps`) under their older names
+(`vehicle_angular_velocity`, `vehicle_gps_position`), put the estimator instance that was primary for most of
+the log under the bare `estimator_*` names, give GPS position as degrees x 1e7 and millimetres whichever
+field names the firmware logged, and cut `esc_status` down to the ESCs that exist.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-001
+- TYPE: Parent
+  VALUE: SYS-004
+
+[REQUIREMENT]
+UID: HLR-PRS-008
+STATUS: Active
+TITLE: ULog parameters and metadata
+STATEMENT: >>>
+`ULogParser` shall return the log's initial parameters as floats and metadata holding: duration in seconds from
+the ULog first and last timestamps, firmware version and board from the info messages, the PX4 release decoded
+from `ver_sw_release`, airframe id and name from `SYS_AUTOSTART`, vehicle type from `vehicle_status`, the UTC
+start time from the first GPS time later than 2010, the number of arming events, the flight modes used, and
+maximum altitude, maximum horizontal speed and distance flown from `vehicle_local_position`.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-004
+
+[REQUIREMENT]
+UID: HLR-PRS-009
+STATUS: Active
+TITLE: ULog parse warnings
+STATEMENT: >>>
+`ULogParser` shall add a parse warning when pyulog reports file corruption and a parse warning giving the
+number and total length of logger dropouts. It adds no warning for topics, parameters or values it leaves out
+or fills in.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-005
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: ArduPilot dataflash, binary and text
+
+[REQUIREMENT]
+UID: HLR-PRS-010
+STATUS: Active
+TITLE: Dataflash messages to topics
+STATEMENT: >>>
+`ArduPilotBinParser` (binary, through pymavlink `DFReader_binary`) and `ArduPilotTextParser` (text, through
+`DFReader_text`, same mapping) shall read the IMU, BAT, BCL, GPS, GPA, ESC, VIBE, XKF4, NKF4, RATE and POWR
+message families and the MODE, MSG, EV and ARM messages, and produce `vehicle_angular_velocity`,
+`sensor_accel`, `battery_status`, `vehicle_gps_position`, `esc_status`, `vibration`, `ekf_test_ratios`,
+`vehicle_rates_setpoint`, `system_power`, `vehicle_status` and `vehicle_land_detected` with the units of
+HLR-PRS-003. All other message types are ignored.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-001
+- TYPE: Parent
+  VALUE: SYS-004
+
+[REQUIREMENT]
+UID: HLR-PRS-011
+STATUS: Active
+TITLE: Dataflash arming, mode and landed state
+STATEMENT: >>>
+The dataflash parsers shall build `vehicle_status` from ARM messages, or from EV events 10 (armed) and 11
+(disarmed) when the log has no ARM message, and from MODE messages; shall leave `arming_state` out when the
+log holds neither; shall map the ArduPilot mode name to the nearest PX4 `nav_state` or to no value; and shall
+build `vehicle_land_detected` from EV events 18 (land complete) and 28 (not landed).
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-004
+
+[REQUIREMENT]
+UID: HLR-PRS-012
+STATUS: Active
+TITLE: Dataflash parameters and metadata
+STATEMENT: >>>
+The dataflash parsers shall return the numeric parameters the reader collected, and metadata holding: duration
+from the earliest and latest message time, the firmware banner and the vehicle type taken from it, the board
+name from the board identity banner, the frame name from the frame parameters or the "Frame:" banner, the UTC
+start time from the GPS week and millisecond of the first 3D fix, the arm count and the mode names used.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-004
+
+[REQUIREMENT]
+UID: HLR-PRS-013
+STATUS: Active
+TITLE: Dataflash parsers give no parse warnings
+STATEMENT: >>>
+The dataflash parsers shall return an empty `parse_warnings` list. Bytes the reader could not decode, messages
+with no time field, rows dropped for missing values and modes with no PX4 equivalent are not reported.
+<<<
+RATIONALE: >>>
+As built. This is less than SYS-005 and SAF-004 ask; it is recorded as a defect in `06-design/lld-prs.md`
+section 6.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test checks the warning list of a dataflash parse. A review checks that `ArduPilotBinParser.parse` never
+passes `parse_warnings` to `FlightMetadata`.
+<<<
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-005
+
+[REQUIREMENT]
+UID: HLR-PRS-014
+STATUS: Active
+TITLE: No guessed estimator status for ArduPilot and telemetry logs
+STATEMENT: >>>
+The dataflash and telemetry-log parsers shall not produce an `estimator_status` topic. They shall give the
+estimator innovation test ratios in `ekf_test_ratios`, squaring the values ArduPilot logs so that 1.0 means
+rejected as it does on PX4, together with the status words as logged.
+<<<
+RATIONALE: >>>
+ArduPilot and MAVLink status bits do not match PX4's `innovation_check_flags` and `solution_status_flags`. A
+mapped bit mask would give estimator findings that look exact and are not.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+DERIVED: Yes
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-004
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: MAVLink telemetry log
+
+[REQUIREMENT]
+UID: HLR-PRS-015
+STATUS: Active
+TITLE: One vehicle from a shared link
+STATEMENT: >>>
+`MavlinkTelemetryParser` shall keep only the messages of one system id and component id: the pair that sent
+the most HEARTBEATs with an autopilot type other than "invalid" (8) and a vehicle type other than ground
+station (6). It shall add a parse warning with the number of messages ignored from other senders. When the log
+holds no such HEARTBEAT it shall use the messages of every sender, produce no `vehicle_status`, and add a parse
+warning saying so.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-001
+- TYPE: Parent
+  VALUE: SYS-005
+
+[REQUIREMENT]
+UID: HLR-PRS-016
+STATUS: Active
+TITLE: Telemetry log clock
+STATEMENT: >>>
+`MavlinkTelemetryParser` shall time each sample by the vehicle's own boot time where the message carries one,
+shifted by the median offset between receive time and boot time, and by the ground station receive time where
+it does not. It shall add a parse warning when no message carried a vehicle time and a parse warning with the
+number of vehicle reboots (boot clock going back by more than 1 s).
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-004
+- TYPE: Parent
+  VALUE: SYS-005
+
+[REQUIREMENT]
+UID: HLR-PRS-017
+STATUS: Active
+TITLE: Telemetry messages to topics
+STATEMENT: >>>
+`MavlinkTelemetryParser` shall read the 28 message types of `WANTED_TYPES` through pymavlink and produce
+`vehicle_angular_velocity`, `sensor_accel`, `battery_status`, `vehicle_gps_position`,
+`vehicle_global_position`, `esc_status`, `vibration` (ArduPilot) or `vehicle_imu_status` (PX4),
+`ekf_test_ratios`, `system_power`, `vehicle_status` and `vehicle_land_detected`, converting milli-g, mV, cA,
+cV, centi-degrees Celsius, percent and millimetre fields to the units of HLR-PRS-003 and treating the MAVLink
+"unknown" sentinel values as missing.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-001
+- TYPE: Parent
+  VALUE: SYS-004
+
+[REQUIREMENT]
+UID: HLR-PRS-018
+STATUS: Active
+TITLE: Telemetry arming, mode, parameters and metadata
+STATEMENT: >>>
+`MavlinkTelemetryParser` shall take the arming state from the HEARTBEAT armed flag (bit 128 of `base_mode`),
+the `nav_state` from the HEARTBEAT custom mode of a PX4 or ArduPilot autopilot, the landed state from
+EXTENDED_SYS_STATE, the parameters from PARAM_VALUE (decoding PX4 integer parameters from their bytes), and
+metadata holding duration, the UTC start time from the receive clock when it is later than 2010, firmware,
+board, vehicle type, airframe, arm count and modes used.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-004
+
+[REQUIREMENT]
+UID: HLR-PRS-019
+STATUS: Active
+TITLE: Unreadable telemetry is counted
+STATEMENT: >>>
+`MavlinkTelemetryParser` shall count the chunks of the stream that pymavlink could not decode and add a parse
+warning with the count.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-005
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Betaflight and INAV blackbox
+
+[REQUIREMENT]
+UID: HLR-PRS-020
+STATUS: Active
+TITLE: Blackbox decoding
+STATEMENT: >>>
+`BetaflightParser` shall decode a blackbox log with its own decoder: the "H name:value" header lines, I and P
+main frames, S slow frames, G and H GPS frames and E events, with field encodings 0, 1, 3, 6, 7, 8, 9 and 10
+and predictors 0 to 11 as the header declares them, for data versions 1 and 2. It shall raise `ValueError` with
+a message when the file has no blackbox header, no field definitions, definitions it cannot use, or no
+decodable main frame.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-001
+- TYPE: Parent
+  VALUE: SYS-002
+
+[REQUIREMENT]
+UID: HLR-PRS-021
+STATUS: Active
+TITLE: Damaged blackbox data and several logs in one file
+STATEMENT: >>>
+`BetaflightParser` shall skip a frame that fails to decode, is not followed by another frame, or jumps by more
+than 5000 loop iterations or 10 s from the frame before it, carry on from the next frame it can trust, and add
+a parse warning with the number of frames skipped. When the file holds several logs it shall analyse the
+largest one with field definitions and add a parse warning naming which. A file that ends in the middle of a
+frame is decoded up to that point with no warning.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-005
+
+[REQUIREMENT]
+UID: HLR-PRS-022
+STATUS: Active
+TITLE: Blackbox fields to topics
+STATEMENT: >>>
+`BetaflightParser` shall produce `vehicle_angular_velocity` and `vehicle_rates_setpoint` in rad/s,
+`sensor_accel` in m/s^2, `actuator_outputs` as logged, `esc_status` in mechanical rpm, `battery_status` in
+volts and amperes and `vehicle_gps_position` in degrees x 1e7 and millimetres. It shall leave out the
+accelerometer when the header has no `acc_1G`, and the battery when the voltage unit of the firmware is not
+known, each with a parse warning.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-004
+- TYPE: Parent
+  VALUE: SYS-005
+
+[REQUIREMENT]
+UID: HLR-PRS-023
+STATUS: Active
+TITLE: Blackbox arming, parameters and metadata
+STATEMENT: >>>
+For Betaflight 3.5 and later `BetaflightParser` shall build `vehicle_status` from the arm switch (bit 0) and
+the angle and horizon switches (bits 1 and 2) of the slow-frame and flight-mode-event flags and from disarm
+events; for INAV and older firmware it shall produce no `vehicle_status`. It shall return the numeric header
+values as parameters, and metadata holding duration, the firmware revision line, the board line, the UTC start
+time from "Log start datetime" when later than 2010, the arm count and the modes used.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-004
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: DJI flight record
+
+[REQUIREMENT]
+UID: HLR-PRS-024
+STATUS: Active
+TITLE: DJI record decoding
+STATEMENT: >>>
+`DJIParser` shall read a DJI app flight record from its prefix, record area and details block for the layouts
+of versions 1 to 5, 6 to 11, 12 and 13 or later, remove the per-record XOR scrambling of version 7 and later,
+and decode the OSD, HOME, GIMBAL, RC, CUSTOM, DEFORM, CENTER_BATTERY, SMART_BATTERY and SMART_BATTERY_GROUP
+records. It shall raise `ValueError` with a message for a DJI aircraft .DAT file, a file shorter than 100
+bytes, a damaged header, records that run past the end of the file, and a record with no readable OSD data.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-001
+- TYPE: Parent
+  VALUE: SYS-002
+
+[REQUIREMENT]
+UID: HLR-PRS-025
+STATUS: Active
+TITLE: DJI records to topics
+STATEMENT: >>>
+`DJIParser` shall produce `vehicle_gps_position` (degrees x 1e7; altitude in millimetres as height above
+take-off plus the home altitude), `vehicle_local_position` (metres and m/s, z down), `vehicle_attitude`
+(radians and a quaternion), `vehicle_status` (armed when the motors are on), `vehicle_land_detected`,
+`battery_status`, `manual_control_setpoint`, `dji_gimbal` and `dji_deform`, each sample timed by the OSD
+record before it at 100 ms per OSD record. It returns no parameters and no firmware version, and sets the
+vehicle type to "Copter".
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-004
+
+[REQUIREMENT]
+UID: HLR-PRS-026
+STATUS: Active
+TITLE: DJI key exchange for version 13 and later
+STATEMENT: >>>
+For a record of version 13 or later `DJIParser` shall send one HTTPS POST to
+`https://dev.dji.com/openapi/v1/flight-records/keychains` holding the record's wrapped key material (the
+KeyStorage records), the auxiliary version and department numbers, and the DJI developer key from the
+environment variable `DJI_API_KEY` in the `Api-Key` header; no flight data, position or file name is sent. It
+shall use the returned AES keys to decrypt the records, wait at most 30 s, read at most 4 MiB of reply, follow
+no redirect, and raise `ValueError` with the reason when the service cannot be reached or refuses.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-001
+
+[REQUIREMENT]
+UID: HLR-PRS-027
+STATUS: Active
+TITLE: No DJI request offline or without a key
+STATEMENT: >>>
+`DJIParser` shall make no network request when the environment variable `FLIGHTMD_OFFLINE` is `1`, `true`,
+`yes` or `on` (any letter case) or when `DJI_API_KEY` is empty or unset. In either case a record of version 13
+or later is refused with a `ValueError` that names both variables. Records of version 12 and earlier never
+cause a request.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-025
+
+[REQUIREMENT]
+UID: HLR-PRS-028
+STATUS: Active
+TITLE: DJI parse warnings
+STATEMENT: >>>
+`DJIParser` shall add a parse warning with the number of damaged records it skipped and a parse warning with
+the number of records it could not decrypt. It adds no warning for a record that is too short for its type,
+for OSD records dropped for an impossible position, or for a missing home altitude.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-005
+
+[REQUIREMENT]
+UID: HLR-PRS-029
+STATUS: Active
+TITLE: DJI metadata
+STATEMENT: >>>
+`DJIParser` shall return metadata holding: duration as (number of OSD records - 1) x 0.1 s, the UTC start time
+from the details block or else from the first CUSTOM record, the aircraft model name from the OSD drone type,
+the arm count, the DJI flight mode names used, and maximum height above take-off and maximum horizontal speed.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-004
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Helpers given to format detection
+
+[REQUIREMENT]
+UID: HLR-PRS-030
+STATUS: Active
+TITLE: Content checks for blackbox and DJI files
+STATEMENT: >>>
+The item shall give format detection three content checks: `looks_like_blackbox` (the blackbox product line is
+in the header), `looks_like_dji_dat` (a DJI aircraft .DAT signature) and `check_dji_txt` (the header starts
+like a DJI flight record: yes, no, or too short to tell), and the fixed refusal text `DAT_UNSUPPORTED`.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-002
+
+[[/SECTION]]

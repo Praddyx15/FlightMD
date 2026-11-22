@@ -1,4 +1,5 @@
 "use client";
+// @relation(LLR-WEB-015, LLR-WEB-016, LLR-WEB-017, scope=file)
 
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, getReport, getStatus } from "./api";

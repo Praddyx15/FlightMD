@@ -36,12 +36,15 @@ SUB_CONFIG = {
 
 @lru_cache(maxsize=1)
 def _px4_table() -> dict:
+    """@relation(LLR-RPT-056, scope=function)"""
     with resources.files("flightmd_core").joinpath("data/px4_airframes.json").open(encoding="utf-8") as f:
         return json.load(f)
 
 
 def px4_airframe(autostart) -> tuple[Optional[str], Optional[str]]:
-    """(name, frame type) for a SYS_AUTOSTART id, or (None, None)."""
+    """(name, frame type) for a SYS_AUTOSTART id, or (None, None).
+
+    @relation(LLR-RPT-056, scope=function)"""
     if autostart is None:
         return None, None
     try:
@@ -55,6 +58,7 @@ def px4_airframe(autostart) -> tuple[Optional[str], Optional[str]]:
 
 
 def _int(params: dict, name: str) -> Optional[int]:
+    """@relation(LLR-RPT-057, scope=function)"""
     v = params.get(name)
     try:
         return int(v) if v is not None else None
@@ -63,6 +67,7 @@ def _int(params: dict, name: str) -> Optional[int]:
 
 
 def _multirotor(cls_map, cls: Optional[int], typ: Optional[int]) -> Optional[str]:
+    """@relation(LLR-RPT-057, scope=function)"""
     name = cls_map.get(cls)
     if name is None:
         return None
@@ -74,7 +79,9 @@ def _multirotor(cls_map, cls: Optional[int], typ: Optional[int]) -> Optional[str
 def ardupilot_frame(params: dict, vehicle_type: Optional[str]) -> Optional[str]:
     """Frame name like "Quad X" or "QuadPlane Hexa Plus". vehicle_type is the
     parser's "Copter" / "Plane" / "Rover" / "Sub": FRAME_CLASS means different
-    things on Copter and Rover."""
+    things on Copter and Rover.
+
+    @relation(LLR-RPT-058, scope=function)"""
     if vehicle_type is None and ("ATC_STR_RAT_P" in params or "CRUISE_SPEED" in params):
         vehicle_type = "Rover"
     if vehicle_type == "VTOL":

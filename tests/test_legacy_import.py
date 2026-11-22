@@ -70,6 +70,7 @@ def legacy(tmp_path):
 
 
 class TestImport:
+    # covers: HLR-API-029, LLR-API-108, LLR-API-109
     def test_reports_come_across_with_tag_and_time(self, database, legacy):
         counts = import_legacy([str(legacy)])
         assert counts == {"reports": 3, "airframes": 1, "contributions": 1}
@@ -84,6 +85,7 @@ class TestImport:
         assert jobs.get("bare").report.report_id == "bare"
         assert jobs.get("broken") is None
 
+    # covers: HLR-API-029, LLR-API-110
     def test_airframe_keeps_its_token_and_log(self, database, legacy):
         import_legacy([str(legacy)])
         store = AirframeConfigStore()
@@ -92,12 +94,14 @@ class TestImport:
         assert [m.maintenance_type for m in config.maintenance_log] == ["Props"]
         assert store.authorise("Quad-1", "secret-token") is None
 
+    # covers: HLR-API-029, LLR-API-111
     def test_contribution_moves_into_the_blob_store(self, database, legacy):
         import_legacy([str(legacy)])
         assert TrainingDataStore().stats().count == 1
         with open(os.path.join(database.data_dir, "blobs", f"{'ab' * 16}.bin"), "rb") as f:
             assert f.read() == b"old contributed log"
 
+    # covers: HLR-API-029, LLR-API-108
     def test_old_directories_are_renamed_not_deleted(self, database, legacy):
         import_legacy([str(legacy)])
         assert not (legacy / "reports").exists()
@@ -107,19 +111,23 @@ class TestImport:
         assert (legacy / "airframes.imported").is_dir()
         assert (legacy / "training_contributions.imported").is_dir()
 
+    # covers: HLR-API-029, LLR-API-108
     def test_second_start_imports_nothing(self, database, legacy):
         import_legacy([str(legacy)])
         assert import_legacy([str(legacy)]) == {"reports": 0, "airframes": 0, "contributions": 0}
 
+    # covers: HLR-API-029, LLR-API-109
     def test_existing_rows_are_not_overwritten(self, database, legacy):
         jobs = JobStore()
         jobs.create("tagged", airframe_label="Other")
         import_legacy([str(legacy)])
         assert jobs.get("tagged").airframe_label == "Other"
 
+    # covers: HLR-API-029, LLR-API-108
     def test_same_root_listed_twice_is_imported_once(self, database, legacy):
         counts = import_legacy([str(legacy), str(legacy) + os.sep])
         assert counts["reports"] == 3
 
+    # covers: HLR-API-029, LLR-API-108
     def test_missing_root_is_fine(self, database, tmp_path):
         assert import_legacy([str(tmp_path / "never-existed")]) == {"reports": 0, "airframes": 0, "contributions": 0}

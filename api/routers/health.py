@@ -1,3 +1,9 @@
+"""
+Health route.
+
+@relation(LLR-API-034, scope=file)
+"""
+
 import time
 
 from fastapi import APIRouter, Request

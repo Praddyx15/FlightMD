@@ -23,6 +23,7 @@ def normalise(node):
     return node
 
 
+# covers: HLR-RPT-001, HLR-RPT-002, HLR-RPT-003, HLR-RPT-012, HLR-RPT-031, LLR-RPT-001, LLR-RPT-002, LLR-RPT-003, LLR-RPT-008, LLR-RPT-011, HLR-RPT-014
 def test_published_schema_matches_the_model():
     path = SCHEMA_DIR / f"flightmd-report-{VERSION}.json"
     assert path.exists(), f"run scripts/export_schema.py to publish schema {VERSION}"
@@ -34,12 +35,14 @@ def test_changelog_lists_the_current_version():
     assert f"## {VERSION}" in (SCHEMA_DIR / "CHANGELOG.md").read_text(encoding="utf-8")
 
 
+# covers: HLR-RPT-002, HLR-RPT-031, LLR-RPT-003
 def test_finding_params_is_in_the_schema():
     finding = json.loads((SCHEMA_DIR / f"flightmd-report-{VERSION}.json").read_text(encoding="utf-8"))
     props = finding["$defs"]["Finding"]["properties"]
     assert props["params"] == {"default": [], "items": {"type": "string"}, "title": "Params", "type": "array"}
 
 
+# covers: HLR-RPT-001, LLR-RPT-011, HLR-RPT-015
 def test_a_1_6_report_still_loads():
     old = {
         "report_id": "r1", "schema_version": "1.6", "overall_score": 80.0, "score_label": "Good",

@@ -1,3 +1,4 @@
+// @relation(LLR-WEB-027, LLR-WEB-028, LLR-WEB-029, LLR-WEB-030, scope=file)
 // Everything kept in the browser: recent uploads, airframe tokens, units. localStorage can
 // throw (private mode, blocked site data), so every access goes through these two.
 

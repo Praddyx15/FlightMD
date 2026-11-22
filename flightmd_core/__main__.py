@@ -11,6 +11,7 @@ COMMANDS = ("analyse", "compare")
 
 
 def _write(path: str, data: bytes) -> None:
+    """@relation(LLR-INT-059, scope=function)"""
     tmp = path + ".part"
     with open(tmp, "wb") as f:
         f.write(data)
@@ -18,6 +19,7 @@ def _write(path: str, data: bytes) -> None:
 
 
 def _show_progress(pct: int, msg: str, eta_s=None) -> None:
+    """@relation(LLR-INT-060, scope=function)"""
     left = f"  ~{eta_s:.0f} s left" if eta_s else ""
     # pad so a shorter line wipes the end of the last one
     sys.stderr.write(f"\r[{pct:3d}%] {msg}{left}".ljust(79))
@@ -27,6 +29,7 @@ def _show_progress(pct: int, msg: str, eta_s=None) -> None:
 
 
 def analyse(args) -> int:
+    """@relation(LLR-INT-061, LLR-INT-062, LLR-INT-063, LLR-INT-064, scope=function)"""
     if not os.path.isfile(args.log):
         print(f"error: no such file: {args.log}", file=sys.stderr)
         return 2
@@ -76,18 +79,23 @@ def analyse(args) -> int:
 
 
 def _finding_key(f: dict) -> tuple:
+    """@relation(LLR-INT-065, scope=function)"""
     # kind is stable across runs; older reports only have the title
     return (f.get("kind") or f.get("title"), f.get("severity"))
 
 
 def _module_score(m: Optional[dict]) -> Optional[float]:
+    """@relation(LLR-INT-065, scope=function)"""
     if m is None or m.get("skipped") or m.get("assessed") is False:
         return None
     return m.get("health_score")
 
 
 def compare_reports(a: dict, b: dict) -> dict:
-    """What changed from report a (before) to report b (after)."""
+    """What changed from report a (before) to report b (after).
+
+    @relation(LLR-INT-066, LLR-INT-067, scope=function)
+    """
     ma = {m["analyser"]: m for m in a.get("analyser_results", [])}
     mb = {m["analyser"]: m for m in b.get("analyser_results", [])}
     module_deltas = {}
@@ -114,6 +122,7 @@ def compare_reports(a: dict, b: dict) -> dict:
 
 
 def compare(args) -> int:
+    """@relation(LLR-INT-068, scope=function)"""
     reports = []
     for p in (args.before, args.after):
         try:
@@ -141,6 +150,7 @@ def compare(args) -> int:
 
 
 def main(argv=None) -> int:
+    """@relation(LLR-INT-069, scope=function)"""
     argv = list(sys.argv[1:] if argv is None else argv)
     # `flightmd flight.ulg --json x` from before the subcommands still works
     if argv and argv[0] not in COMMANDS and not argv[0].startswith("-"):

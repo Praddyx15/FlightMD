@@ -1,3 +1,4 @@
+"""@relation(LLR-RPT-013, scope=file)"""
 from flightmd_core.models.metadata import FlightMetadata
 from flightmd_core.models.findings import (
     Severity,

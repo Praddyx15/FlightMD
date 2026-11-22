@@ -1,0 +1,763 @@
+[DOCUMENT]
+TITLE: Web application high-level requirements
+UID: FMD-HLR-WEB
+VERSION: Issue 1
+DATE: 2026-11-20
+OPTIONS:
+  MARKUP: Markdown
+
+[GRAMMAR]
+IMPORT_FROM_FILE: @flightmd
+
+[TEXT]
+STATEMENT: >>>
+What the Next.js web application (`frontend/`) does as seen by its user and at its interfaces to the HTTP API, the
+browser storage and AirBrief, written from the code as built. Every page (`frontend/app/**`) and component group
+(`frontend/components/**`) is covered here. Low-level requirements exist in this issue only for `frontend/lib/`,
+`components/three/flightPathGeometry.ts`, `components/shared/DeltaBadge.tsx`, `components/shared/UnitsToggle.tsx`
+and `i18n/request.ts` (`llr-web.sdoc`, decision D-10); behaviour that lives only in pages and components is
+verified at this level and says so in its verification note (open item OI-012). Design: `06-design/lld-web.md`. Interface: `03-system/icd/icd-web-ui.md`.
+<<<
+
+[[SECTION]]
+TITLE: Upload
+
+[REQUIREMENT]
+UID: HLR-WEB-001
+STATUS: Active
+TITLE: Choosing a log file
+STATEMENT: >>>
+The home page (`/`) shall take one flight log by drag and drop or through a file chooser labelled "Flight log file".
+It shall pass on only a file whose name ends (case ignored) in `.ulg`, `.ulog`, `.bin`, `.log`, `.tlog`, `.bbl`,
+`.bfl`, `.txt`, `.dat`, `.gz` or `.zip` and whose size is at most the limit in MB set by
+`NEXT_PUBLIC_MAX_FILE_SIZE_MB` (50 when unset or not a number). For more than one file, another ending or a larger
+file it shall upload nothing and shall show which rule was broken ("Drop one log at a time.", "<name> is not a
+flight log this server reads.", "<name> is larger than <mb> MB.").
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Verified at HLR level for now (D-10, OI-012); `app/page.tsx` and `components/upload/DropZone.tsx` have no LLR. The
+Playwright smoke test gives an accepted `.ulg` to the file chooser. No test gives a rejected file; the three
+rejection messages are checked by reading `DropZone.tsx` and `handleFile` in `app/page.tsx`.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-036
+
+[REQUIREMENT]
+UID: HLR-WEB-002
+STATUS: Active
+TITLE: Upload request, options and errors
+STATEMENT: >>>
+The home page shall send the chosen file to the API as one multipart `POST /analyse` with the field `file`, plus
+`airframe_label` when the user typed a label (trimmed; the input takes at most 40 characters),
+`contribute_to_dataset=true` only when the user ticked "Contribute this log anonymously" (not ticked by default),
+and `planning_brief_sha256` in lower case when the user entered a planning brief hash. A hash that is not exactly 64
+hexadecimal characters shall stop the upload with a message. A token stored in the browser for that label shall be
+sent in the header `X-Airframe-Token`. While the upload runs the page shall show the percentage sent and a cancel
+button; cancelling returns to the idle form with no error. On status 200 or 202 the page shall add the report to
+the browser's recent list and go to `/report/<report_id>`. On failure it shall show the API's `detail` text when
+there is one and otherwise: for 401 or 403 that the airframe belongs to someone else or needs its token, with a
+link to the airframe page; for 413 that the file is too large; for 429 that the upload limit is reached; for 503
+(always, whatever the API sent) that the server is busy; for any other status "Server error (<status>)."; for no
+connection "Network error. Is the API running?"; and after 10 minutes without an answer "Upload timed out.".
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The Playwright smoke test uploads a real log and follows the redirect to the report. The options and every error
+branch are not exercised by a test; they are checked by reading `uploadLog` (LLR-WEB-006, LLR-WEB-007) and
+`app/page.tsx`.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-036
+- TYPE: Parent
+  VALUE: SYS-024
+- TYPE: Parent
+  VALUE: SYS-030
+- TYPE: Parent
+  VALUE: SYS-034
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: The report page
+
+[REQUIREMENT]
+UID: HLR-WEB-003
+STATUS: Active
+TITLE: Progress and fetching the report
+STATEMENT: >>>
+For `/report/<id>` the Next server shall ask the API once for `GET /report/<id>` (not cached, 8 s limit). On 200
+it shall render the report in the page it serves; on 404 it shall show "Report expired"; on 422 it shall show
+"Analysis failed" with the API's reason. In every other case the browser shall poll `GET /status/<id>`, first after
+1 s, then at intervals growing by a factor of 1.5 up to 5 s, and shall show a progress bar, the API's progress
+message (or "Waiting for a free worker" while progress is 0) and the remaining time when the API gives one. When
+the status is `complete` it shall fetch `GET /report/<id>` and show the report; a 202 answer there keeps it
+polling. Polling shall end with: "Report expired" on 404; "Analysis failed" when the status is `failed` or a call
+answers 422 or 500 (a reason starting with "interrupted" is replaced by a restart message); "Can't reach the
+server" with a retry button after five failed calls in a row; "Still not finished" with a retry button after 10
+minutes. Report pages shall carry `robots: noindex, nofollow`.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The polling states are tested through `pollReport` (LLR-WEB-015, LLR-WEB-016) and the smoke test waits through
+the progress view to the report. The server-side fetch (LLR-WEB-014) and the wording of each end state are checked
+by reading `app/report/[id]/page.tsx`, `ReportLive.tsx` and `Problem.tsx`. The poller asks for the status at once
+and waits 1 s only after the first answer (LLR-WEB-015 comment).
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-036
+
+[REQUIREMENT]
+UID: HLR-WEB-004
+STATUS: Active
+TITLE: Report header and score
+STATEMENT: >>>
+The report page shall show, first: the file name; the flight start (local time and UTC, or "Flight date not in
+log"); vehicle type, airframe name and firmware where present; duration; file size; the overall score in a ring
+with "/ 100" and the report's score label; the letter grade; the count of critical and of warning findings, each
+linking to the findings; "No critical or warning findings" when the report is assessed and has neither; the
+executive summary text as the report holds it; "Assessed <n> of <total> checks."; when `assessed_fraction` is
+below 1 the share of the weighted score that was assessed, as a percentage; and, when `parse_warnings` is not
+empty, the number of parser warnings as a link to the flight details. It shall offer "Print" and "Copy link"
+(copies the page address). The executive summary carries no mark of whether the optional AI rewrote it.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Verified at HLR level in this issue; `ReportHeader.tsx` and `ScoreCircle.tsx` have no LLR yet. The smoke test
+checks that the header shows the uploaded file's name. The other items are checked by reading the two components.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-036
+- TYPE: Parent
+  VALUE: SYS-011
+- TYPE: Parent
+  VALUE: SYS-005
+
+[REQUIREMENT]
+UID: HLR-WEB-005
+STATUS: Active
+TITLE: Not assessed is shown as not assessed
+STATEMENT: >>>
+On the report page a report whose `assessed_fraction` is 0, whose grade is `-` or whose label contains "not
+assessed" shall be shown with a grey ring with no arc, a dash in place of the score, the words "Not assessed", no
+grade badge, no "No critical or warning findings" badge and the sentence that none of the checks could run. A
+module with `skipped` true or `assessed` false shall be listed under the module scores as "Not assessed" with its
+reason, in muted text, with no bar and no number. The page description for link previews shall say "Not assessed"
+in place of a score. On the airframe page a module score that is null or missing shall be a gap in the trend line
+and "not assessed" as the latest value; in the comparison table it shall read "not assessed"; in the recent list a
+grade of `-` shall read "Not assessed" with no colour.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test renders a not-assessed report or module. A review reads `isAssessed` and `isReportAssessed`
+(LLR-WEB-038), `ScoreCircle.tsx`, `ReportHeader.tsx`, `ModulePerformanceChart.tsx`, `RecentReports.tsx`,
+`app/airframe/[label]/page.tsx` and `app/compare/page.tsx`. The places that still show the raw overall score of a
+not-assessed flight are listed in `lld-web.md` section 6.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-010
+- TYPE: Parent
+  VALUE: SYS-011
+
+[REQUIREMENT]
+UID: HLR-WEB-006
+STATUS: Active
+TITLE: Findings list and timeline
+STATEMENT: >>>
+The report page shall list the findings under "Findings (<count>)", most severe first (critical, warning, info,
+good). Critical and warning findings shall be shown directly, critical ones opened; info and good findings shall
+sit behind a button "<n> other checks (info and passed)". Findings in one category whose titles share the text
+before `: ` or ` - ` (written with a long dash) shall be shown as one card with a row per finding and the worst
+severity. Each finding shall show its severity as an icon and a word, its category icon, title, the recommendation,
+the plain-English explanation, the technical summary, its parameter changes, its confidence as a percentage with
+the level when given, and its time window in the log as `t m:ss` to `m:ss` when it has one. Buttons shall filter
+by severity. A timeline from 0:00 to the end of the log shall carry one marker per timed finding, the armed
+windows as grey bands, and a click on a marker shall open and scroll to that finding. With no findings the section
+shall read "No findings. Every check that could run on this log passed."; with none critical or warning, "No
+critical or warning findings.".
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The smoke test checks that the findings section is shown for a real report. Grouping is tested at LLR level
+(LLR-WEB-041, LLR-WEB-042). Sorting,
+filtering, the timeline and the two empty texts are checked by reading `FindingsList.tsx`, `FindingCard.tsx`,
+`GroupedFindingCard.tsx`, `FindingParts.tsx` and `FindingsTimeline.tsx`; none of these components has an LLR yet.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-036
+- TYPE: Parent
+  VALUE: SYS-009
+- TYPE: Parent
+  VALUE: SYS-013
+
+[REQUIREMENT]
+UID: HLR-WEB-007
+STATUS: Active
+TITLE: Evidence charts
+STATEMENT: >>>
+Under "Evidence" the report page shall draw, from the findings' `chart_data`: the oscillation frequency spectrum
+with its peak marked; IMU acceleration per sensor (at most three) or the autopilot's vibration metric against its
+warning and critical limits; battery voltage (V) and current (A); GPS satellites and HDOP with a line at HDOP 2;
+EKF innovation test ratios (at most six) with a line at 1.0; motor RPM (at most eight motors). Time axes shall be
+log-relative `m:ss`. A value that is missing or not a finite number shall be a gap, never zero. Each chart shall
+mark the time window of every finding of its category in that finding's severity colour and the armed windows in
+grey, and "Show on chart" on a finding shall scroll to its chart and outline it. A chart that cannot be drawn shall
+be replaced by "Chart unavailable" without affecting the rest of the page; when no chart can be built the section
+is absent.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+The chart data rules are tested at LLR level (LLR-WEB-046 to LLR-WEB-053). No test renders `ChartsSection.tsx`,
+`TimeSeriesChart.tsx` or `SpectrumChart.tsx`; drawing, windows and the fallback are checked by reading them.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-036
+- TYPE: Parent
+  VALUE: SYS-009
+
+[REQUIREMENT]
+UID: HLR-WEB-008
+STATUS: Active
+TITLE: Flight path map and 3D view
+STATEMENT: >>>
+When the report has a `gps_path` the report page shall draw it on a map (tiles from `NEXT_PUBLIC_TILE_URL`,
+OpenStreetMap when unset) with a launch marker, an end marker and direction arrows, and on request as a 3D view
+with height drawn three times larger. At most 1,000 points are drawn. The user may colour the path by wind speed
+or by GPS HDOP when the report carries those series; points with no reading are grey. Selecting a finding that has
+a time window shall highlight that stretch of the path on the map when the report carries `gps_path_t_s`. The
+altitude range of the path and the total distance shall be shown in the chosen units. Without a path the section
+shall read "No GPS positions in this log, so there is no path to draw.".
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+The geometry and colour functions are tested at LLR level (LLR-WEB-058 to LLR-WEB-060). No test renders
+`PathPlotter.tsx`, `FlightPathMap.tsx` or `FlightPathScene.tsx`; they are checked by reading.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-036
+- TYPE: Parent
+  VALUE: SYS-017
+
+[REQUIREMENT]
+UID: HLR-WEB-009
+STATUS: Active
+TITLE: Parameter sheet, copy and download
+STATEMENT: >>>
+When `param_change_sheet` is not empty the report page shall show it as a table: parameter name, current value,
+suggested value (each followed by the unit when the report gives one) and the reason text as the report holds it.
+It shall offer the whole sheet as text in the Mission Planner format (`NAME,VALUE` lines) or the QGroundControl
+format (tab-separated rows with a type column), by "Copy all" and by a download named `flightmd_changes.param`
+or `flightmd_changes.params`, and each row as one line by its own copy button. The copy and the download always
+hold every entry of the sheet. The format first offered shall be QGroundControl when the report looks like PX4 and
+Mission Planner otherwise, and the page shall say which autopilot it picked for. Values shall be written without
+exponent notation. The page shows no extra mark on, and asks no confirmation for, an entry whose reason says that
+another check disagrees.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The smoke test copies the Mission Planner text of a real report and checks every line. The file formats are tested
+at LLR level (LLR-WEB-043 to LLR-WEB-045). The table, the download and the QGroundControl default are checked by
+reading `ParamSheet.tsx`, which has no LLR yet.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-022
+- TYPE: Parent
+  VALUE: SYS-015
+- TYPE: Parent
+  VALUE: SYS-036
+
+[REQUIREMENT]
+UID: HLR-WEB-010
+STATUS: Active
+TITLE: Marking changes as applied
+STATEMENT: >>>
+On the parameter sheet the user shall be able to tick entries, give an airframe label (filled in when this browser
+uploaded the log with one) and press "Mark as applied". The page shall then send `POST
+/airframe/<label>/changes` with the report id, `applied_by: "user"` and for each ticked entry its name, the
+report's current value and the report's suggested value, unconverted. On success it shall confirm the count and
+link to the airframe page. On 401 or 403 it shall show the error and a link to the airframe page to enter the
+token; on any other failure the API's text or "Could not record the changes (<status>).".
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test exercises this. A review reads `markApplied` in `ParamSheet.tsx` and `recordAppliedChanges`
+(LLR-WEB-005).
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-031
+
+[REQUIREMENT]
+UID: HLR-WEB-011
+STATUS: Active
+TITLE: Flight details and parser warnings
+STATEMENT: >>>
+Under "Flight details" the report page shall show the module scores (worst first, each with a bar, an icon and
+"<n> / 100"); flight start in UTC; duration; arm count; maximum altitude, maximum speed and distance in the chosen
+units; vehicle; airframe name; firmware; hardware; flight modes; place name; the day's weather (description,
+maximum wind, temperature range) when present; the log format by name; the log SHA-256 (shortened, copied whole);
+processing time; schema version; and the time the report was generated. A missing value shall show as a long dash.
+When `parse_warnings` is not empty the section shall hold a closed disclosure "<n> parser warnings: parts of the
+log that were skipped or repaired" that lists each distinct warning once when opened.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+Verified at HLR level in this issue; `FlightDetails.tsx` and `ModulePerformanceChart.tsx` have no LLR yet and no
+test renders them. A review reads both components. The formatting functions they call are tested (LLR-WEB-019 to
+LLR-WEB-026), and so are the metric names and units (LLR-WEB-054, LLR-WEB-055).
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-005
+- TYPE: Parent
+  VALUE: SYS-020
+- TYPE: Parent
+  VALUE: SYS-024
+- TYPE: Parent
+  VALUE: SYS-036
+
+[REQUIREMENT]
+UID: HLR-WEB-012
+STATUS: Active
+TITLE: Report search and optional AI answers
+STATEMENT: >>>
+The report page shall offer a search over the report that runs in the browser and makes no request: a question
+about parameters lists the change sheet; a question naming a check gives that module's score, finding count and
+key metrics, or "not assessed" with the reason; any other text lists the findings and sheet entries containing it.
+With the "Use AI" switch on, a question (at most 500 characters) shall be sent as `POST /ask/<report_id>` with a
+60 s limit, and the answer shall be shown under the label "AI answer, from this report only" with the note that
+the answer is to be checked against the findings. When the API answers that no provider is configured the switch
+shall be disabled for the rest of the visit and the question answered by the search. A 429 shall show "Too many
+questions for now. Try again in a minute."; another failure the API's text or "The AI request failed
+(<status>).". AI answers are never written into the findings, the score or the sheet shown on the page.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test exercises `QAAssistant.tsx`, which has no LLR yet. A review reads `searchReport`, `ask` and the render of
+the answer list, and `askAI` (LLR-WEB-011).
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-023
+- TYPE: Parent
+  VALUE: SYS-036
+
+[REQUIREMENT]
+UID: HLR-WEB-013
+STATUS: Active
+TITLE: Exports and printing
+STATEMENT: >>>
+The report page shall offer the report as PDF (`GET /export/pdf/<id>`) and JSON (`GET /export/json/<id>`) and,
+when the report has a GPS path, the path as GPX (`GET /export/gpx/<id>`) and KML (`GET /export/kml/<id>`). Each is
+fetched with a 60 s limit and saved under a name built from the log's file name (`<name>_flightmd.pdf`,
+`<name>_flightmd.json`, `<name>.gpx`, `<name>.kml`). When the PDF call answers 501 the page shall open the
+browser's print dialog and say why. Any other failure shall show the API's text or "Download failed (<status>).".
+The printed page shall be the report in the light theme without navigation, buttons, search or export bar, with
+every finding opened and with the page address and print time at the top.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test downloads an export or prints. A review reads `ExportBar.tsx`, the export functions (LLR-WEB-009) and the
+`@media print` rules in `app/globals.css`.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-022
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Other pages
+
+[REQUIREMENT]
+UID: HLR-WEB-014
+STATUS: Active
+TITLE: Recent reports kept in the browser
+STATEMENT: >>>
+The home page shall list the reports this browser uploaded, newest first, at most 20, from the browser's own
+storage and from no server call: file name linking to the report, flight or upload date, vehicle, grade and score
+once the report has been opened, the airframe label linking to its page, and "probably expired" for an untagged
+report older than one hour. The user shall be able to remove one entry, clear the list, tick two entries and open
+their comparison with the earlier flight as `a`, and, for an entry uploaded with the contribute option, withdraw
+the contribution (`DELETE /dataset/<contribution_id>`; a 404 counts as done; another failure shows the API's text
+or "Could not withdraw the contribution (<status>)."). A report opened from a shared link is not added.
+<<<
+RATIONALE: >>>
+The API has no listing of uploads (SYS-029), so the only way back to a report is its address; the browser keeps
+the addresses of its own uploads.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test exercises `RecentReports.tsx`, which has no LLR yet. A review reads it with the storage functions
+(LLR-WEB-027, LLR-WEB-028) and `withdrawContribution` (LLR-WEB-012).
+<<<
+ALLOCATION: web
+DERIVED: Yes
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-036
+- TYPE: Parent
+  VALUE: SYS-034
+
+[REQUIREMENT]
+UID: HLR-WEB-015
+STATUS: Active
+TITLE: Comparison of two flights
+STATEMENT: >>>
+`/compare?a=<id>&b=<id>` shall call `GET /diff?a=<a>&b=<b>` and `GET /report/<id>` for both. When both reports
+give a flight start and `a` is the later one the page shall reload with the two swapped. It shall show a card per
+flight (file name, score, label, grade, flight date, vehicle) linking to its report, the change in overall score,
+a table of module scores for both with the change, a table of key metrics for both with the change in the chosen
+units and without colour, the findings resolved, the findings new, and the categories still present with their
+severity in each flight. A score change smaller than 0.5 shall read "no change"; a rise "+n better" in green with
+an up arrow; a fall "-n worse" in amber with a down arrow. When the two reports differ in autopilot or vehicle
+type the page shall warn that the scores are not directly comparable. Without both ids it shall say that two are
+needed; a 404 from the diff shall read "One or both reports were not found or have expired."; another failure the
+API's text or "Cannot compare these two flights (<status>).".
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+The score-change badge is tested at LLR level (LLR-WEB-061). No test renders `app/compare/page.tsx` or
+`FindingDiff.tsx`, which have no LLR yet; they are checked by reading, with `getDiff` (LLR-WEB-010).
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-036
+
+[REQUIREMENT]
+UID: HLR-WEB-016
+STATUS: Active
+TITLE: Airframe page: trends and history
+STATEMENT: >>>
+`/airframe/<label>` shall call `GET /trends/<label>`, `GET /airframe/<label>/config` and `GET
+/airframe/<label>/changes`, each with the stored token. It shall show the number of tagged flights; the overall
+score per flight as a line from 0 to 100; one line chart per module score; one line chart per key metric in the
+chosen units; each chart with a table of its values; and the flight history, newest first, with file name linking
+to the report, upload time, grade and score, and a tick box. Ticking two flights shall offer their comparison with
+the older one as `a`. With no flights it shall say so and link to the upload page. When trends or config fail for
+a reason other than access the page shall show the API's text or "Could not load the trend history (<status>)." /
+"Could not load the airframe settings (<status>)." with a retry button; when only the changes call fails the
+applied-changes section is left out. A label that cannot be decoded shall read "This airframe link is malformed.".
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test renders `app/airframe/[label]/page.tsx` or `TrendLineChart.tsx`, which have no LLR yet. A review reads
+them with `getTrends`, `getAirframeConfig`, `getAppliedChanges` (LLR-WEB-005) and the metric labels (LLR-WEB-054
+to LLR-WEB-057).
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-030
+- TYPE: Parent
+  VALUE: SYS-036
+
+[REQUIREMENT]
+UID: HLR-WEB-017
+STATUS: Active
+TITLE: Airframe access token
+STATEMENT: >>>
+The web application shall keep each airframe token it receives (in the answer to an upload or to any airframe
+call) in the browser's local storage under the lower-cased label, shall send it only in the request header
+`X-Airframe-Token`, and shall never put it in an address. When an airframe call answers 401 or 403 the airframe
+page shall show, in place of its content: for an airframe nobody has claimed, an explanation and a "Claim this
+airframe" button that sends an empty `PUT /airframe/<label>/config` and keeps the token returned; otherwise a
+password field to paste the token, titled "That access token doesn't match" when the answer was 403 or a token was
+already stored, with a button to forget the stored one. With a token stored the page shall show it masked, with
+buttons to reveal it, copy it and forget it.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test exercises the token flow. A review reads `AirframeAccess.tsx` (no LLR yet), the token storage
+(LLR-WEB-029) and `airframeRequest` (LLR-WEB-004).
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-030
+
+[REQUIREMENT]
+UID: HLR-WEB-018
+STATUS: Active
+TITLE: Maintenance log, checklist and flight record
+STATEMENT: >>>
+The airframe page shall show whether maintenance is due, the flight hours since the last maintenance and the
+service interval; the maintenance log, newest first; a form to add an entry (date, today by default in the user's
+time zone; work done, required; notes) sent as `POST /airframe/<label>/maintenance`; the service interval in
+flight hours and the pre-flight checklist, both saved together by `PUT /airframe/<label>/config`; and a button
+that downloads the flight record PDF (`GET /export/airframe/<label>/pdf`, saved as
+`flightmd_<label>_record.pdf`). An interval that is negative or not a number shall not be sent and shall show
+"Interval must be a positive number of hours.". A failed call shall show the API's text or "Could not add the
+entry (<status>).", "Could not save the settings (<status>)." or "Download failed (<status>).".
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test exercises `MaintenancePanel.tsx`, which has no LLR yet. A review reads it with the API functions it calls
+(LLR-WEB-005, LLR-WEB-009).
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-030
+
+[REQUIREMENT]
+UID: HLR-WEB-019
+STATUS: Active
+TITLE: Alert rules and webhook
+STATEMENT: >>>
+The airframe page shall let the token holder edit the airframe's alert rules (metric from a fixed list of twelve,
+below or above, threshold, description) and its webhook address, saved together by `PUT
+/airframe/<label>/config` as `alert_rules` and `webhook_url` (null when empty). A new rule starts as overall score
+below 70. A threshold that is empty or not a number shall stop the save with a message naming the metric; a
+webhook address that does not start with `https://` shall stop the save with "The webhook URL must start with
+https://". Thresholds are entered and sent in the report's own units whatever the unit preference. A failed save
+shall show the API's text or "Could not save the alert rules.".
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test exercises `AlertsPanel.tsx`, which has no LLR yet. A review reads `save` and `METRIC_OPTIONS` there and
+`updateAirframeConfig` (LLR-WEB-005).
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-032
+
+[REQUIREMENT]
+UID: HLR-WEB-020
+STATUS: Active
+TITLE: Applied changes and their result
+STATEMENT: >>>
+The airframe page shall list each record of applied parameter changes: its verification status (pending,
+improved, unchanged, worse, mixed) as an icon and a word; who marked it and when; each parameter with its old and
+new value; the note; and, once a later flight exists, the findings resolved, the findings new and the change in
+overall score, module scores and key metrics, with links to the report the change came from, the next flight and
+the comparison of the two. A pending record shall say to fly again with the same label.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test exercises `ChangesPanel.tsx`, which has no LLR yet. A review reads it with `getAppliedChanges`
+(LLR-WEB-005).
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-031
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Display rules for every page
+
+[REQUIREMENT]
+UID: HLR-WEB-021
+STATUS: Active
+TITLE: Unit preference
+STATEMENT: >>>
+Every page shall carry a unit selector with metric (m, m/s, degrees C), imperial (ft, mph, degrees F) and aviation
+(ft, kt, degrees C). The choice shall be kept in the browser and applied on every page of that browser. Altitude,
+distance, speed and temperature values, and key metrics that are altitudes, shall be converted when drawn and
+shown with the unit of the chosen system. Conversion shall happen only in the value put on the screen: the report
+object, the browser's stored data, the parameter values, the parameter file, the applied-change records sent to
+the API and the exports hold the report's own values. The server render and the first browser render are metric.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The selector, the stored choice and every conversion are tested. That no converted value is written back is
+checked by reading every caller of `useUnits`, `toUnit`, `fmtQty` and `Labels.convert`: each passes the result
+straight to the render.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-037
+
+[REQUIREMENT]
+UID: HLR-WEB-022
+STATUS: Active
+TITLE: Light and dark theme
+STATEMENT: >>>
+Every page shall offer a switch between a dark and a light theme. The choice shall be kept in the browser; with
+no choice kept the theme follows the browser's `prefers-color-scheme`, dark when that is not light. The theme
+shall be set before the first paint. The theme changes colours only; severity is always given by an icon and a
+word as well as a colour.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test switches the theme. A review reads `themeInitScript` (LLR-WEB-033), `setTheme` and `useTheme`
+(LLR-WEB-034), `ThemeToggle.tsx` and `SeverityBadge.tsx`.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-037
+
+[REQUIREMENT]
+UID: HLR-WEB-023
+STATUS: Active
+TITLE: Links to AirBrief
+STATEMENT: >>>
+When `NEXT_PUBLIC_AIRBRIEF_URL` is set at build time: a report with a GPS path shall offer "Audit airspace in
+AirBrief", opening `<airbrief>/w/view?m=flight-audit&report_url=<this report's address, URL-encoded>` in a new
+tab; and a report that carries a `planning_brief_sha256` of 64 hexadecimal characters shall offer "Open in
+AirBrief", opening `<airbrief>/w/report?brief=<hash in lower case>`. The planning brief hash shall be shown
+(shortened, copied whole) whether or not AirBrief is configured. Without the setting neither link is shown.
+<<<
+RATIONALE: >>>
+SYS-024 asks only that the planning brief hash be carried in the report. The two links are added so the flight
+can be opened in the planning tool; no system requirement asks for the audit link.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Both addresses are tested. Where the links appear is checked by reading `ReportHeader.tsx`.
+<<<
+ALLOCATION: web
+DERIVED: Yes
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-024
+
+[REQUIREMENT]
+UID: HLR-WEB-024
+STATUS: Active
+TITLE: Error text and containment
+STATEMENT: >>>
+For a failed API call the page shall show the API's own `detail` text when the answer carries one (the first
+message of a validation error list), and otherwise its own text for that call with the HTTP status; a call that
+gets no answer in 20 s (60 s for downloads and AI questions) shall read "The server took too long to answer." and
+one that cannot connect "Network error. Is the API running?". A part of the report that fails while drawing
+(a chart, the charts section, the map, the 3D view) shall be replaced by "<part> unavailable: the data in this
+report could not be drawn." and the rest of the page shall stay; if the report as a whole cannot be drawn the page
+shall say so and point to the exports. An error outside these shall show "Something broke on this page" with a
+retry button. An unknown address shall show "Page not found".
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+The error object and the timeout and network mapping are covered at LLR level (LLR-WEB-002, LLR-WEB-003,
+LLR-WEB-018). No test renders `ErrorBoundary.tsx`, `app/error.tsx` or `app/not-found.tsx`; they are
+checked by reading.
+<<<
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-036
+- TYPE: Parent
+  VALUE: SYS-002
+
+[REQUIREMENT]
+UID: HLR-WEB-025
+STATUS: Active
+TITLE: Numbers, times and missing values
+STATEMENT: >>>
+Numbers shall be shown with thousands separators and a fixed maximum of decimals for their kind; a value that is
+missing or not a finite number shall be shown as a long dash, never as 0. Scores shall be shown as "<n> / 100",
+rounded to a whole number. Positions in the log shall be shown as `m:ss` or `h:mm:ss` from the start of the log.
+Flight start and report times shall be shown in UTC marked "UTC", and in the header also in the viewer's local
+time with its zone. Only a text starting with a full ISO date and `T` is taken as a date. Parameter values shall
+be shown and written with at most 7 significant digits and no exponent.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-037
+- TYPE: Parent
+  VALUE: SYS-036
+
+[REQUIREMENT]
+UID: HLR-WEB-026
+STATUS: Proposed
+TITLE: Limits of use shown with the report
+STATEMENT: >>>
+The report page and its printed form shall state that the report is advisory, that a clean report is not a release
+to service, and that parameter changes need review and a test flight before use; the parameter sheet shall mark an
+entry whose reason says another check disagrees before it can be copied or downloaded.
+<<<
+RATIONALE: >>>
+Not built: `messages/en.json` holds no such statement and the home page tells the user the report gives "the exact
+parameter changes to make".
+<<<
+VERIFICATION: Inspection
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-026
+
+[REQUIREMENT]
+UID: HLR-WEB-027
+STATUS: Active
+TITLE: Configuration, language and response headers
+STATEMENT: >>>
+The browser code shall call the API at `NEXT_PUBLIC_API_URL` (fixed at build time; when unset, the page's own
+origin on an https page and `http://localhost:8000` otherwise). The Next server shall call it at `API_URL`, then
+`NEXT_PUBLIC_API_URL`, then `http://localhost:8000`. All user-facing text shall come from `messages/en.json`; the
+one locale is `en` and no address carries a locale. Every response of the web application shall carry
+`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy:
+strict-origin-when-cross-origin`. The page header shall link to the API documentation at
+`<NEXT_PUBLIC_API_URL>/docs` when that variable is set.
+<<<
+RATIONALE: >>>
+No system requirement states how the web application finds the API or which headers it sends; the design needs
+both.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test checks the environment fallbacks or the headers. A review reads `lib/api.ts` (LLR-WEB-001),
+`lib/serverApi.ts` (LLR-WEB-014), `i18n/request.ts` (LLR-WEB-062), `next.config.js` and `app/layout.tsx`.
+<<<
+ALLOCATION: web
+DERIVED: Yes
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-036
+
+[REQUIREMENT]
+UID: HLR-WEB-028
+STATUS: Active
+TITLE: Colours from the shared design tokens
+STATEMENT: >>>
+The colours of both themes shall come from `frontend/design/tokens.json`, turned into `frontend/app/tokens.css`
+by `frontend/scripts/tokens-to-css.mjs` before `dev` and `build`; the generated file is committed and shall match
+the JSON. In both themes body text shall reach a contrast of 4.5:1, critical text 7:1 and caution, advisory and ok
+text 4.5:1 on each of the three background colours.
+<<<
+RATIONALE: >>>
+No system requirement asks for a contrast level or a shared token file; the file is shared with AirBrief so the
+two tools look alike, and the contrast limits keep severity text readable in both themes.
+<<<
+VERIFICATION: Test
+VERIFICATION_NOTE: >>>
+Verified at HLR level for now (D-10, OI-012): the script is outside the directories the trace tool reads for code
+tags, so it has no LLR; `lld-web.md` section 2 describes it. `test/tokens.test.ts` checks the contrast figures and that the committed
+CSS matches the JSON.
+<<<
+ALLOCATION: web
+DERIVED: Yes
+RELATIONS:
+- TYPE: Parent
+  VALUE: SYS-037
+
+[[/SECTION]]

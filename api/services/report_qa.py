@@ -34,6 +34,7 @@ QA_SYSTEM = SYSTEM_PROMPT + (
 
 
 def _clean(value):
+    """@relation(LLR-API-113, scope=function)"""
     if isinstance(value, str):
         return clean_text(value, limit=MAX_STRING_CHARS)
     if isinstance(value, dict):
@@ -44,6 +45,7 @@ def _clean(value):
 
 
 def report_context(report) -> str:
+    """@relation(LLR-API-113, scope=function)"""
     data = report.model_dump(mode="json")
     data.pop("file_name", None)
     meta = data.get("metadata") or {}
@@ -66,11 +68,13 @@ def report_context(report) -> str:
 
 
 def build_prompt(question: str, report) -> str:
+    """@relation(LLR-API-114, scope=function)"""
     q = clean_text(question, limit=MAX_QUESTION_CHARS)
     return f"<report>\n{report_context(report)}\n</report>\n\nQuestion: {q}"
 
 
 async def answer(enhancer, question: str, report) -> str:
+    """@relation(LLR-API-115, LLR-API-116, scope=function)"""
     try:
         text = await enhancer.complete(build_prompt(question, report), max_tokens=400, system=QA_SYSTEM)
     except Exception as e:

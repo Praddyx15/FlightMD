@@ -31,6 +31,7 @@ async def _analyse(path: str):
     return await run_analysis(ulog_path=path, file_name=os.path.basename(path), file_size=os.path.getsize(path))
 
 
+# covers: HLR-INT-002, HLR-INT-012, HLR-INT-017, LLR-INT-039
 @pytest.mark.parametrize("ext,expected_format", FORMATS.items())
 def test_format_autodetection(ext, expected_format):
     path = _sample_path("clean", ext)
@@ -38,6 +39,7 @@ def test_format_autodetection(ext, expected_format):
     assert detect_format(path) == expected_format
 
 
+# covers: HLR-INT-012, HLR-INT-017, HLR-INT-019, LLR-INT-045, LLR-INT-055
 @pytest.mark.asyncio
 @pytest.mark.parametrize("ext", FORMATS.keys())
 async def test_clean_sample_has_no_findings(ext):
@@ -47,6 +49,7 @@ async def test_clean_sample_has_no_findings(ext):
     assert report.findings == []
 
 
+# covers: HLR-INT-019, HLR-INT-020, LLR-INT-055, LLR-INT-056
 @pytest.mark.asyncio
 @pytest.mark.parametrize("ext", FORMATS.keys())
 async def test_flawed_sample_trips_oscillation_and_gps_findings(ext):
@@ -69,6 +72,7 @@ async def test_flawed_sample_key_metrics_show_the_underlying_drift(ext):
     assert gps.key_metrics["min_satellites"] <= 8
 
 
+# covers: HLR-INT-016, LLR-INT-049, LLR-INT-051
 @pytest.mark.asyncio
 @pytest.mark.parametrize("ext", FORMATS.keys())
 async def test_gps_path_signal_quality_populated_across_formats(ext):
@@ -79,6 +83,7 @@ async def test_gps_path_signal_quality_populated_across_formats(ext):
     assert any(v is not None and v > 0 for v in report.metadata.gps_path_hdop)
 
 
+# covers: HLR-INT-016, LLR-INT-052
 @pytest.mark.asyncio
 @pytest.mark.parametrize("ext", FORMATS.keys())
 async def test_flight_stats_populated_across_formats(ext):
@@ -93,6 +98,7 @@ async def test_flight_stats_populated_across_formats(ext):
     assert md.total_distance_m > 0
 
 
+# covers: HLR-INT-015, LLR-INT-047
 @pytest.mark.asyncio
 async def test_tlog_sample_is_armed_for_the_whole_log():
     report = await _analyse(_sample_path("clean", "tlog"))
@@ -103,6 +109,7 @@ async def test_tlog_sample_is_armed_for_the_whole_log():
     assert end == pytest.approx(report.metadata.duration_seconds, abs=1.0)
 
 
+# covers: HLR-INT-015, LLR-INT-047, LLR-INT-048
 @pytest.mark.asyncio
 @pytest.mark.parametrize("ext", ["ulg", "bin"])
 async def test_no_arming_info_is_reported(ext):
@@ -111,6 +118,7 @@ async def test_no_arming_info_is_reported(ext):
     assert any("arming" in w for w in report.metadata.parse_warnings)
 
 
+# covers: HLR-INT-018, LLR-INT-033, LLR-INT-054
 @pytest.mark.asyncio
 async def test_offline_mode_skips_weather_and_geocoding():
     report = await _analyse(_sample_path("clean", "ulg"))
@@ -124,6 +132,7 @@ async def test_offline_mode_skips_weather_and_geocoding():
     ("notes.tlog", "﻿just some notes\n".encode("utf-16-be") * 200),
     ("empty.ulg", b""),
 ])
+# covers: HLR-INT-002, HLR-INT-012, HLR-INT-017, LLR-INT-039, LLR-INT-045
 async def test_unanalysable_files_fail_closed(tmp_path, name, data):
     p = tmp_path / name
     p.write_bytes(data)
@@ -131,6 +140,7 @@ async def test_unanalysable_files_fail_closed(tmp_path, name, data):
         await _analyse(str(p))
 
 
+# covers: HLR-INT-007, LLR-INT-041
 @pytest.mark.asyncio
 async def test_size_limit(monkeypatch):
     monkeypatch.setenv("FLIGHTMD_MAX_LOG_MB", "0.001")
@@ -138,6 +148,7 @@ async def test_size_limit(monkeypatch):
         await _analyse(_sample_path("clean", "ulg"))
 
 
+# covers: HLR-INT-008, LLR-INT-036, LLR-INT-037
 @pytest.mark.asyncio
 async def test_parse_timeout(monkeypatch):
     # starting the worker process alone takes longer than this
@@ -146,6 +157,7 @@ async def test_parse_timeout(monkeypatch):
         await _analyse(_sample_path("clean", "bin"))
 
 
+# covers: HLR-INT-021, HLR-INT-023, LLR-INT-061, LLR-INT-069
 def test_cli_writes_json(tmp_path, capsys):
     out = tmp_path / "report.json"
     assert cli_main([_sample_path("flawed", "ulg"), "--json", str(out)]) == 0
@@ -155,6 +167,7 @@ def test_cli_writes_json(tmp_path, capsys):
     assert "/100" in capsys.readouterr().out
 
 
+# covers: HLR-INT-021, LLR-INT-061
 def test_cli_rejects_garbage(tmp_path, capsys):
     p = tmp_path / "x.tlog"
     p.write_bytes(b"\xff\xfe" + b"hello" * 100)
@@ -162,6 +175,7 @@ def test_cli_rejects_garbage(tmp_path, capsys):
     assert "error" in capsys.readouterr().err
 
 
+# covers: HLR-INT-017, LLR-INT-034
 @pytest.mark.asyncio
 @pytest.mark.parametrize("ext", FORMATS.keys())
 async def test_source_format_and_log_hash(ext):
@@ -172,6 +186,7 @@ async def test_source_format_and_log_hash(ext):
     assert report.metadata.source_format == FORMATS[ext]
 
 
+# covers: HLR-INT-016, LLR-INT-051
 @pytest.mark.asyncio
 @pytest.mark.parametrize("ext", FORMATS.keys())
 async def test_gps_path_times_line_up_with_the_path(ext):
@@ -181,6 +196,7 @@ async def test_gps_path_times_line_up_with_the_path(ext):
     assert 0 <= md.gps_path_t_s[0] and md.gps_path_t_s[-1] <= md.duration_seconds + 1
 
 
+# covers: HLR-INT-008, HLR-INT-014, LLR-INT-036, LLR-INT-040, LLR-INT-042, LLR-INT-043
 @pytest.mark.asyncio
 async def test_progress_reports_eta_and_only_goes_up():
     calls = []
@@ -200,6 +216,7 @@ async def test_progress_reports_eta_and_only_goes_up():
     assert all(c[2] is None or c[2] >= 0 for c in calls)
 
 
+# covers: HLR-INT-014, LLR-INT-042
 @pytest.mark.asyncio
 async def test_sync_progress_callback_works():
     calls = []
@@ -209,6 +226,7 @@ async def test_sync_progress_callback_works():
     assert calls[-1] == 100
 
 
+# covers: HLR-INT-008, HLR-INT-014, LLR-INT-035, LLR-INT-037
 @pytest.mark.asyncio
 async def test_in_process_parse_reports_progress(monkeypatch):
     from flightmd_core.services import ardupilot_parser
@@ -227,6 +245,7 @@ async def test_in_process_parse_reports_progress(monkeypatch):
     assert any(m.startswith("Parsing flight log… ") and m.endswith("%") for m in msgs)
 
 
+# covers: HLR-INT-009, HLR-INT-011, HLR-INT-017, LLR-INT-044
 @pytest.mark.asyncio
 async def test_second_run_uses_the_topic_cache(tmp_path, monkeypatch):
     from flightmd_core import orchestrator
@@ -249,6 +268,7 @@ async def test_second_run_uses_the_topic_cache(tmp_path, monkeypatch):
     assert second.metadata.parse_warnings == first.metadata.parse_warnings
 
 
+# covers: HLR-INT-021, LLR-INT-059, LLR-INT-063
 def test_cli_analyse_writes_every_export(tmp_path, capsys):
     out = {ext: tmp_path / f"r.{ext}" for ext in ("json", "gpx", "kml")}
     rc = cli_main(["analyse", _sample_path("flawed", "bin"), "--json", str(out["json"]),
@@ -260,6 +280,7 @@ def test_cli_analyse_writes_every_export(tmp_path, capsys):
     assert not list(tmp_path.glob("*.part"))
 
 
+# covers: HLR-INT-021, LLR-INT-063
 def test_cli_pdf_without_weasyprint(tmp_path, monkeypatch, capsys):
     from flightmd_core.exporters import pdf
 
@@ -275,6 +296,7 @@ def test_cli_pdf_without_weasyprint(tmp_path, monkeypatch, capsys):
     assert "pip install" in capsys.readouterr().err
 
 
+# covers: HLR-INT-021, HLR-INT-023, LLR-INT-065, LLR-INT-066, LLR-INT-068, LLR-INT-069
 def test_cli_compare(tmp_path, capsys):
     a, b = tmp_path / "a.json", tmp_path / "b.json"
     assert cli_main(["analyse", _sample_path("flawed", "ulg"), "--json", str(a)]) == 0
@@ -287,6 +309,7 @@ def test_cli_compare(tmp_path, capsys):
     assert "resolved:" in out
 
 
+# covers: HLR-INT-023, LLR-INT-068
 def test_cli_compare_unreadable_file(tmp_path, capsys):
     bad = tmp_path / "bad.json"
     bad.write_text("{not json", encoding="utf-8")

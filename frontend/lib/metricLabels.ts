@@ -1,3 +1,4 @@
+// @relation(LLR-WEB-054, LLR-WEB-055, LLR-WEB-056, scope=file)
 import type { AbstractIntlMessages } from "next-intl";
 import { fmtNum, fmtQty, isNum, toUnit, type Quantity, type UnitSystem } from "./format";
 

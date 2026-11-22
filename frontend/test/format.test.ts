@@ -18,6 +18,7 @@ import {
 } from "@/lib/format";
 
 describe("numbers", () => {
+  // covers: HLR-WEB-025, LLR-WEB-019
   it("formats with separators and units", () => {
     expect(fmtNum(1234.567, 1)).toBe("1,234.6");
     expect(fmtNum(1234.567, 1, "m")).toBe("1,234.6 m");
@@ -25,6 +26,7 @@ describe("numbers", () => {
     expect(fmtInt(2.6, "h")).toBe("3 h");
   });
 
+  // covers: HLR-WEB-025, LLR-WEB-019, LLR-WEB-020
   it("shows a dash for missing values", () => {
     expect(fmtNum(null)).toBe(DASH);
     expect(fmtNum(undefined)).toBe(DASH);
@@ -32,10 +34,12 @@ describe("numbers", () => {
     expect(fmtScore(undefined)).toBe(DASH);
   });
 
+  // covers: HLR-WEB-025, LLR-WEB-020
   it("formats scores out of 100, never as a percentage", () => {
     expect(fmtScore(87.4)).toBe("87 / 100");
   });
 
+  // covers: HLR-WEB-025, LLR-WEB-020
   it("signs deltas", () => {
     expect(fmtDelta(2.34)).toBe("+2.3");
     expect(fmtDelta(-1)).toBe("−1");
@@ -44,6 +48,7 @@ describe("numbers", () => {
 });
 
 describe("time", () => {
+  // covers: HLR-WEB-025, LLR-WEB-021
   it("formats log-relative clock positions", () => {
     expect(fmtClock(65)).toBe("1:05");
     expect(fmtClock(3725)).toBe("1:02:05");
@@ -52,12 +57,14 @@ describe("time", () => {
     expect(fmtClock(null)).toBe(DASH);
   });
 
+  // covers: HLR-WEB-025, LLR-WEB-021
   it("formats durations", () => {
     expect(fmtDuration(45)).toBe("45 s");
     expect(fmtDuration(125)).toBe("2 min 05 s");
     expect(fmtDuration(3700)).toBe("1 h 01 min");
   });
 
+  // covers: HLR-WEB-025, LLR-WEB-023
   it("accepts only real ISO date-times", () => {
     expect(parseIsoDate("19800")).toBeNull();
     expect(parseIsoDate(null)).toBeNull();
@@ -67,12 +74,14 @@ describe("time", () => {
 });
 
 describe("files and parameters", () => {
+  // covers: HLR-WEB-025, LLR-WEB-022
   it("formats byte sizes", () => {
     expect(fmtBytes(500)).toBe("500 B");
     expect(fmtBytes(2048)).toBe("2 KB");
     expect(fmtBytes(5 * 1024 * 1024)).toBe("5 MB");
   });
 
+  // covers: HLR-WEB-025, LLR-WEB-025
   it("drops float32 noise and exponent notation from parameter values", () => {
     expect(fmtParam(0.15000000596046448)).toBe("0.15");
     expect(fmtParam(12)).toBe("12");
@@ -81,12 +90,14 @@ describe("files and parameters", () => {
 });
 
 describe("units", () => {
+  // covers: HLR-WEB-021, LLR-WEB-026
   it("leaves metric values alone", () => {
     expect(toUnit(100, "altitude", "metric")).toEqual({ value: 100, unit: "m" });
     expect(fmtQty(10, "speed", "metric")).toBe("10 m/s");
     expect(fmtQty(20, "temperature", "metric", 0)).toBe("20 °C");
   });
 
+  // covers: HLR-WEB-021, LLR-WEB-026
   it("converts to imperial", () => {
     const alt = toUnit(100, "altitude", "imperial");
     expect(alt.unit).toBe("ft");
@@ -96,16 +107,19 @@ describe("units", () => {
     expect(fmtQty(1000, "distance", "imperial", 0)).toBe("3,281 ft");
   });
 
+  // covers: HLR-WEB-021, LLR-WEB-026
   it("uses feet and knots but keeps Celsius for aviation", () => {
     expect(fmtQty(10, "speed", "aviation")).toBe("19.4 kt");
     expect(fmtQty(100, "altitude", "aviation", 0)).toBe("328 ft");
     expect(fmtQty(20, "temperature", "aviation", 0)).toBe("20 °C");
   });
 
+  // covers: HLR-WEB-021, HLR-WEB-025, LLR-WEB-019, LLR-WEB-026
   it("shows a dash for missing quantities", () => {
     expect(fmtQty(null, "altitude", "imperial")).toBe(DASH);
   });
 
+  // covers: HLR-WEB-021, LLR-WEB-026
   it("recognises unit systems", () => {
     expect(isUnitSystem("imperial")).toBe(true);
     expect(isUnitSystem("furlongs")).toBe(false);

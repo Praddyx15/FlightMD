@@ -1,3 +1,4 @@
+"""@relation(LLR-ANL-007, scope=file)"""
 from flightmd_core.analysers.oscillation    import OscillationAnalyser
 from flightmd_core.analysers.vibration      import VibrationAnalyser
 from flightmd_core.analysers.ekf            import EKFAnalyser

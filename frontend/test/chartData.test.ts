@@ -3,6 +3,7 @@ import { chartSpecsFor, collectCharts, type TimeChartSpec } from "@/lib/chartDat
 import { finding } from "./fixtures";
 
 describe("chartSpecsFor", () => {
+  // covers: HLR-WEB-007, LLR-WEB-046, LLR-WEB-049
   it("turns non-numbers into gaps, never zeros", () => {
     const [spec] = chartSpecsFor(finding({
       chart_data: { timestamps: [0, 1000, 2000], voltage: [16.1, null, "x"], current: [10, 11, 12] },
@@ -13,6 +14,7 @@ describe("chartSpecsFor", () => {
     expect(spec.leftUnit).toBe("V");
   });
 
+  // covers: HLR-WEB-007, LLR-WEB-046, LLR-WEB-049
   it("downsamples long series to at most 500 points, keeping series aligned", () => {
     const n = 2000;
     const t = Array.from({ length: n }, (_, i) => i * 10);
@@ -23,6 +25,7 @@ describe("chartSpecsFor", () => {
     spec.t.forEach((sec, i) => expect(spec.series[0].values[i]).toBeCloseTo(sec * 100, 6));
   });
 
+  // covers: HLR-WEB-007, LLR-WEB-046, LLR-WEB-049
   it("drops series with no data and charts with too few points", () => {
     const [spec] = chartSpecsFor(finding({
       chart_data: { timestamps: [0, 1000], voltage: [16, 15.8], current: [null, null] },
@@ -31,6 +34,7 @@ describe("chartSpecsFor", () => {
     expect(chartSpecsFor(finding({ chart_data: { timestamps: [0], voltage: [16] } }))).toEqual([]);
   });
 
+  // covers: HLR-WEB-007, LLR-WEB-048
   it("builds one chart per vibration instance", () => {
     const imu = { timestamps: [0, 1000], x: [1, 2], y: [1, 2], z: [9, 10] };
     const specs = chartSpecsFor(finding({
@@ -41,6 +45,7 @@ describe("chartSpecsFor", () => {
     expect(specs[1].title).toEqual({ key: "imuNamed", values: { name: "sensor_accel_1" } });
   });
 
+  // covers: HLR-WEB-007, LLR-WEB-048
   it("draws the autopilot's vibration metric against its limits", () => {
     const [spec] = chartSpecsFor(finding({
       category: "vibration",
@@ -53,6 +58,7 @@ describe("chartSpecsFor", () => {
     expect(spec.title).toEqual({ key: "vibeMetric", values: { metric: "accel_vibration_metric" } });
   });
 
+  // covers: HLR-WEB-007, LLR-WEB-047
   it("reads an oscillation spectrum", () => {
     const [spec] = chartSpecsFor(finding({
       category: "oscillation",
@@ -66,6 +72,7 @@ describe("chartSpecsFor", () => {
     });
   });
 
+  // covers: HLR-WEB-007, LLR-WEB-046, LLR-WEB-052
   it("returns nothing for missing or wrongly shaped chart data", () => {
     expect(chartSpecsFor(finding({ chart_data: null }))).toEqual([]);
     expect(chartSpecsFor(finding({ category: "motors", chart_data: { rpm_per_motor: [1, 2] } }))).toEqual([]);
@@ -73,6 +80,7 @@ describe("chartSpecsFor", () => {
 });
 
 describe("collectCharts", () => {
+  // covers: HLR-WEB-007, LLR-WEB-049, LLR-WEB-053
   it("builds each chart once and attaches findings without data to their category chart", () => {
     const data = { timestamps: [0, 1000, 2000], voltage: [16, 15, 14], current: [1, 2, 3] };
     const a = finding({ id: "a", chart_data: data });
@@ -84,6 +92,7 @@ describe("collectCharts", () => {
     expect(charts.findingsOn.get("battery")?.map((f) => f.id)).toEqual(["a", "b", "c"]);
   });
 
+  // covers: HLR-WEB-007, LLR-WEB-051, LLR-WEB-053
   it("never throws on odd chart data", () => {
     const odd = finding({ category: "ekf", chart_data: { innov_ratios: { vel: "nope" }, timestamps: 5 } });
     expect(() => collectCharts([odd])).not.toThrow();

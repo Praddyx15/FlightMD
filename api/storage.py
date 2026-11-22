@@ -61,7 +61,9 @@ REPORT_ID_RE = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 
 
 def normalise_airframe_label(label: Optional[str]) -> Optional[str]:
-    """Trimmed, length-capped label, or None for empty and unusable labels."""
+    """Trimmed, length-capped label, or None for empty and unusable labels.
+
+    @relation(LLR-API-058, scope=function)"""
     if label is None:
         return None
     label = label.strip()[:MAX_AIRFRAME_LABEL_LEN].strip()
@@ -89,6 +91,7 @@ class JobStore:
         brief_sha256: Optional[str] = None,
         log_format: Optional[str] = None,
     ) -> Job:
+        """@relation(LLR-API-060, scope=function)"""
         now = time.time()
         label = normalise_airframe_label(airframe_label)
         with db.get().transaction() as c:
@@ -105,10 +108,12 @@ class JobStore:
                    log_sha256=log_sha256)
 
     def discard(self, report_id: str) -> None:
+        """@relation(LLR-API-021, scope=function)"""
         db.get().execute("DELETE FROM reports WHERE report_id = ?", (report_id,))
         self._forget(report_id)
 
     def get(self, report_id: str) -> Optional[Job]:
+        """@relation(LLR-API-059, LLR-API-065, scope=function)"""
         if not REPORT_ID_RE.match(report_id):
             return None
         row = db.get().query_one("SELECT * FROM reports WHERE report_id = ?", (report_id,))
@@ -125,6 +130,7 @@ class JobStore:
 
     def update_progress(self, report_id: str, progress: int, message: str = "",
                         eta_s: Optional[float] = None) -> None:
+        """@relation(LLR-API-061, scope=function)"""
         now = time.time()
         eta_at = now + max(0.0, eta_s) if eta_s is not None else None
         db.get().execute(
@@ -134,6 +140,7 @@ class JobStore:
         )
 
     def complete(self, report_id: str, report: FlightMDReport) -> None:
+        """@relation(LLR-API-062, scope=function)"""
         now = time.time()
         body = report.model_dump_json()
         sha = getattr(report.metadata, "log_sha256", None)
@@ -150,12 +157,14 @@ class JobStore:
         self._forget(report_id)
 
     def fail(self, report_id: str, error: str) -> None:
+        """@relation(LLR-API-063, scope=function)"""
         db.get().execute(
             "UPDATE reports SET status = ?, error = ?, message = ?, eta_at = NULL, updated_at = ? WHERE report_id = ?",
             (JobStatus.FAILED.value, error, f"Analysis failed: {error}", time.time(), report_id),
         )
 
     def status_summary(self, report_id: str) -> dict:
+        """@relation(LLR-API-059, LLR-API-064, scope=function)"""
         if not REPORT_ID_RE.match(report_id):
             return {"status": "not_found"}
         row = db.get().query_one(
@@ -184,7 +193,9 @@ class JobStore:
         max_age_s: float = REPORT_TTL_SECONDS,
     ) -> Optional[tuple[str, str]]:
         """(report_id, status) of a running or finished analysis of the same bytes,
-        same airframe tag and same brief hash, started within max_age_s."""
+        same airframe tag and same brief hash, started within max_age_s.
+
+        @relation(LLR-API-066, scope=function)"""
         row = db.get().query_one(
             "SELECT report_id, status FROM reports"
             " WHERE log_sha256 = ? AND status IN (?, ?) AND created_at >= ?"
@@ -200,6 +211,8 @@ class JobStore:
 
         The same log uploaded twice counts once (the first upload), so trend
         points and maintenance hours aren't doubled.
+
+        @relation(LLR-API-067, scope=function)
         """
         airframe_label = normalise_airframe_label(airframe_label)
         if not airframe_label:
@@ -223,10 +236,13 @@ class JobStore:
         return out
 
     def list_by_airframe(self, airframe_label: str) -> list[FlightMDReport]:
+        """@relation(LLR-API-067, scope=function)"""
         return [r for _, r in self.list_by_airframe_with_created_at(airframe_label)]
 
     def cleanup_expired(self, ttl_seconds: int = REPORT_TTL_SECONDS) -> list[str]:
-        """Delete untagged reports and failed jobs older than ttl_seconds. Returns their ids."""
+        """Delete untagged reports and failed jobs older than ttl_seconds. Returns their ids.
+
+        @relation(LLR-API-068, scope=function)"""
         cutoff = time.time() - ttl_seconds
         with db.get().transaction() as c:
             rows = c.execute(
@@ -243,7 +259,9 @@ class JobStore:
         return ids
 
     def interrupt_running(self) -> int:
-        """At startup: whatever was mid-analysis died with the old process."""
+        """At startup: whatever was mid-analysis died with the old process.
+
+        @relation(LLR-API-069, scope=function)"""
         n = db.get().execute(
             "UPDATE reports SET status = ?, error = ?, message = ?, eta_at = NULL, updated_at = ? WHERE status = ?",
             (JobStatus.FAILED.value, INTERRUPTED, f"Analysis failed: {INTERRUPTED}", time.time(),
@@ -254,7 +272,9 @@ class JobStore:
         return n
 
     def fail_stale(self, max_idle_s: float) -> int:
-        """Fail jobs with no progress for max_idle_s (a worker that was killed outright)."""
+        """Fail jobs with no progress for max_idle_s (a worker that was killed outright).
+
+        @relation(LLR-API-070, scope=function)"""
         return db.get().execute(
             "UPDATE reports SET status = ?, error = ?, message = ?, eta_at = NULL, updated_at = ?"
             " WHERE status = ? AND updated_at < ?",
@@ -264,6 +284,7 @@ class JobStore:
 
     @property
     def job_count(self) -> int:
+        """@relation(LLR-API-071, scope=function)"""
         row = db.get().query_one("SELECT COUNT(*) FROM reports WHERE status = ?", (JobStatus.PROCESSING.value,))
         return row[0]
 
@@ -281,6 +302,7 @@ class JobStore:
         )
 
     def _parse(self, report_id: str, body: Optional[str]) -> FlightMDReport:
+        """@relation(LLR-API-072, scope=function)"""
         key = (db.get().path, report_id)
         with self._lock:
             hit = self._parsed.get(key)
@@ -297,6 +319,7 @@ class JobStore:
         return report
 
     def _forget(self, report_id: str) -> None:
+        """@relation(LLR-API-072, scope=function)"""
         with self._lock:
             self._parsed.pop((db.get().path, report_id), None)
 

@@ -1,3 +1,9 @@
+"""
+Status, report and question routes.
+
+@relation(LLR-API-012, LLR-API-027, LLR-API-028, LLR-API-029, scope=file)
+"""
+
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
@@ -19,7 +25,9 @@ class AskRequest(BaseModel):
 
 
 def finished_report(report_id: str):
-    """The completed report, or the HTTP error that says why there isn't one."""
+    """The completed report, or the HTTP error that says why there isn't one.
+
+    @relation(LLR-API-026, scope=function)"""
     job = job_store.get(report_id)
     if job is None:
         raise HTTPException(status_code=404, detail=NOT_FOUND)

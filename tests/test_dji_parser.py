@@ -21,10 +21,12 @@ LAT, LON = 47.3977420, 8.5455940
 START_MS = 1_780_000_000_000      # 2026-05-28T20:26:40Z
 
 
+# covers: HLR-PRS-024, LLR-PRS-079
 def test_crc64_check_value():
     assert dp.crc64(0, b"123456789") == 0xE9C6D914C4B8D9CA
 
 
+# covers: HLR-PRS-024, LLR-PRS-079
 @pytest.mark.parametrize("seed, rtype", [(0, 1), (0x5A, 1), (0xFF, 22), (7, 0)])
 def test_xor_key_matches_writer(seed, rtype):
     assert dp.xor_key(seed, rtype) == dw.xor_key(seed, rtype)
@@ -71,6 +73,7 @@ def write(tmp_path, data, name="DJIFlightRecord_2026-05-28.txt"):
     return str(p)
 
 
+# covers: HLR-PRS-024, HLR-PRS-025, HLR-PRS-029, LLR-PRS-077, LLR-PRS-080, LLR-PRS-081, LLR-PRS-082, LLR-PRS-089
 @pytest.mark.parametrize("version", [6, 10, 12])
 def test_osd_topics(tmp_path, version):
     path = write(tmp_path, dw.build(flight_records(version), version, start_ms=START_MS))
@@ -119,6 +122,7 @@ def test_osd_topics(tmp_path, version):
     assert meta.parse_warnings == []
 
 
+# covers: HLR-PRS-024, HLR-PRS-025, LLR-PRS-080, LLR-PRS-083, LLR-PRS-084
 @pytest.mark.parametrize("version", [6, 10])
 def test_battery_rc_gimbal(tmp_path, version):
     path = write(tmp_path, dw.build(flight_records(version), version))
@@ -150,6 +154,7 @@ def test_battery_rc_gimbal(tmp_path, version):
     assert d["deform_status"].iloc[0] == 3 and d["deform_mode"].iloc[0] == 2
 
 
+# covers: HLR-PRS-025, LLR-PRS-083
 def test_smart_battery_group_wins_and_keeps_instances(tmp_path):
     recs = flight_records(10, n=20)
     for k in range(5):
@@ -167,12 +172,14 @@ def test_smart_battery_group_wins_and_keeps_instances(tmp_path):
     assert "capacity" not in bat1.columns
 
 
+# covers: HLR-PRS-029, LLR-PRS-089
 def test_start_time_falls_back_to_custom_record(tmp_path):
     path = write(tmp_path, dw.build(flight_records(10), 10, start_ms=0))
     _, _, meta = DJIParser().parse(path)
     assert meta.log_start_utc == "2026-05-28T20:26:40Z"
 
 
+# covers: HLR-PRS-024, HLR-PRS-028, LLR-PRS-078, LLR-PRS-088
 def test_damaged_record_and_jpeg_are_skipped(tmp_path):
     recs = flight_records(10, n=20)
     recs.insert(5, b"\xff\xd8" + b"\x10" * 50 + b"\xff\xd9")       # embedded thumbnail
@@ -183,6 +190,7 @@ def test_damaged_record_and_jpeg_are_skipped(tmp_path):
     assert meta.parse_warnings == ["1 damaged records were skipped."]
 
 
+# covers: HLR-PRS-025, LLR-PRS-081
 def test_no_gps_fix(tmp_path):
     recs = [dw.record(dw.OSD, dw.osd(0.0, 0.0, 0.0, gps_valid=False, sats=0), 10, seed=k)[0] for k in range(10)]
     topics, _, _ = DJIParser().parse(write(tmp_path, dw.build(recs, 10)))
@@ -190,12 +198,14 @@ def test_no_gps_fix(tmp_path):
     assert topics["vehicle_local_position"]["x"].isna().all()
 
 
+# covers: HLR-PRS-001, HLR-PRS-024, LLR-PRS-076
 def test_no_osd_records(tmp_path):
     recs = [dw.record(dw.HOME, dw.home(LAT, LON, 1.0), 10)[0]]
     with pytest.raises(ValueError, match="OSD"):
         DJIParser().parse(write(tmp_path, dw.build(recs, 10)))
 
 
+# covers: HLR-PRS-001, HLR-PRS-024, LLR-PRS-076, LLR-PRS-077
 def test_truncated_file(tmp_path):
     data = dw.build(flight_records(10), 10)
     with pytest.raises(ValueError, match="truncated"):
@@ -206,6 +216,7 @@ def test_truncated_file(tmp_path):
     b"\x00" * 16 + b"BUILD" + b"\x00" * 300,
     b"LOGH" + b"\x00" * 300,
 ])
+# covers: HLR-PRS-001, HLR-PRS-024, HLR-PRS-030, LLR-PRS-076, LLR-PRS-090
 def test_dat_is_refused(tmp_path, header):
     with pytest.raises(ValueError, match=".DAT"):
         DJIParser().parse(write(tmp_path, header, name="FLY042.DAT"))
@@ -213,6 +224,7 @@ def test_dat_is_refused(tmp_path, header):
 
 # --- detection helper ---------------------------------------------------------
 
+# covers: HLR-PRS-030, LLR-PRS-090
 @pytest.mark.parametrize("version", [3, 6, 10, 12, 13])
 def test_check_dji_txt(version):
     data = dw.build(flight_records(min(version, 12)), version) if version < 13 else _v13_file()[0]
@@ -220,6 +232,7 @@ def test_check_dji_txt(version):
     assert dp.check_dji_txt(data, complete=True) is True
 
 
+# covers: HLR-PRS-030, LLR-PRS-090
 def test_check_dji_txt_short_and_garbage():
     assert dp.check_dji_txt(b"\x00" * 8) is None
     assert dp.check_dji_txt(b"\x00" * 8, complete=True) is False
@@ -284,6 +297,7 @@ def opener(monkeypatch):
     return fake
 
 
+# covers: HLR-PRS-026, HLR-PRS-028, LLR-PRS-085, LLR-PRS-087
 @pytest.mark.parametrize("version", [13, 14])
 def test_v13_decrypts_with_fetched_keychain(tmp_path, opener, version):
     data, _ = _v13_file(version)
@@ -307,6 +321,7 @@ def test_v13_decrypts_with_fetched_keychain(tmp_path, opener, version):
     }]]
 
 
+# covers: HLR-PRS-027, LLR-PRS-086
 def test_v13_without_api_key(tmp_path, monkeypatch):
     data, _ = _v13_file()
     monkeypatch.delenv("DJI_API_KEY", raising=False)
@@ -314,6 +329,7 @@ def test_v13_without_api_key(tmp_path, monkeypatch):
         DJIParser().parse(write(tmp_path, data))
 
 
+# covers: HLR-PRS-027, LLR-PRS-086
 def test_v13_offline_never_calls_dji(tmp_path, opener, monkeypatch):
     data, _ = _v13_file()
     monkeypatch.setenv("FLIGHTMD_OFFLINE", "1")
@@ -322,6 +338,7 @@ def test_v13_offline_never_calls_dji(tmp_path, opener, monkeypatch):
     assert opener.requests == []
 
 
+# covers: HLR-PRS-026, LLR-PRS-085
 def test_v13_rejected_key(tmp_path, opener):
     data, _ = _v13_file()
     opener.error = urllib.error.HTTPError(dp.KEYCHAIN_URL, 403, "Forbidden", {}, None)
@@ -329,6 +346,7 @@ def test_v13_rejected_key(tmp_path, opener):
         DJIParser().parse(write(tmp_path, data))
 
 
+# covers: HLR-PRS-026, LLR-PRS-085
 def test_v13_service_error_message(tmp_path, opener):
     data, _ = _v13_file()
     opener.reply = {"result": {"code": 1, "msg": "invalid sdk key"}, "data": None}
@@ -336,6 +354,7 @@ def test_v13_service_error_message(tmp_path, opener):
         DJIParser().parse(write(tmp_path, data))
 
 
+# covers: HLR-PRS-026, HLR-PRS-028, LLR-PRS-087, LLR-PRS-088
 def test_v13_records_without_a_key_are_skipped(tmp_path, opener):
     data, _ = _v13_file()
     reply = keychain_reply()
@@ -345,6 +364,7 @@ def test_v13_records_without_a_key_are_skipped(tmp_path, opener):
         DJIParser().parse(write(tmp_path, data))
 
 
+# covers: HLR-PRS-001, HLR-PRS-024, LLR-PRS-076
 def test_checked_in_sample():
     path = os.path.join(os.path.dirname(__file__), "sample_logs", "sample_dji_v10.txt")
     topics, _, meta = DJIParser().parse(path)

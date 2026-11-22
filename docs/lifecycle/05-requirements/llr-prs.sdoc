@@ -1,0 +1,1641 @@
+[DOCUMENT]
+TITLE: Log parsers low-level requirements
+UID: FMD-LLR-PRS
+VERSION: Issue 1
+DATE: 2026-11-20
+OPTIONS:
+  MARKUP: Markdown
+
+[GRAMMAR]
+IMPORT_FROM_FILE: @flightmd
+
+[TEXT]
+STATEMENT: >>>
+Low-level requirements of the log parsers item (PRS), written from the code as built: `ulog_parser.py`,
+`ardupilot_parser.py`, `ardupilot_text_parser.py`, `mavlink_telemetry_parser.py`, `betaflight_parser.py` and
+`dji_parser.py` under `flightmd_core/services/`. They state every unit conversion and scale factor with its
+number, the clock each parser uses, the arming and landed mapping and what each parser adds to
+`parse_warnings`. Parents are in `hlr-prs.sdoc`; the design is `06-design/lld-prs.md`; the input formats are in
+`03-system/icd/icd-log-formats.md`. "us" means microseconds. Where the code does something surprising the
+requirement says what the code does; the gaps are listed in the design, section 6.
+<<<
+
+[[SECTION]]
+TITLE: PX4 ULog (flightmd_core/services/ulog_parser.py)
+
+[REQUIREMENT]
+UID: LLR-PRS-001
+STATUS: Active
+TITLE: ULog parse entry and missing file
+STATEMENT: >>>
+`ULogParser.parse` raises `FileNotFoundError` ("ULog file not found: <path>") when the path does not exist.
+Otherwise it builds a pyulog `ULog`, then returns `(topics, params, metadata)` from `_extract_topics`,
+`_extract_params` and `_extract_metadata`, with `metadata.parse_warnings` set from `_warnings`. Any exception
+pyulog raises is passed on unchanged.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-001
+
+[REQUIREMENT]
+UID: LLR-PRS-002
+STATUS: Active
+TITLE: ULog topics loaded
+STATEMENT: >>>
+`ULogParser.parse` passes `load_topic_names` to pyulog. The default is `REQUIRED_ULOG_TOPICS`, 17 names:
+`vehicle_angular_velocity`, `angular_velocity`, `sensor_accel`, `estimator_status`,
+`estimator_innovation_test_ratios`, `estimator_sensor_bias`, `estimator_selector_status`, `battery_status`,
+`vehicle_gps_position`, `sensor_gps`, `sensor_gnss_relative`, `esc_status`, `vehicle_status`,
+`vehicle_land_detected`, `vehicle_local_position`, `vehicle_imu_status`, `system_power`. `None` loads every
+topic in the file. Topics not in the list are not read and no warning is added.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The test checks two names of the list only. A review checks the list against the topics the analysers read.
+<<<
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-007
+
+[REQUIREMENT]
+UID: LLR-PRS-003
+STATUS: Active
+TITLE: ULog progress wrapper
+STATEMENT: >>>
+When `progress` is given, `ULogParser.parse` opens the file itself, hands pyulog a `_Progress` wrapper and
+closes the file in a `finally`. `_Progress.read` counts calls and on every `PROGRESS_EVERY` (65 536) th call
+reports `min(tell() / size, 1.0)` before reading, with `size` floored at 1 byte. Every other attribute is
+passed through to the file.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-005
+
+[REQUIREMENT]
+UID: LLR-PRS-004
+STATUS: Active
+TITLE: ULog topic names and clock
+STATEMENT: >>>
+`ULogParser._extract_topics` stores each pyulog data set as a DataFrame under its name when `multi_id` is 0
+and under `<name>_<multi_id>` otherwise. A data set that is empty or has no `timestamp` column is left out
+with no warning. `timestamp` and `timestamp_sample` are cast to int64 and `int(ulog.start_timestamp)` is
+subtracted, so both are in us from the start of the log (a sample time can be negative).
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-002
+- TYPE: Parent
+  VALUE: HLR-PRS-004
+
+[REQUIREMENT]
+UID: LLR-PRS-005
+STATUS: Active
+TITLE: ULog topic aliases
+STATEMENT: >>>
+`ULogParser._extract_topics` applies `TOPIC_ALIASES`: when `vehicle_angular_velocity` is absent and
+`angular_velocity` is present, and when `vehicle_gps_position` is absent and `sensor_gps` is present, the
+older name is made to refer to the same DataFrame as the newer one.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-007
+
+[REQUIREMENT]
+UID: LLR-PRS-006
+STATUS: Active
+TITLE: Primary estimator instance
+STATEMENT: >>>
+`_use_primary_ekf` takes the most frequent value of `estimator_selector_status.primary_instance`. When it is
+not 0, every topic whose name starts with `estimator_` (other than `estimator_selector_status`) and has a
+`<name>_<primary>` instance is swapped with that instance, so the bare name holds the primary. It does nothing
+when the selector topic is missing, empty or has no `primary_instance` column. It assumes `multi_id` equals
+the estimator instance number.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-007
+
+[REQUIREMENT]
+UID: LLR-PRS-007
+STATUS: Active
+TITLE: ULog GPS field names
+STATEMENT: >>>
+`_normalise_gps` is applied in place to every topic whose key starts with `vehicle_gps_position` or
+`sensor_gps`. When `lat` is absent and `latitude_deg` is present it adds `lat` and `lon` as
+`round(degrees x 1e7)` int64. When `alt` is absent and `altitude_msl_m` is present it adds `alt` as
+`round(metres x 1000)` int64 (millimetres). A missing (NaN) source value becomes 0, with no warning.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-003
+- TYPE: Parent
+  VALUE: HLR-PRS-007
+
+[REQUIREMENT]
+UID: LLR-PRS-008
+STATUS: Active
+TITLE: ULog ESC slots
+STATEMENT: >>>
+`_trim_esc` is applied to every topic whose key starts with `esc_status`. With `n` the maximum of `esc_count`
+(0 when the column is absent), or when `n` is 0 or less the highest slot index that ever holds a non-zero
+value plus 1, it drops every `esc[i].*` column with `i >= n` and sets `esc_count` to `n` on every row. A frame
+with no `esc[i].` column is returned unchanged.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-007
+
+[REQUIREMENT]
+UID: LLR-PRS-009
+STATUS: Active
+TITLE: ULog parameters
+STATEMENT: >>>
+`ULogParser._extract_params` returns `float(value)` for every entry of `ulog.initial_parameters`. An entry
+whose value cannot be converted is left out with no warning. Parameter changes logged during the flight are
+not read.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-008
+
+[REQUIREMENT]
+UID: LLR-PRS-010
+STATUS: Active
+TITLE: ULog metadata fields
+STATEMENT: >>>
+`ULogParser._extract_metadata` sets `duration_seconds` to `(last_timestamp - start_timestamp) / 1e6` rounded
+to 2 places; `firmware_version` to `str(ver_sw)` (the git hash; `None` when absent); `hardware_id` to
+`str(ver_hw)`, followed by " (<ver_hw_subtype>)" when there is one; `airframe_id` to `int(SYS_AUTOSTART)` and
+`airframe_name` from `px4_airframe` (`None` for an unknown id); `vehicle_type` from `_vehicle_type`, falling
+back to `str(sys_name)`; `px4_version` from `_px4_release(ver_sw_release)`; and `available_topics` to the
+sorted topic keys. The info field `time_ref_utc` is not used.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-008
+
+[REQUIREMENT]
+UID: LLR-PRS-011
+STATUS: Active
+TITLE: PX4 release number
+STATEMENT: >>>
+`_px4_release` returns `None` for `None` and `str(value)` for a value that is not an integer. Otherwise it
+reads the value as `0xAABBCCTT` and returns `v<AA>.<BB>.<CC>` followed by nothing when `TT` is 255, `-rc` when
+`TT >= 192`, `-beta` when `TT >= 128`, `-alpha` when `TT >= 64`, and `-dev` otherwise.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-008
+
+[REQUIREMENT]
+UID: LLR-PRS-012
+STATUS: Active
+TITLE: ULog vehicle type
+STATEMENT: >>>
+`_vehicle_type` returns `None` when `vehicle_status` is missing or empty; "VTOL" when any `is_vtol` is true;
+otherwise the name of the most frequent `vehicle_type` above 0 (1 Copter, 2 Plane, 3 Rover, 4 Airship, any
+other number gives `None`); otherwise, when only `is_rotary_wing` is logged, "Copter" if its most frequent
+value is true and "Plane" if not.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-008
+
+[REQUIREMENT]
+UID: LLR-PRS-013
+STATUS: Active
+TITLE: ULog start time
+STATEMENT: >>>
+`_log_start_utc` looks at `vehicle_gps_position` and then `sensor_gps`. From the first of them that has a row
+with `time_utc_usec` greater than `MIN_EPOCH_US` (1 262 304 000 000 000, 2010-01-01) it takes the first such
+row and returns `utc_iso(time_utc_usec - timestamp)`, the row's `timestamp` being log-relative us. It returns
+`None` when there is no such row.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-008
+
+[REQUIREMENT]
+UID: LLR-PRS-014
+STATUS: Active
+TITLE: ULog warnings
+STATEMENT: >>>
+`ULogParser._warnings` returns, in this order: "The log file is corrupted in places; pyulog skipped the
+damaged parts." when `ulog.file_corruption` is true; and "The logger dropped data <n> times (<s> s in total)."
+when `ulog.dropouts` is not empty, with `<s>` the sum of the dropout durations (milliseconds) divided by 1000,
+to 1 decimal place. It returns nothing else.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-009
+
+[REQUIREMENT]
+UID: LLR-PRS-015
+STATUS: Active
+TITLE: ULog arm count
+STATEMENT: >>>
+`ULogParser._count_arms` returns the number of rows of `vehicle_status` where `arming_state` becomes 2 (armed)
+from another value, and 0 when the topic or column is missing. A log that starts armed and never re-arms
+counts 0.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-008
+
+[REQUIREMENT]
+UID: LLR-PRS-016
+STATUS: Active
+TITLE: ULog flight mode names
+STATEMENT: >>>
+`ULogParser._extract_flight_modes` returns the sorted set of names of the distinct `vehicle_status.nav_state`
+values, from `FLIGHT_MODE_NAMES` (0 Manual, 1 Altitude Control, 2 Position Control, 3 Auto Mission, 4 Auto
+Loiter, 5 Auto Return, 6 Position Slow, 10 Acro, 12 Descend, 13 Termination, 14 Offboard, 15 Stabilized,
+17 Auto Takeoff, 18 Auto Land, 19 Auto Follow Target, 20 Auto Precision Land, 21 Orbit, 22 Auto VTOL Takeoff,
+and the retired 7, 8, 9, 16), and "Mode <n>" for any other number. It returns an empty list when the topic or
+column is missing.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-008
+
+[REQUIREMENT]
+UID: LLR-PRS-017
+STATUS: Active
+TITLE: ULog maximum altitude
+STATEMENT: >>>
+`ULogParser._max_altitude` returns, from `vehicle_local_position`, `-min(z)` rounded to 1 place when `z`
+exists (z is metres, positive down), else `max(alt)` rounded to 1 place, and `None` when the topic, both
+columns or all values are missing.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-008
+
+[REQUIREMENT]
+UID: LLR-PRS-018
+STATUS: Active
+TITLE: ULog maximum speed and distance
+STATEMENT: >>>
+`ULogParser._max_speed` returns the largest finite `hypot(vx, vy)` of `vehicle_local_position` in m/s rounded
+to 2 places. `ULogParser._total_distance` returns the sum of the straight-line steps between consecutive
+`(x, y)` rows with both values present, in metres rounded to 1 place. Each returns `None` when its columns are
+missing or (distance) fewer than 2 rows remain.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-008
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: ArduPilot dataflash (flightmd_core/services/ardupilot_parser.py, ardupilot_text_parser.py)
+
+[REQUIREMENT]
+UID: LLR-PRS-019
+STATUS: Active
+TITLE: Dataflash parse entry and missing file
+STATEMENT: >>>
+`ArduPilotBinParser.parse` raises `FileNotFoundError` ("ArduPilot log file not found: <path>") when the path
+does not exist. Otherwise it opens the reader with `_open_reader` (pymavlink `DFReader.DFReader_binary`),
+reads messages with `recv_match(type=WANTED_TYPES)` until it returns `None`, and returns
+`(topics, params, metadata)`. Exceptions from pymavlink are passed on unchanged.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-001
+- TYPE: Parent
+  VALUE: HLR-PRS-010
+
+[REQUIREMENT]
+UID: LLR-PRS-020
+STATUS: Active
+TITLE: Dataflash messages and fields read
+STATEMENT: >>>
+`ArduPilotBinParser.parse` reads only the types of `FAMILIES` plus MODE, MSG, EV and ARM. Per family, message
+types, instance field and column from field: imu (IMU, IMU2, IMU3; `I`): rollspeed GyrX, pitchspeed GyrY,
+yawspeed GyrZ, x AccX, y AccY, z AccZ. bat (BAT, BAT2; `Inst`): voltage_v Volt, current_a Curr, temperature
+Temp, current_consumed_mah CurrTot, remaining RemPct, internal_resistance_estimate Res. bcl (BCL; `Instance`):
+cell1..cell14 from V1..V14. gps (GPS, GPS2; `I`): lat Lat, lon Lng or Lon, alt Alt, satellites_used NSats, hdop
+HDop, fix_type Status, gwk GWk, gms GMS. gpa (GPA, GPA2; `I`): eph HAcc, epv VAcc, s_variance_m_s SAcc. esc
+(ESC, ESC1..ESC8; `Instance`): esc_rpm RPM, esc_voltage Volt, esc_current Curr, esc_temperature Temp. vibe
+(VIBE; `IMU`): vibration_x/y/z VibeX/Y/Z, clip Clip, clip0..2 Clip0..2. xkf4 (XKF4; `C`) and nkf4 (NKF4; `C`):
+sv SV, sp SP, sh SH, sm SM, svt SVT, fault_status FS, timeout_status TS, solution_status SS, gps_check_status
+GPS, primary_core PI. rate (RATE): roll RDes, pitch PDes, yaw YDes. powr (POWR): voltage5v_v Vcc, servo_rail_v
+VServo, power_flags Flags. The numbered types carry their instance in the name (`TYPE_INSTANCE`): IMU2 1,
+IMU3 2, BAT2 1, GPS2 1, GPA2 1, ESC1..ESC8 0..7.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+The tests exercise every family with at least one field; a review checks the whole table against the field
+names in ArduPilot's log structure definitions.
+<<<
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-010
+
+[REQUIREMENT]
+UID: LLR-PRS-021
+STATUS: Active
+TITLE: Dataflash progress
+STATEMENT: >>>
+When `progress` is given, `_open_reader` passes the reader a callback that reports
+`INDEX_SHARE x percent / 100` (`INDEX_SHARE` = 0.2) during the reader's index pass, and
+`ArduPilotBinParser.parse` reports `0.2 + 0.8 x reader.percent / 100` on every `PROGRESS_EVERY` (50 000) th
+wanted message when the reader has a `percent` attribute.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-005
+
+[REQUIREMENT]
+UID: LLR-PRS-022
+STATUS: Active
+TITLE: Dataflash row from a message without a format
+STATEMENT: >>>
+For a message with no `fmt` attribute `_row_getter` returns a function that reads `to_dict()` and gives
+`(time, instance, values...)`: time from `_boot_us` (`TimeUS`, else `TimeMS x 1000`, else `None`); instance
+from the family's instance field, else the `TYPE_INSTANCE` value of the message type, else 0; each value from
+the first of its source names that is present and not `None` (`_first`), else `None`, which the column buffer
+stores as NaN.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-010
+
+[REQUIREMENT]
+UID: LLR-PRS-023
+STATUS: Active
+TITLE: Dataflash row from a real reader message
+STATEMENT: >>>
+For a message with a `fmt`, `_row_getter` resolves the time field (`TimeUS`, else `TimeMS`), the instance
+field and each source field against `fmt.colhash` once per format. For a text-log message
+(`_apply_multiplier` false) it reads the attributes, which pymavlink has already scaled, and multiplies a
+`TimeMS` time by 1000. For a binary message it reads `_elements` directly and applies the format's own
+multiplier per field: multiply when the multiplier is 1 or more, divide by its reciprocal when it is between 0
+and 1, 1000 for `TimeMS`, unchanged when there is none. A field the format lacks becomes NaN, a missing
+instance field becomes the fallback instance, and a missing time field leaves the time NaN. When every field is
+present and unscaled the raw elements are returned as they are.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+`tests/test_ardupilot_text_parser.py` runs the text path on a real `DFReader_text`. No test of this item runs
+the binary path; `tests/test_sample_logs.py` (another item) does. A review checks the multiplier rule against
+pymavlink's `DFMessage.__getattr__`.
+<<<
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-010
+
+[REQUIREMENT]
+UID: LLR-PRS-024
+STATUS: Active
+TITLE: Dataflash column buffer size
+STATEMENT: >>>
+`ArduPilotBinParser.parse` creates one `ColumnBuffer` per family with columns `timestamp`, `inst` and the
+family's columns, sized by `_type_count`: the sum of the reader's per-type message counts (a list indexed
+through `name_to_id` for the binary reader, a dict by name for the text reader), 0 when the reader cannot say.
+The buffer then grows as needed; no upper limit is applied.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+The text-log test runs `_type_count` on a real reader but asserts nothing about the size. A review checks the
+two index forms and that a wrong count only costs a reallocation.
+<<<
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-010
+- TYPE: Parent
+  VALUE: HLR-PRS-006
+
+[REQUIREMENT]
+UID: LLR-PRS-025
+STATUS: Active
+TITLE: Dataflash clock
+STATEMENT: >>>
+`ArduPilotBinParser.parse` drops, with no warning, every family row whose time is NaN. The log origin `t0` is
+the smallest time in us among all remaining family rows and all MODE, MSG, EV and ARM messages that carry a
+time (0 when there is none). Each family `timestamp` becomes `round(time - t0)` as int64. A MODE, MSG, EV or
+ARM message with no time takes the time of the last such message that had one, or 0, and is not used for the
+origin or the duration. pymavlink's own `_timestamp` is not used.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test names this requirement; the behaviour is exercised only indirectly by other tests. A review reads the
+time handling in `ArduPilotBinParser.parse` against this statement.
+<<<
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-002
+
+[REQUIREMENT]
+UID: LLR-PRS-026
+STATUS: Active
+TITLE: Dataflash duration
+STATEMENT: >>>
+`ArduPilotBinParser.parse` sets `duration_seconds` to (latest time - earliest time) / 1e6 rounded to 2 places,
+over the same times as the origin of LLR-PRS-025, and to 0.0 when no message carried a time.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test names this requirement; the behaviour is exercised only indirectly by other tests. A review reads the
+duration computation in `ArduPilotBinParser.parse`.
+<<<
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-012
+
+[REQUIREMENT]
+UID: LLR-PRS-027
+STATUS: Active
+TITLE: Dataflash MODE messages
+STATEMENT: >>>
+For each MODE message `ArduPilotBinParser.parse` takes the mode name from the reader's `flightmode` attribute;
+when that is not a string or is "UNKNOWN" it takes the message's `Mode`, else `ModeNum`, as a string. A MODE
+with neither is ignored. `flight_modes_used` is the sorted set of these names.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test names this requirement; the behaviour is exercised only indirectly by other tests. A review reads the
+MODE handling in `ArduPilotBinParser.parse`.
+<<<
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-011
+
+[REQUIREMENT]
+UID: LLR-PRS-028
+STATUS: Active
+TITLE: Dataflash firmware, board and frame banners
+STATEMENT: >>>
+From MSG messages `ArduPilotBinParser.parse` takes: `firmware_version`, the first text that starts with
+"ArduCopter", "ArduPlane", "ArduRover", "ArduSub", "Blimp", "AntennaTracker", "APM:Copter", "APM:Plane" or
+"APM:Rover", whole and unparsed; `hardware_id`, the first word of the first later text that matches
+`BOARD_LINE` (a name followed by three groups of 8 upper-case hex digits); and the frame text, the rest of the
+first text starting "Frame: ". Each is `None` when no such text exists.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-012
+
+[REQUIREMENT]
+UID: LLR-PRS-029
+STATUS: Active
+TITLE: Dataflash vehicle type
+STATEMENT: >>>
+`_vehicle_type_from_firmware_string` returns the vehicle type of the first key of `_FIRMWARE_TO_VEHICLE_TYPE`
+found anywhere in the firmware banner (ArduCopter and APM:Copter Copter, ArduPlane and APM:Plane Plane,
+ArduRover and APM:Rover Rover, ArduSub Sub, Blimp Blimp, AntennaTracker AntennaTracker), and `None` when the
+banner is missing or matches none.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-012
+
+[REQUIREMENT]
+UID: LLR-PRS-030
+STATUS: Active
+TITLE: Dataflash arm and land events
+STATEMENT: >>>
+`ArduPilotBinParser.parse` records an arm event `(time, bool(ArmState))` for each ARM message that has
+`ArmState`; for each EV message with `Id` 10 an armed event and `Id` 11 a disarmed event; and for `Id` 18
+landed true and `Id` 28 landed false. When the log has at least one ARM event the EV arm events are not used.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-011
+
+[REQUIREMENT]
+UID: LLR-PRS-031
+STATUS: Active
+TITLE: Dataflash vehicle_status
+STATEMENT: >>>
+`_vehicle_status` returns `(None, 0)` when there are no arm events and no modes. Otherwise it returns a frame
+with one row per event in time order (an arm event before a mode at the same time) holding `timestamp`
+(event time - t0, us), `arming_state` (2 armed, 1 disarmed) and `nav_state` (from `ardupilot_nav_state`, NaN
+until the first mode). When there are arm events it puts a first row at timestamp 0 with the state opposite
+to the first event, and `arming_state` is int64; with no arm events the `arming_state` column is left out. The
+arm count is the number of armed events that arrive while disarmed.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-011
+- TYPE: Parent
+  VALUE: HLR-PRS-003
+
+[REQUIREMENT]
+UID: LLR-PRS-032
+STATUS: Active
+TITLE: ArduPilot mode to nav_state
+STATEMENT: >>>
+`ardupilot_nav_state(mode, vehicle)` returns NaN for no mode. It upper-cases the name and returns: LOITER 2
+for "Copter" else 4; CIRCLE 21 for "Copter" else 4; MANUAL 0; ALT_HOLD, QHOVER, FBWB 1; POSHOLD, QLOITER,
+CRUISE 2; AUTO 3; BRAKE, HOLD 4; RTL, SMART_RTL, AUTO_RTL, QRTL 5; ACRO, QACRO 10; GUIDED 14; STABILIZE,
+QSTABILIZE, FBWA 15; TAKEOFF 17; LAND, QLAND 18; FOLLOW 19; and NaN for any other name, with no warning.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+A telemetry-log test checks copter LOITER only. A review checks the table against PX4's `nav_state` numbers.
+<<<
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-011
+
+[REQUIREMENT]
+UID: LLR-PRS-033
+STATUS: Active
+TITLE: Dataflash vehicle_land_detected
+STATEMENT: >>>
+When the log has EV 18 or 28 events `ArduPilotBinParser.parse` produces `vehicle_land_detected` with one row
+per event in time order: `timestamp` (event time - t0, us) and `landed` (true for 18, false for 28). With no
+such event the topic is absent.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test names this requirement; the behaviour is exercised only indirectly by other tests. A review reads the EV
+18 and 28 handling in `ArduPilotBinParser.parse`.
+<<<
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-011
+
+[REQUIREMENT]
+UID: LLR-PRS-034
+STATUS: Active
+TITLE: Dataflash parameters
+STATEMENT: >>>
+`ArduPilotBinParser.parse` returns `float(value)` for every entry of the reader's `params` that `_is_numeric`
+accepts (`float()` succeeds), and an empty dict when the reader has none. Other entries are left out with no
+warning. The value is the last one the reader saw for that name.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test names this requirement; the behaviour is exercised only indirectly by other tests. A review reads the
+parameter loop in `ArduPilotBinParser.parse`.
+<<<
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-012
+
+[REQUIREMENT]
+UID: LLR-PRS-035
+STATUS: Active
+TITLE: Dataflash IMU topics
+STATEMENT: >>>
+`_imu_topics` produces `vehicle_angular_velocity` (`rollspeed`, `pitchspeed`, `yawspeed` in rad/s as logged)
+from the lowest IMU instance that has any gyro value, and `sensor_accel` per instance (`x`, `y`, `z` in m/s^2
+as logged), each without the rows where all three values are NaN. No scale or sign is changed.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-010
+- TYPE: Parent
+  VALUE: HLR-PRS-003
+
+[REQUIREMENT]
+UID: LLR-PRS-036
+STATUS: Active
+TITLE: Instance split and naming
+STATEMENT: >>>
+`_instances` splits a family frame by its `inst` column into one frame per integer instance, without the
+`inst` column. `store_instances(topics, name, frames)` stores the lowest instance under `name` and every other
+instance `i` under `<name>_<i>`, each with a fresh index.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-004
+
+[REQUIREMENT]
+UID: LLR-PRS-037
+STATUS: Active
+TITLE: Dataflash battery
+STATEMENT: >>>
+`_battery_topics` produces `battery_status` per BAT instance: `voltage_v` (V), `current_a` (A), `temperature`
+(degrees C), `current_consumed_mah` (mAh) as logged, without rows where voltage and current are both NaN.
+`remaining` is `RemPct / 100` when the log has any, else the column is left out (it is not derived from
+consumed charge). `internal_resistance_estimate` is left out when it is all NaN. `capacity` is added on every
+row from the parameter `BATT_CAPACITY` (instance 0) or `BATT<i+1>_CAPACITY` when it is greater than 0.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-010
+- TYPE: Parent
+  VALUE: HLR-PRS-003
+
+[REQUIREMENT]
+UID: LLR-PRS-038
+STATUS: Active
+TITLE: Dataflash battery cells
+STATEMENT: >>>
+`_with_cells` treats a BCL cell value as valid when it is above 0 and below `NO_CELL_MV` (65 535), converts
+the valid cells from mV to V (divide by 1000), numbers the cells that ever report from 0 as
+`voltage_cell_v[k]`, joins them to the battery rows of the same instance by nearest time within 100 000 us,
+and sets `cell_count` to the number of reporting cells. With no reporting cell the battery frame is returned
+unchanged.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-010
+- TYPE: Parent
+  VALUE: HLR-PRS-003
+
+[REQUIREMENT]
+UID: LLR-PRS-039
+STATUS: Active
+TITLE: Dataflash GPS position
+STATEMENT: >>>
+`_gps_topics` produces `vehicle_gps_position` per receiver. Rows with NaN `lat`, `lon` or `fix_type` are
+dropped with no warning. `lat` and `lon` are `round(degrees x 1e7)` as int64; `alt` is
+`round(metres x 1000)` in millimetres as float64; `fix_type` is the GPS `Status` as int64 (same 0 to 6 scale);
+`satellites_used` is `NSats`; `hdop` is `HDop` as the reader scaled it (a plain ratio). `gwk` and `gms` are
+removed. It returns `None` and adds no topic when the log has no GPS message.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-010
+- TYPE: Parent
+  VALUE: HLR-PRS-003
+
+[REQUIREMENT]
+UID: LLR-PRS-040
+STATUS: Active
+TITLE: Dataflash GPS accuracy
+STATEMENT: >>>
+`_gps_topics` joins the GPA rows of the same receiver that have any of `eph` (HAcc, m), `epv` (VAcc, m) and
+`s_variance_m_s` (SAcc, m/s) to the GPS rows by nearest time within 50 000 us. A GPS row with no GPA row in
+that window has NaN in these columns.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-010
+
+[REQUIREMENT]
+UID: LLR-PRS-041
+STATUS: Active
+TITLE: Dataflash start time
+STATEMENT: >>>
+`_gps_topics` returns `log_start_utc` from the first GPS row, of any receiver, with `fix_type >= 3` and
+`gwk > 0`: `utc_iso((315 964 800 + gwk x 604 800 - 18) x 1 000 000 + gms x 1000 - timestamp)`, where
+315 964 800 is the GPS epoch in Unix seconds, 18 the fixed GPS to UTC leap-second offset, `gms` the
+millisecond of the week (0 when NaN) and `timestamp` the row's log-relative us. It returns `None` when no row
+qualifies.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-012
+
+[REQUIREMENT]
+UID: LLR-PRS-042
+STATUS: Active
+TITLE: ESC instances on one time base
+STATEMENT: >>>
+`ArduPilotBinParser.parse` drops ESC rows with no rpm, voltage, current or temperature and passes the
+remaining instances to `merge_esc`, which bins every instance on one time base: bin width is the largest of
+the instances' median sample intervals (100 000 us when no instance has two samples; at least 1000 us), bins
+start at the earliest sample, values are averaged within a bin and named `esc[i].esc_rpm`, `.esc_voltage`,
+`.esc_current`, `.esc_temperature`. Rows before the first bin in which every ESC has reported are dropped;
+later gaps stay NaN. `timestamp` is the bin start and `esc_count` the number of instances.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-010
+
+[REQUIREMENT]
+UID: LLR-PRS-043
+STATUS: Active
+TITLE: Dataflash vibration
+STATEMENT: >>>
+`_vibration_topics` produces `vibration` per IMU instance with `vibration_x`, `vibration_y`, `vibration_z`
+(m/s^2 as logged), `clipping_<i>` from `Clip` when the instance logs it, and `clipping_0..2` from `Clip0..2`
+when logged (older logs, one message for all IMUs). The lowest instance's frame also gets every other
+instance's `clipping_<i>` as the last value at or before each of its rows.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-010
+
+[REQUIREMENT]
+UID: LLR-PRS-044
+STATUS: Active
+TITLE: Dataflash estimator test ratios
+STATEMENT: >>>
+`_ekf_topics` uses NKF4 when the parameter `AHRS_EKF_TYPE` (default 3) is 2 and NKF4 is logged, or when XKF4
+is not logged; otherwise XKF4. Per core it gives `vel_test_ratio`, `pos_test_ratio`, `hgt_test_ratio`,
+`mag_test_ratio`, `tas_test_ratio` as the square of SV, SP, SH, SM, SVT, and `fault_status`, `timeout_status`,
+`solution_status`, `gps_check_status`, `primary_core` as logged. The primary core is the most frequent `PI`
+that is 0 or more, else the lowest core. It is stored as `ekf_test_ratios`; the lowest core, when displaced,
+as `ekf_test_ratios_<primary>`; any other core `i` as `ekf_test_ratios_<i>`.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-014
+
+[REQUIREMENT]
+UID: LLR-PRS-045
+STATUS: Active
+TITLE: Dataflash rate setpoint
+STATEMENT: >>>
+`ArduPilotBinParser.parse` produces `vehicle_rates_setpoint` from RATE messages: `roll`, `pitch`, `yaw` are
+RDes, PDes, YDes converted from deg/s to rad/s (multiply by pi/180).
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-010
+- TYPE: Parent
+  VALUE: HLR-PRS-003
+
+[REQUIREMENT]
+UID: LLR-PRS-046
+STATUS: Active
+TITLE: Dataflash board power
+STATEMENT: >>>
+`ArduPilotBinParser.parse` produces `system_power` from POWR messages with `voltage5v_v` (Vcc, V),
+`servo_rail_v` (VServo, V) and `power_flags` (Flags) as logged, leaving out any column that is all NaN, and
+leaving out the topic when no column other than `timestamp` remains.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-010
+
+[REQUIREMENT]
+UID: LLR-PRS-047
+STATUS: Active
+TITLE: Dataflash airframe name and topic list
+STATEMENT: >>>
+`ArduPilotBinParser.parse` sets `airframe_name` to `ardupilot_frame(params, vehicle_type)` and, when that
+gives nothing, to the "Frame:" banner text; and `available_topics` to the sorted topic keys. It sets no
+`airframe_id`, `px4_version`, `max_altitude_m`, `max_speed_ms` or `total_distance_m`.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-012
+
+[REQUIREMENT]
+UID: LLR-PRS-048
+STATUS: Active
+TITLE: Dataflash: no warnings and no estimator_status
+STATEMENT: >>>
+`ArduPilotBinParser.parse` builds `FlightMetadata` without `parse_warnings`, so the list is always empty, and
+never produces an `estimator_status` topic.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+A test checks that `estimator_status` is absent. No test checks the warning list; a review checks that the
+`FlightMetadata` call has no `parse_warnings` argument.
+<<<
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-013
+- TYPE: Parent
+  VALUE: HLR-PRS-014
+
+[REQUIREMENT]
+UID: LLR-PRS-049
+STATUS: Active
+TITLE: Text dataflash reader
+STATEMENT: >>>
+`ArduPilotTextParser` is `ArduPilotBinParser` with `_open_reader` replaced: it opens pymavlink
+`DFReader.DFReader_text(path)`, with the same 0.2 share progress callback when `progress` is given, and never
+opens `DFReader_binary`. Everything after opening the reader is the binary parser's code.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-010
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: MAVLink telemetry log (flightmd_core/services/mavlink_telemetry_parser.py)
+
+[REQUIREMENT]
+UID: LLR-PRS-050
+STATUS: Active
+TITLE: Telemetry parse entry and missing file
+STATEMENT: >>>
+`MavlinkTelemetryParser.parse(tlog_path, progress=None)` raises `FileNotFoundError` ("MAVLink telemetry log not
+found: <path>") when the path does not exist. Otherwise it opens the file with pymavlink
+`mavutil.mavlogfile(path, robust_parsing=True)` (never chosen by file extension), reads every message of the 28
+types in `WANTED_TYPES` until the reader returns None, closes the reader also on error, and returns `(topics,
+params, metadata)`.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-001
+- TYPE: Parent
+  VALUE: HLR-PRS-017
+
+[REQUIREMENT]
+UID: LLR-PRS-051
+STATUS: Active
+TITLE: Telemetry progress
+STATEMENT: >>>
+When `progress` is given, `MavlinkTelemetryParser.parse` calls it after every 20 000 messages (`PROGRESS_EVERY`)
+with the reader's `percent` divided by 100, and not at all when the reader has no `percent`.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-005
+
+[REQUIREMENT]
+UID: LLR-PRS-052
+STATUS: Active
+TITLE: One vehicle from a shared link
+STATEMENT: >>>
+`_pick_vehicle(hb)` takes the HEARTBEAT rows whose `autopilot` is not 8 (invalid) and whose `type` is not 6
+(ground station) and returns the (system id, component id) pair with the most such rows, with the most frequent
+`autopilot` and `type` of that pair; with no such row it returns `(None, None, None)`. `parse` then keeps only
+that pair's rows in every frame and adds the warning "Ignored <n> messages from other systems on the link (GCS,
+gimbal, companion computer)." when n, the rows dropped outside HEARTBEAT, is above 0. With no vehicle it keeps
+every sender's rows, drops the HEARTBEAT frame (no arming state) and adds the warning "No autopilot HEARTBEAT in
+this log, so messages from every system on the link were used.". STATUSTEXT and AUTOPILOT_VERSION texts and
+parameters are kept only from the vehicle.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-015
+
+[REQUIREMENT]
+UID: LLR-PRS-053
+STATUS: Active
+TITLE: Telemetry clock
+STATEMENT: >>>
+`_vehicle_clock(frames)` gives every row a `timestamp` in microseconds: a row that carries a boot time
+(`time_boot_ms` x 1000, or a `time_usec` between 0 and 1e15) gets the boot time plus the median of (receive time
+- boot time) over its boot segment; a row without one keeps the receive time. A boot segment ends where the boot
+time goes back by more than `REBOOT_US` (1 000 000 us). `parse` adds the warning "No vehicle timestamps in this
+log; using the ground station's receive time, so rates and frequencies are approximate." when no row had a boot
+time, and "The vehicle rebooted <n> time(s) during this log." when n is above 0. All timestamps are then made
+relative to the earliest one, rounded to int64 and each frame is sorted by them.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-016
+- TYPE: Parent
+  VALUE: HLR-PRS-002
+
+[REQUIREMENT]
+UID: LLR-PRS-054
+STATUS: Active
+TITLE: Telemetry rates and accelerations
+STATEMENT: >>>
+`MavlinkTelemetryParser._topics` builds `vehicle_angular_velocity` (`rollspeed`, `pitchspeed`, `yawspeed` in
+rad/s as sent) from ATTITUDE, or from ATTITUDE_QUATERNION only when there is no ATTITUDE. `sensor_accel` (x, y,
+z in m/s^2) comes per IMU instance from HIGHRES_IMU (as sent), else SCALED_IMU, SCALED_IMU2, SCALED_IMU3 or
+RAW_IMU (milli-g x 0.00980665); one source per instance, in that order of preference, stored with
+`store_instances`.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-017
+- TYPE: Parent
+  VALUE: HLR-PRS-003
+- TYPE: Parent
+  VALUE: HLR-PRS-004
+
+[REQUIREMENT]
+UID: LLR-PRS-055
+STATUS: Active
+TITLE: Telemetry battery
+STATEMENT: >>>
+`battery_status` comes per battery id from BATTERY_STATUS: `voltage_v` the sum of the cell voltages that are
+above 0 and below 65535 mV (in V), `current_a` = `current_battery` x 0.01 (-1 is missing), `temperature` = x
+0.01 deg C (32767 is missing), `remaining` = `battery_remaining` x 0.01 (-1 is missing), `current_consumed_mah`,
+and through `_cells` one `voltage_cell_v[k]` per cell that ever reports plus `cell_count`. Only when no
+BATTERY_STATUS has a voltage, SYS_STATUS is used (`voltage_battery` x 0.001, 0 and 65535 missing; current and
+remaining as above).
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-017
+- TYPE: Parent
+  VALUE: HLR-PRS-003
+
+[REQUIREMENT]
+UID: LLR-PRS-056
+STATUS: Active
+TITLE: Telemetry GPS
+STATEMENT: >>>
+`vehicle_gps_position` comes from GPS_RAW_INT (instance 0) and GPS2_RAW (instance 1): `lat`, `lon` in degrees x
+1e7 and `alt` in mm as sent, `fix_type`, `satellites_used` (255 is missing), `hdop` = `eph` x 0.01 (65535
+missing), `eph` and `epv` = `h_acc`, `v_acc` / 1000 (m) and `s_variance_m_s` = `vel_acc` / 1000 (m/s), where 0
+is missing. Rows without lat, lon or fix type are dropped and the `eph`, `epv` and `s_variance_m_s` columns are
+dropped when all missing. GLOBAL_POSITION_INT goes to its own topic `vehicle_global_position` (degrees, metres),
+without rows at 0,0, and never to `vehicle_gps_position`.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-017
+- TYPE: Parent
+  VALUE: HLR-PRS-003
+
+[REQUIREMENT]
+UID: LLR-PRS-057
+STATUS: Active
+TITLE: Telemetry ESC
+STATEMENT: >>>
+`_esc_status(frames)` takes ESC_STATUS rows (rpm, voltage, current as sent) and ESC_TELEMETRY_1_TO_4 to 9_TO_12
+rows (rpm; voltage x 0.01 V; current x 0.01 A; temperature in deg C) per ESC slot. The number of ESCs is the
+largest ESC_INFO `count` above 0, else the highest slot that ever reports a non-zero value plus one; slots at or
+above it are dropped. The rest are merged with `merge_esc` and `esc_count` is set. An ESC without its own
+temperature takes the ESC_INFO temperature (x 0.01 deg C, 32767 missing) of the nearest ESC_INFO row within 2 s.
+With no ESC row it returns None.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-017
+
+[REQUIREMENT]
+UID: LLR-PRS-058
+STATUS: Active
+TITLE: Telemetry vibration and estimator ratios
+STATEMENT: >>>
+VIBRATION from a PX4 autopilot becomes `vehicle_imu_status` with `accel_vibration_metric` = `vibration_z`,
+`gyro_vibration_metric` = `vibration_y` and `delta_angle_coning_metric` = `vibration_x`; from any other
+autopilot it becomes `vibration` with the six fields as sent. `ekf_test_ratios` comes from ESTIMATOR_STATUS
+ratios as sent, else from EKF_STATUS_REPORT variances squared, with a `<c>_test_ratio` column for each of vel,
+pos, hgt, mag, tas, hagl that has a value, and `flags`. No `estimator_status` topic is produced.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-017
+- TYPE: Parent
+  VALUE: HLR-PRS-014
+
+[REQUIREMENT]
+UID: LLR-PRS-059
+STATUS: Active
+TITLE: Telemetry board power
+STATEMENT: >>>
+`system_power` comes from POWER_STATUS (`voltage5v_v` = Vcc / 1000, `servo_rail_v` = Vservo / 1000,
+`power_flags`), or from HWSTATUS (`voltage5v_v` = Vcc / 1000) only when there is no POWER_STATUS.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-017
+
+[REQUIREMENT]
+UID: LLR-PRS-060
+STATUS: Active
+TITLE: Telemetry arming, mode and landed state
+STATEMENT: >>>
+`vehicle_status` has one row per vehicle HEARTBEAT: `arming_state` 2 when bit 128 of `base_mode` is set, else 1;
+`nav_state` from `custom_mode` through `_px4_nav_state` (main mode in bits 16-23, sub mode in bits 24-31, tables
+`PX4_MAIN_MODE`, `PX4_AUTO_SUB_MODE`, `PX4_POSCTL_SUB_MODE`) for PX4, through the pymavlink mode name and
+`ardupilot_nav_state` for ArduPilot, NaN for other autopilots and wherever bit 1 (custom mode enabled) of
+`base_mode` is clear. `vehicle_land_detected` comes from EXTENDED_SYS_STATE rows with `landed_state` above 0,
+`landed` true when it is 1.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-018
+
+[REQUIREMENT]
+UID: LLR-PRS-061
+STATUS: Active
+TITLE: Telemetry parameters
+STATEMENT: >>>
+`_decode_params(raw, vehicle, autopilot)` returns `{name: float}` from the PARAM_VALUE messages of the vehicle
+(all senders when there is none), with the name cut at the first NUL and empty names left out. For a PX4
+autopilot a parameter of an integer type 1 to 6 is decoded from the bytes of its float (`PARAM_INT_FORMATS`);
+for others the float is taken as sent. Values that cannot become a float are left out; the last value of a name
+wins.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-018
+
+[REQUIREMENT]
+UID: LLR-PRS-062
+STATUS: Active
+TITLE: Telemetry metadata
+STATEMENT: >>>
+`MavlinkTelemetryParser.parse` returns metadata with: `duration_seconds` (last - first timestamp before
+rebasing, in s, 2 decimals); `log_start_utc` from the first receive time when it is after `MIN_EPOCH_US`, else
+None; `arm_count` = the number of rises of `arming_state` to 2; `flight_modes_used` from `_mode_names`;
+`firmware_version`, `px4_version`, `hardware_id` from `_firmware` (AUTOPILOT_VERSION release, the firmware
+banner, board and "Frame:" STATUSTEXTs); `vehicle_type` from the HEARTBEAT type (`VEHICLE_TYPES`) or else the
+banner; `airframe_id` and name from `SYS_AUTOSTART` for PX4 or from the frame parameters or "Frame:" text for
+ArduPilot; `available_topics`; and `parse_warnings`.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-018
+
+[REQUIREMENT]
+UID: LLR-PRS-063
+STATUS: Active
+TITLE: Unreadable telemetry is counted
+STATEMENT: >>>
+`MavlinkTelemetryParser.parse` counts the BAD_DATA messages pymavlink returns and, when the count is above 0,
+adds the warning "<n> unreadable chunks of the telemetry stream were skipped.".
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-019
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Betaflight and INAV blackbox (flightmd_core/services/betaflight_parser.py)
+
+[REQUIREMENT]
+UID: LLR-PRS-064
+STATUS: Active
+TITLE: Blackbox parse entry and sessions
+STATEMENT: >>>
+`BetaflightParser.parse(path)` raises `FileNotFoundError` ("Blackbox log file not found: <path>") when the path
+does not exist. It reads the whole file and splits it (`split_logs`) at each occurrence of `LOG_START`; with
+none it raises `ValueError("No blackbox log header found in this file.")`; with no session whose header has
+"Field I name" it raises `ValueError("The blackbox header is incomplete (no field definitions).")`. It decodes
+the largest usable session and, when the file holds more than one session, adds the warning "This file holds <n>
+blackbox logs; log <k> (the largest) was analysed.". A `BlackboxError` from the decoder becomes
+`ValueError("Can't decode this blackbox log: ...")`, no decoded main frame becomes `ValueError("The blackbox log
+has no decodable frames.")`. Bytes before the first header are ignored.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-001
+- TYPE: Parent
+  VALUE: HLR-PRS-020
+- TYPE: Parent
+  VALUE: HLR-PRS-021
+
+[REQUIREMENT]
+UID: LLR-PRS-065
+STATUS: Active
+TITLE: Blackbox header and field definitions
+STATEMENT: >>>
+`parse_header(data, pos)` reads consecutive lines starting "H " as latin-1 "name:value" pairs, stripped.
+`frame_defs(headers)` builds the I, P, S, G and H frame definitions (P takes the I names and signs) from the
+"Field <k> name/signed/predictor/encoding" lines, and raises `BlackboxError` when there is no "Field I name" or
+no P definition. `_Decoder` reads "Data version" (default 2), "I interval" (default 32, at least 1), "P
+interval" as n/d or d, "minthrottle" (default 1150), "motorOutput" and "vbatref".
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-020
+
+[REQUIREMENT]
+UID: LLR-PRS-066
+STATUS: Active
+TITLE: Blackbox value encodings
+STATEMENT: >>>
+The decoder reads the field encodings 0 (signed variable byte, zig-zag), 1 (unsigned variable byte, 7 bits a
+byte low first, more than 32 bits is corrupt), 3 (negative 14-bit), 6 (tag8_8svb), 7 (tag2_3s32), 8 (tag8_4s16,
+with the data version 1 nibble layout), 9 (null) and 10 (tag2_3svariable). Data that ends inside a value raises
+the internal `_Truncated`, which stops decoding; a value that cannot be right raises `BlackboxError`.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-020
+
+[REQUIREMENT]
+UID: LLR-PRS-067
+STATUS: Active
+TITLE: Blackbox frame acceptance and clock
+STATEMENT: >>>
+`_Decoder.run` walks the session byte by byte, skipping bytes that are not a frame marker. A frame is accepted
+only when it decodes and the byte after it is another marker (or the end). An I frame is accepted when it is the
+first, or its loop iteration is 0 to 4999 (`MAX_ITERATION_JUMP` 5000) and its time 0 to 9 999 999 us
+(`MAX_TIME_JUMP_US` 10 s) after the last accepted main frame, or when two I frames in a row agree with each
+other within those limits; a P frame when the main stream is valid and it is within the same limits. Time
+differences are taken modulo 2^32 so a 32-bit rollover continues the clock. A rejected or undecodable frame adds
+1 to `corrupt` and decoding resumes one byte after its start. A "logging resume" event moves the clock to its
+time, the log-end event stops decoding, data cut off inside a frame stops it, and P frames account for frames
+the P interval left out.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-021
+- TYPE: Parent
+  VALUE: HLR-PRS-002
+
+[REQUIREMENT]
+UID: LLR-PRS-068
+STATUS: Active
+TITLE: Blackbox parse warnings
+STATEMENT: >>>
+`BetaflightParser.parse` adds "<n> damaged blackbox frames were skipped." when the decoder's `corrupt` count is
+above 0, "The header has no acc_1G, so the accelerometer couldn't be scaled." when accelerometer fields exist
+without `acc_1G`, and "Battery voltage units for <firmware> <version> aren't known; battery skipped." when a
+voltage field exists but `_battery` returns None.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-021
+
+[REQUIREMENT]
+UID: LLR-PRS-069
+STATUS: Active
+TITLE: Blackbox gyro and setpoint
+STATEMENT: >>>
+Timestamps are microseconds from the first accepted main frame. `vehicle_angular_velocity` = `gyroADC[0..2]` x
+`gyro_scale` (header "gyro_scale" or "gyro.scale", hexadecimal float allowed, default 1.0) / h x pi / 180 rad/s,
+with h = 10 when "blackbox_high_resolution" is 1, else 1; for Baseflight it is `gyroADC` x `gyro_scale` x 1e6.
+`vehicle_rates_setpoint` = `setpoint[0..2]` x pi / 180 / h rad/s. Each is produced only when all three fields
+exist.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-022
+
+[REQUIREMENT]
+UID: LLR-PRS-070
+STATUS: Active
+TITLE: Blackbox accelerometer and motor outputs
+STATEMENT: >>>
+`sensor_accel` = `accSmooth[0..2]` x 9.80665 / `acc_1G` m/s^2 when `acc_1G` is above 0 (z reads +1 g at rest);
+otherwise no accelerometer topic. `actuator_outputs` holds `output[i]` = `motor[i]` as logged for up to 8 motors
+and `noutputs`.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-022
+
+[REQUIREMENT]
+UID: LLR-PRS-071
+STATUS: Active
+TITLE: Blackbox motor speed
+STATEMENT: >>>
+`_esc_status` takes `eRPM[i]`, or when absent the `debug[i]` fields when "debug_mode_name" is
+DSHOT_RPM_TELEMETRY or, with no name, "debug_mode" is 45 on Betaflight 4.2 to 4.5; at most as many as there are
+motors. `esc[i].esc_rpm` = value x 100 / (poles / 2) mechanical rpm with poles from "motor_poles" (default 14),
+and `esc_count`. Otherwise no `esc_status`.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-022
+
+[REQUIREMENT]
+UID: LLR-PRS-072
+STATUS: Active
+TITLE: Blackbox battery
+STATEMENT: >>>
+`_battery` takes `vbatLatest` (or `vbat`): x 0.01 V for INAV and Betaflight 4.0 and later, x 0.1 V for
+Betaflight 3.1 to 3.x, and None (no battery topic) for other firmware. It keeps the first row of each 10 ms bin
+(`BATTERY_BIN_US`) and adds `current_a` = `amperageLatest` (or `amperage`) x 0.01 A when present.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-022
+
+[REQUIREMENT]
+UID: LLR-PRS-073
+STATUS: Active
+TITLE: Blackbox GPS
+STATEMENT: >>>
+`_gps` turns each G frame with `GPS_coord[0]` and `[1]` into a row: `lat`, `lon` (degrees x 1e7 as logged),
+`alt` in mm (logged value, made signed when above 2^31 - 1, x 100 for Betaflight 4.0 and later, else x 1000),
+`satellites_used`, `fix_type` (INAV `GPS_fixType` 0, 1, 2 to 0, 2, 3; otherwise 3 when 4 or more satellites and
+a non-zero position, else 0), `vel_m_s` = `GPS_speed` / 100, `cog_rad` from `GPS_ground_course` / 10 degrees and
+`hdop` = `GPS_hdop` / 100 when logged; sorted by time. With no such frame there is no GPS topic.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-022
+
+[REQUIREMENT]
+UID: LLR-PRS-074
+STATUS: Active
+TITLE: Blackbox arming and modes
+STATEMENT: >>>
+`_vehicle_status` returns None for any firmware but Betaflight 3.5 and later. Otherwise each slow-frame
+`flightModeFlags` value and flight-mode event gives a row: `arming_state` 2 when bit 0 (arm) is set, else 1;
+`nav_state` 15 when bit 1 or 2 (angle, horizon) is set, else 10. Each disarm event adds a row with
+`arming_state` 1 and the last mode. Rows are sorted, timestamps made relative and clipped at 0, and only changes
+are kept. `parse` counts arming as the first row armed plus each rise to 2, and names the modes "Acro" (10) and
+"Angle / Horizon" (15).
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-023
+
+[REQUIREMENT]
+UID: LLR-PRS-075
+STATUS: Active
+TITLE: Blackbox parameters and metadata
+STATEMENT: >>>
+`_params(headers)` returns every header whose name has no space and whose value is a number or a comma list of
+numbers (hexadecimal values are left out): one number as is, three numbers of a name ending "PID" as `<name>_P`,
+`_I`, `_D`, other lists as `<name>[i]`. Metadata: duration from the first to the last accepted main frame (s, 2
+decimals); `firmware_version` "Firmware revision"; `hardware_id` "Board information"; `log_start_utc` from "Log
+start datetime" (`_start_utc`, None when unparsable or before `MIN_EPOCH_US`, as on a board with no clock); arm
+count and modes as LLR-PRS-074. `_firmware` names the firmware (Betaflight, INAV, Cleanflight, with Emuflight
+and Butterflight as Betaflight) and its version from "Firmware revision", else "Firmware type" and version
+0.0.0.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-023
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: DJI flight record (flightmd_core/services/dji_parser.py)
+
+[REQUIREMENT]
+UID: LLR-PRS-076
+STATUS: Active
+TITLE: DJI parse entry and refusals
+STATEMENT: >>>
+`DJIParser.parse(path)` raises `FileNotFoundError` ("DJI log file not found: <path>") when the path does not
+exist, and `ValueError` with: `DAT_UNSUPPORTED` when the first 32 bytes look like an aircraft .DAT
+(`looks_like_dji_dat`); "DJI flight record is too short to have a header." below 100 bytes; "DJI flight record
+header is damaged (...)." when `_layout` fails; "DJI flight record is truncated (records run past the end of the
+file)." when the record range is not inside the file; "The DJI flight record has no readable OSD (flight)
+records." when no OSD record decodes. It returns an empty parameter dict.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-001
+- TYPE: Parent
+  VALUE: HLR-PRS-024
+
+[REQUIREMENT]
+UID: LLR-PRS-077
+STATUS: Active
+TITLE: DJI layout
+STATEMENT: >>>
+`_layout(buf)` reads the version at byte 10 and the details offset from bytes 0-7 (little endian); for version
+13 and later it walks the auxiliary info block at byte 100 (must start with 0) and the auxiliary version block
+after it (must start with 1), raising `ValueError` otherwise, and returns where they end. `_records_range` gives
+the records area: from byte 12 to the details offset below version 6, from 100 to the details offset for 6 to
+11, from 536 (100 + 436) to the end for 12, and from the details offset (or the end of the auxiliary blocks) to
+the end for 13 and later.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-024
+
+[REQUIREMENT]
+UID: LLR-PRS-078
+STATUS: Active
+TITLE: DJI record walk
+STATEMENT: >>>
+`_iter_records` reads records of a type byte, a length (1 byte up to version 12, 2 bytes after) and that many
+content bytes followed by 0xFF. Embedded JPEG images (0xFF 0xD8 to 0xFF 0xD9) are stepped over. A record whose
+end is not 0xFF or runs past the area adds 1 to the damaged count and the walk resumes after the next 0xFF.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-024
+- TYPE: Parent
+  VALUE: HLR-PRS-028
+
+[REQUIREMENT]
+UID: LLR-PRS-079
+STATUS: Active
+TITLE: DJI descrambling
+STATEMENT: >>>
+`_payload` returns the content as is up to version 6. From version 7 the first content byte is a seed: the key
+is `xor_key(seed, type)`, 8 bytes of `crc64((seed + type) & 0xFF, (0x123456789ABCDEF0 x seed) mod 2^64)` with
+the reflected polynomial 0x95AC9329AC4BC9B5, and the rest is XORed with it repeated. Up to version 12, and for
+plaintext features after, that is the payload; content shorter than 2 bytes gives None.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-024
+
+[REQUIREMENT]
+UID: LLR-PRS-080
+STATUS: Active
+TITLE: DJI record fields
+STATEMENT: >>>
+`DJIParser._decode` reads only the types in `READ_TYPES`, each only when long enough: OSD (48 bytes: longitude
+and latitude in radians to degrees, height / 10 m, vx, vy, vz / 10 m/s, roll, pitch, yaw / 10 deg, mode = low 7
+bits, ground state, motors-on bit, GPS-ok bit, satellites, drone type at byte 48 from version 2); HOME (lat,
+lon, altitude / 10 m); CENTER_BATTERY (voltage / 1000 V, |current| / 1000 A, remaining / 100, temperature in 0.1
+K from version 8, cells above 0); SMART_BATTERY; SMART_BATTERY_GROUP (dynamic: voltage, |current|, remaining,
+temperature / 10 deg C, cells per battery index; static: design capacity); CUSTOM (wall-clock ms after
+`MIN_EPOCH_US`); RC (sticks as (value - 1024) / 660); GIMBAL (degrees / 10); DEFORM (bits). Every non-OSD record
+is timed at the index of the last OSD record.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-024
+- TYPE: Parent
+  VALUE: HLR-PRS-025
+
+[REQUIREMENT]
+UID: LLR-PRS-081
+STATUS: Active
+TITLE: DJI position topics
+STATEMENT: >>>
+`DJIParser._topics` drops OSD rows with |lat| above 90 or |lon| above 180 and times each row at its OSD index x
+100 000 us. `vehicle_gps_position`: lat, lon x 1e7, `alt` = (height + first HOME altitude, or 0) x 1000 mm,
+`fix_type` 3 when the GPS-ok bit is set and the position is not 0,0, else 0, satellites, `vel_m_s` = hypot(vx,
+vy). `vehicle_local_position`: x, y in m from the first HOME point (else the first valid fix) on a 6 371 000 m
+sphere, NaN without a valid fix; z = -height; vx, vy, vz.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-025
+
+[REQUIREMENT]
+UID: LLR-PRS-082
+STATUS: Active
+TITLE: DJI attitude, status and landed state
+STATEMENT: >>>
+`vehicle_attitude` holds roll, pitch, yaw in radians and the quaternion `q[0..3]` built from them.
+`vehicle_status` has `arming_state` 2 while the motors-on bit is set, else 1, and `nav_state` from the mode
+through `_NAV_STATE` (NaN when unmapped), keeping only rows where either changes. `vehicle_land_detected` has
+`landed` true for ground state 0 or 1, keeping only changes.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-025
+
+[REQUIREMENT]
+UID: LLR-PRS-083
+STATUS: Active
+TITLE: DJI battery choice
+STATEMENT: >>>
+`DJIParser._battery` uses the SMART_BATTERY_GROUP dynamic records when there are any, one `battery_status`
+instance per battery index with `capacity` from its static record when above 0; else the CENTER_BATTERY records
+as instance 0; else the SMART_BATTERY records (voltage, remaining) as instance 0. Timestamps are OSD index x 100
+000 us.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-025
+
+[REQUIREMENT]
+UID: LLR-PRS-084
+STATUS: Active
+TITLE: DJI stick, gimbal and arm topics
+STATEMENT: >>>
+`manual_control_setpoint` (roll, pitch, yaw, throttle from the RC record), `dji_gimbal` (`roll_deg`,
+`pitch_deg`, `yaw_deg`) and `dji_deform` (`protected`, `deform_status`, `deform_mode`) are produced when those
+records exist, timed at OSD index x 100 000 us.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-025
+
+[REQUIREMENT]
+UID: LLR-PRS-085
+STATUS: Active
+TITLE: DJI key exchange
+STATEMENT: >>>
+For version 13 and later `parse` builds the request with `_keychain_request` (the auxiliary version, the
+department, or 3 when not 1 to 8, and per key group the KeyStorage feature names and base64 ciphertexts) and
+calls `fetch_keychains`, which sends one POST to `KEYCHAIN_URL` with JSON content and the `Api-Key` header,
+follows no redirect, waits at most 30 s and reads at most 4 MiB. It raises `ValueError` on HTTP 403 ("rejected
+the key in DJI_API_KEY"), any other HTTP status, a network error, a reply that is not JSON, or a result code
+other than 0, and returns one {feature: (iv, key)} per group, leaving out entries it cannot decode.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-026
+
+[REQUIREMENT]
+UID: LLR-PRS-086
+STATUS: Active
+TITLE: No DJI request offline or without a key
+STATEMENT: >>>
+`_offline()` is true when `FLIGHTMD_OFFLINE` is 1, true, yes or on (any case, spaces trimmed). For a record of
+version 13 or later, `parse` raises `ValueError` naming `DJI_API_KEY` and `FLIGHTMD_OFFLINE` before any request
+when `DJI_API_KEY` is empty or unset or `_offline()` is true. Versions 12 and earlier never reach
+`fetch_keychains`.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-027
+
+[REQUIREMENT]
+UID: LLR-PRS-087
+STATUS: Active
+TITLE: DJI decryption
+STATEMENT: >>>
+From version 13 a non-plaintext record is XOR-decoded without its last byte and AES-CBC decrypted
+(`_aes_cbc_decrypt`, key of 16, 24 or 32 bytes, 16-byte IV, PKCS#7 padding checked) with its feature's key; the
+feature's IV becomes the last 16 ciphertext bytes, also for records that are not read. A missing key, a short
+ciphertext or bad padding gives None, counted as undecrypted. A "key storage recover" record moves to the next
+key group. Without the `cryptography` package it raises `ValueError` naming it.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-026
+- TYPE: Parent
+  VALUE: HLR-PRS-028
+
+[REQUIREMENT]
+UID: LLR-PRS-088
+STATUS: Active
+TITLE: DJI parse warnings
+STATEMENT: >>>
+`DJIParser.parse` adds "<n> damaged records were skipped." when the record walk counted damaged records and "<n>
+records couldn't be decrypted and were skipped." when records gave no payload. No warning is added for records
+too short for their type, OSD rows dropped for an impossible position or a missing home altitude.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-028
+
+[REQUIREMENT]
+UID: LLR-PRS-089
+STATUS: Active
+TITLE: DJI metadata
+STATEMENT: >>>
+Metadata: `duration_seconds` = (OSD records - 1) x 0.1 s; `log_start_utc` from the details block (`_start_time`:
+a little-endian int64 of ms at byte 91, if the block has 99 bytes or more and it is above 0 and after
+`MIN_EPOCH_US`), else the first CUSTOM time less its OSD index x 0.1 s; `vehicle_type` "Copter"; `airframe_name`
+from the first non-zero drone type (`_DRONE_TYPES`); arm count as the first row armed plus each rise; mode names
+from `_MODE_NAMES` ("Mode <n>" when unknown); `max_altitude_m` the highest height (1 decimal) and `max_speed_ms`
+the highest hypot(vx, vy) (2 decimals); no firmware version.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-029
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Content checks used by format detection
+
+[REQUIREMENT]
+UID: LLR-PRS-090
+STATUS: Active
+TITLE: Content checks for format detection
+STATEMENT: >>>
+`looks_like_blackbox(header)` is true when `LOG_START` ("H Product:Blackbox flight data recorder by Nicholas
+Sherlock") is in the bytes. `looks_like_dji_dat(header)` is true when bytes 16-20 are "BUILD" or the first 4 are
+"LOGH". `check_dji_txt(buf, complete=False)` returns False when byte 10 (the version) is not 1 to 20, the layout
+is invalid or one of the first three records does not start with a type other than 0 and 0xFF and end with 0xFF;
+True after three good records or at the end of the records area with at least one; and None (False when
+`complete`) when the buffer ends too soon to tell. `DAT_UNSUPPORTED` is the fixed refusal text for aircraft .DAT
+files.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-PRS-030
+
+[[/SECTION]]

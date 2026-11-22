@@ -75,12 +75,14 @@ def claim(label):
 
 
 class TestTrendsEndpoint:
+    # covers: HLR-API-019, LLR-API-035
     @pytest.mark.asyncio
     async def test_unclaimed_airframe_needs_a_token(self, client):
         c, _ = client
         resp = await c.get("/trends/NoSuchDrone")
         assert resp.status_code == 401
 
+    # covers: HLR-API-019, LLR-API-035
     @pytest.mark.asyncio
     async def test_wrong_token_rejected(self, client):
         c, _ = client
@@ -88,6 +90,7 @@ class TestTrendsEndpoint:
         resp = await c.get("/trends/Quad-1", headers={"X-Airframe-Token": "guess"})
         assert resp.status_code == 403
 
+    # covers: HLR-API-019, LLR-API-035
     @pytest.mark.asyncio
     async def test_no_flights_for_a_new_airframe(self, client):
         c, _ = client
@@ -97,6 +100,7 @@ class TestTrendsEndpoint:
         assert data["flight_count"] == 0
         assert data["flights"] == []
 
+    # covers: HLR-API-019, LLR-API-035, LLR-API-067
     @pytest.mark.asyncio
     async def test_returns_time_series_across_tagged_flights(self, client):
         c, store = client
@@ -118,6 +122,7 @@ class TestTrendsEndpoint:
         assert data["flights"][0]["module_scores"]["oscillation"] == 100.0
 
 
+    # covers: HLR-API-019, LLR-API-067
     @pytest.mark.asyncio
     async def test_reuploaded_log_is_one_trend_point(self, client):
         c, store = client
@@ -130,6 +135,7 @@ class TestTrendsEndpoint:
         assert data["flight_count"] == 1
         assert data["flights"][0]["report_id"] == "r1"
 
+    # covers: HLR-API-019, LLR-API-036
     @pytest.mark.asyncio
     async def test_skipped_module_score_is_null_not_100(self, client):
         c, store = client
@@ -143,6 +149,7 @@ class TestTrendsEndpoint:
 
 
 class TestDiffEndpoint:
+    # covers: HLR-API-014, LLR-API-037, LLR-API-038
     @pytest.mark.asyncio
     async def test_diff_two_flights_score_delta(self, client):
         c, store = client
@@ -157,6 +164,7 @@ class TestDiffEndpoint:
         assert data["overall_score_delta"] == 20.0
         assert data["key_metric_deltas"]["oscillation.roll_peak_hz"]["delta"] == pytest.approx(-0.8)
 
+    # covers: HLR-API-014, LLR-API-039
     @pytest.mark.asyncio
     async def test_diff_reports_resolved_and_new_findings(self, client):
         c, store = client
@@ -180,6 +188,7 @@ class TestDiffEndpoint:
         assert data["findings_diff"]["resolved"] == ["Roll-Axis Oscillation at 1.1 Hz"]
         assert data["findings_diff"]["new"] == ["GPS Satellite Count Drop"]
 
+    # covers: HLR-API-014, LLR-API-037
     @pytest.mark.asyncio
     async def test_diff_same_report_rejected(self, client):
         c, store = client
@@ -189,6 +198,7 @@ class TestDiffEndpoint:
         resp = await c.get("/diff", params={"a": "r1", "b": "r1"})
         assert resp.status_code == 400
 
+    # covers: HLR-API-014, LLR-API-036, LLR-API-038
     @pytest.mark.asyncio
     async def test_diff_skipped_module_has_no_delta(self, client):
         c, store = client
@@ -200,6 +210,7 @@ class TestDiffEndpoint:
         data = (await c.get("/diff", params={"a": "r1", "b": "r2"})).json()
         assert data["module_score_deltas"]["battery"] == {"a": None, "b": 100.0, "delta": None}
 
+    # covers: HLR-API-014, LLR-API-037
     @pytest.mark.asyncio
     async def test_diff_missing_report_404s(self, client):
         c, _ = client

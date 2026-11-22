@@ -10,6 +10,7 @@ DAILY = "temperature_2m_max,temperature_2m_min,wind_speed_10m_max,rain_sum"
 
 
 def _flight_date(timestamp_utc: Optional[str]) -> Optional[str]:
+    """@relation(LLR-RPT-052, scope=function)"""
     if not timestamp_utc:
         return None
     try:
@@ -20,6 +21,7 @@ def _flight_date(timestamp_utc: Optional[str]) -> Optional[str]:
 
 
 def _get(url: str) -> dict:
+    """@relation(LLR-RPT-054, scope=function)"""
     req = urllib.request.Request(url, headers={"User-Agent": "FlightMD/1.0"})
     with urllib.request.urlopen(req, timeout=2.0) as resp:
         return json.loads(resp.read().decode("utf-8"))
@@ -30,6 +32,8 @@ def fetch_weather(lat: float, lon: float, timestamp_utc: Optional[str]) -> dict:
     Daily weather for the flight's date and place from Open-Meteo. timestamp_utc is the
     ISO-8601 log start. Never raises: no date, no network or a bad answer all give the
     "unavailable" dict. Wind comes back in m/s.
+
+    @relation(LLR-RPT-053, LLR-RPT-054, LLR-RPT-055, scope=function)
     """
     unavailable = {
         "temperature_max_c": None,

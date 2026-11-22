@@ -149,12 +149,14 @@ _CRC_TABLE = _crc_table()
 
 
 def crc64(crc: int, data: bytes) -> int:
+    """@relation(LLR-PRS-079, scope=function)"""
     for b in data:
         crc = _CRC_TABLE[(crc ^ b) & 0xFF] ^ (crc >> 8)
     return crc
 
 
 def xor_key(seed: int, record_type: int) -> bytes:
+    """@relation(LLR-PRS-079, scope=function)"""
     k = crc64((seed + record_type) & 0xFF, ((0x123456789ABCDEF0 * seed) & MASK64).to_bytes(8, "little"))
     return k.to_bytes(8, "little")
 
@@ -168,6 +170,7 @@ def xor_decode(data: bytes, key: bytes) -> bytes:
 
 def looks_like_dji_dat(header: bytes) -> bool:
     # "BUILD" at 16 = DatCon's check for a plain .DAT; "LOGH" starts the encrypted kind
+    """@relation(LLR-PRS-090, scope=function)"""
     return header[16:21] == b"BUILD" or header[:4] == b"LOGH"
 
 
@@ -177,7 +180,9 @@ def _u16(b, pos):
 
 def _layout(buf: bytes):
     """(version, detail_offset, aux_end) from the prefix; aux_end is where v13+ aux blocks
-    stop (0 below v13). Raises IndexError when buf is too short to tell."""
+    stop (0 below v13). Raises IndexError when buf is too short to tell.
+
+    @relation(LLR-PRS-077, scope=function)"""
     version = buf[10]
     detail_offset = int.from_bytes(buf[0:8], "little")
     aux_end = 0
@@ -192,6 +197,7 @@ def _layout(buf: bytes):
 
 
 def _records_range(version, detail_offset, aux_end, size):
+    """@relation(LLR-PRS-077, scope=function)"""
     if version < 6:
         return OLD_PREFIX_SIZE, detail_offset
     if version < 12:
@@ -203,7 +209,9 @@ def _records_range(version, detail_offset, aux_end, size):
 
 def check_dji_txt(buf: bytes, complete: bool = False) -> Optional[bool]:
     """True if buf starts like a DJI flight record, False if it doesn't, None if buf is
-    too short to tell (and complete is False)."""
+    too short to tell (and complete is False).
+
+    @relation(LLR-PRS-090, scope=function)"""
     if len(buf) <= 10:
         return False if complete else None
     if not 1 <= buf[10] <= MAX_VERSION:
@@ -237,7 +245,9 @@ def check_dji_txt(buf: bytes, complete: bool = False) -> Optional[bool]:
 
 def _iter_records(data: bytes, start: int, end: int, version: int, stats: dict):
     """Yields (type, content) with content still encoded. Skips embedded JPEGs and
-    resyncs on the next 0xFF after a damaged record."""
+    resyncs on the next 0xFF after a damaged record.
+
+    @relation(LLR-PRS-078, scope=function)"""
     hdr = 2 if version <= 12 else 3
     pos = start
     while pos + hdr <= end:
@@ -265,6 +275,7 @@ def _feature(rtype: int, version: int) -> int:
 
 
 def _aes_cbc_decrypt(key: bytes, iv: bytes, ct: bytes) -> Optional[bytes]:
+    """@relation(LLR-PRS-087, scope=function)"""
     try:
         from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
     except ImportError:
@@ -285,7 +296,9 @@ def _payload(rtype: int, content: bytes, version: int, keychain: Optional[dict],
              decrypt: bool = True) -> Optional[bytes]:
     """The record's plain payload, or None. decrypt=False only moves the AES IV chain on,
     for v13+ records nobody reads: skipping them would break every later record of the
-    same feature."""
+    same feature.
+
+    @relation(LLR-PRS-079, LLR-PRS-087, scope=function)"""
     if version <= 6:
         return content
     if len(content) < 2:
@@ -310,18 +323,22 @@ def _payload(rtype: int, content: bytes, version: int, keychain: Optional[dict],
 
 
 def _offline() -> bool:
+    """@relation(LLR-PRS-086, scope=function)"""
     return os.environ.get("FLIGHTMD_OFFLINE", "").strip().lower() in ("1", "true", "yes", "on")
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     # a redirect would resend the Api-Key header to wherever it points
+    """@relation(LLR-PRS-085, scope=class)"""
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
 
 
 def fetch_keychains(request_body: dict, api_key: str) -> list[dict[int, tuple[bytes, bytes]]]:
     """POSTs the KeyStorage ciphertexts to DJI and returns one {feature: (iv, key)} per
-    keychain group."""
+    keychain group.
+
+    @relation(LLR-PRS-085, scope=function)"""
     req = urllib.request.Request(
         KEYCHAIN_URL,
         data=json.dumps(request_body).encode("utf-8"),
@@ -360,6 +377,7 @@ def fetch_keychains(request_body: dict, api_key: str) -> list[dict[int, tuple[by
 
 
 def _keychain_request(data: bytes, start: int, end: int, version: int, aux: tuple[int, int]) -> dict:
+    """@relation(LLR-PRS-085, scope=function)"""
     groups: list[list[dict]] = [[]]
     for rtype, content in _iter_records(data, start, end, version, {"damaged": 0}):
         if rtype == KEY_STORAGE:
@@ -384,6 +402,7 @@ class DJIParser:
     """Same interface as ULogParser: .parse(path) -> (topics, params, metadata)."""
 
     def parse(self, path: str) -> tuple[dict[str, pd.DataFrame], dict[str, float], FlightMetadata]:
+        """@relation(LLR-PRS-076, LLR-PRS-086, LLR-PRS-088, LLR-PRS-089, scope=function)"""
         if not os.path.exists(path):
             raise FileNotFoundError(f"DJI log file not found: {path}")
         with open(path, "rb") as f:
@@ -463,7 +482,9 @@ class DJIParser:
         return topics, {}, metadata
 
     def _start_time(self, data, version, detail_offset) -> Optional[float]:
-        """Flight start time in epoch us from the details block, or None."""
+        """Flight start time in epoch us from the details block, or None.
+
+        @relation(LLR-PRS-089, scope=function)"""
         if version < 12:
             block = data[detail_offset:]
         elif version == 12:
@@ -481,6 +502,7 @@ class DJIParser:
         return ms * 1000.0 if ms > 0 else None
 
     def _decode(self, data, start, end, version, keychains):
+        """@relation(LLR-PRS-080, scope=function)"""
         stats = {"damaged": 0}
         chains = list(keychains or [])
         keychain = chains.pop(0) if chains else None
@@ -558,6 +580,7 @@ class DJIParser:
         }
 
     def _topics(self, fr) -> dict[str, pd.DataFrame]:
+        """@relation(LLR-PRS-081, LLR-PRS-082, LLR-PRS-084, scope=function)"""
         topics: dict[str, pd.DataFrame] = {}
         o = pd.DataFrame(fr["osd"])
         # NaN or out-of-range coordinates only come from a record that decoded to junk
@@ -636,7 +659,9 @@ class DJIParser:
 
     def _battery(self, fr) -> dict[int, pd.DataFrame]:
         """Smart battery group records (current, temperature, cells) when the aircraft
-        sends them, else the centre battery, else the older smart battery record."""
+        sends them, else the centre battery, else the older smart battery record.
+
+        @relation(LLR-PRS-083, scope=function)"""
         cols = ["timestamp", "voltage_v", "current_a", "remaining", "temperature", "cell_count"]
         out = {}
         if fr["bat_dyn"]:

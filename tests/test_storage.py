@@ -56,27 +56,34 @@ def age(database, report_id, seconds):
 
 
 class TestAirframeLabelNormalisation:
+    # covers: HLR-API-017, LLR-API-058
     def test_none_stays_none(self):
         assert normalise_airframe_label(None) is None
 
+    # covers: HLR-API-017, LLR-API-058
     def test_empty_string_becomes_none(self):
         assert normalise_airframe_label("   ") is None
 
+    # covers: HLR-API-017, LLR-API-058
     def test_trims_whitespace(self):
         assert normalise_airframe_label("  Quad-1  ") == "Quad-1"
 
+    # covers: HLR-API-017, LLR-API-058
     def test_truncates_to_max_length(self):
         assert len(normalise_airframe_label("x" * 100)) == 40
 
+    # covers: HLR-API-017, LLR-API-058
     @pytest.mark.parametrize("label", ["Quad/1", "Quad\\1", "Quad\n1", "Quad\x001"])
     def test_unroutable_labels_rejected(self, label):
         assert normalise_airframe_label(label) is None
 
+    # covers: HLR-API-017, LLR-API-058
     def test_non_ascii_label_kept(self):
         assert normalise_airframe_label("Квадро-1") == "Квадро-1"
 
 
 class TestDatabase:
+    # covers: HLR-API-028, LLR-API-074
     def test_migrations_are_recorded_once(self, tmp_path):
         first = db.Database(str(tmp_path))
         first.close()
@@ -85,9 +92,11 @@ class TestDatabase:
         again.close()
         assert versions == [v for v, _ in db.MIGRATIONS]
 
+    # covers: HLR-API-028, LLR-API-073
     def test_wal_mode(self, database):
         assert database.query_one("PRAGMA journal_mode")[0].lower() == "wal"
 
+    # covers: HLR-API-028, LLR-API-073
     def test_failed_transaction_rolls_back(self, store, database):
         store.create("r1")
         with pytest.raises(RuntimeError):
@@ -98,11 +107,13 @@ class TestDatabase:
 
 
 class TestJobLifecycle:
+    # covers: HLR-API-004, LLR-API-060
     def test_create_and_get(self, store):
         job = store.create("test-id-123")
         assert job.status == JobStatus.PROCESSING
         assert store.get("test-id-123").report_id == "test-id-123"
 
+    # covers: HLR-API-006, LLR-API-061, LLR-API-064
     def test_update_progress_with_eta(self, store):
         store.create("test-id-456")
         store.update_progress("test-id-456", 50, "Halfway there", 30.0)
@@ -111,11 +122,13 @@ class TestJobLifecycle:
         assert summary["message"] == "Halfway there"
         assert 0 < summary["eta_seconds"] <= 30.0
 
+    # covers: HLR-API-006, LLR-API-064
     def test_eta_is_null_when_unknown(self, store):
         store.create("r1")
         store.update_progress("r1", 10, "Parsing")
         assert store.status_summary("r1")["eta_seconds"] is None
 
+    # covers: HLR-API-008, LLR-API-063, LLR-API-064
     def test_fail(self, store):
         store.create("test-id-789")
         store.fail("test-id-789", "Parsing failed")
@@ -124,6 +137,7 @@ class TestJobLifecycle:
         assert job.error == "Parsing failed"
         assert store.status_summary("test-id-789")["error"] == "Parsing failed"
 
+    # covers: HLR-API-008, LLR-API-062
     def test_complete_stores_the_report(self, store):
         store.create("r1", airframe_label="Quad-1")
         store.complete("r1", make_report("r1", score=72.0))
@@ -132,21 +146,25 @@ class TestJobLifecycle:
         assert job.report.overall_score == 72.0
         assert job.airframe_label == "Quad-1"
 
+    # covers: HLR-API-009, LLR-API-061
     def test_progress_after_completion_is_ignored(self, store):
         store.create("r1")
         store.complete("r1", make_report("r1"))
         store.update_progress("r1", 10, "late callback")
         assert store.status_summary("r1")["progress"] == 100
 
+    # covers: HLR-API-006, LLR-API-064
     def test_unknown_id_returns_none(self, store):
         assert store.get("does-not-exist") is None
         assert store.status_summary("ghost-id")["status"] == "not_found"
 
+    # covers: HLR-API-006, HLR-API-007, LLR-API-059
     @pytest.mark.parametrize("report_id", ["../outside", "a b", "x" * 65])
     def test_odd_ids_are_never_looked_up(self, store, report_id):
         assert store.get(report_id) is None
         assert store.status_summary(report_id)["status"] == "not_found"
 
+    # covers: HLR-API-017, LLR-API-021
     def test_discard(self, store):
         store.create("r1")
         store.discard("r1")
@@ -154,6 +172,7 @@ class TestJobLifecycle:
 
 
 class TestRestart:
+    # covers: HLR-API-011, LLR-API-064
     def test_status_survives_a_new_store_and_connection(self, store, database, monkeypatch):
         store.create("done")
         store.complete("done", make_report("done"))
@@ -169,6 +188,7 @@ class TestRestart:
         finally:
             reopened.close()
 
+    # covers: HLR-API-011, LLR-API-069
     def test_running_jobs_become_failed_interrupted(self, store):
         store.create("running")
         store.update_progress("running", 40, "Analysing", 12.0)
@@ -184,6 +204,7 @@ class TestRestart:
         assert summary["eta_seconds"] is None
         assert store.status_summary("done")["status"] == "complete"
 
+    # covers: HLR-API-011, LLR-API-070
     def test_stale_jobs_fail_but_active_ones_dont(self, store, database):
         store.create("stuck")
         store.create("busy")
@@ -195,6 +216,7 @@ class TestRestart:
 
 
 class TestCapacity:
+    # covers: HLR-API-004, LLR-API-060
     def test_running_jobs_are_capped(self, store):
         store.MAX_JOBS = 3
         for i in range(3):
@@ -202,6 +224,7 @@ class TestCapacity:
         with pytest.raises(StoreFull):
             store.create("job-3")
 
+    # covers: HLR-API-004, HLR-API-015, LLR-API-071
     def test_finished_jobs_do_not_count(self, store):
         store.MAX_JOBS = 2
         store.create("a")
@@ -212,6 +235,7 @@ class TestCapacity:
 
 
 class TestRetention:
+    # covers: HLR-API-010, LLR-API-068
     def test_untagged_report_deleted_after_ttl(self, store, database):
         store.create("r1")
         store.complete("r1", make_report("r1"))
@@ -220,12 +244,14 @@ class TestRetention:
         assert store.cleanup_expired(3600) == ["r1"]
         assert store.get("r1") is None
 
+    # covers: HLR-API-010, LLR-API-068
     def test_fresh_untagged_report_kept(self, store):
         store.create("r1")
         store.complete("r1", make_report("r1"))
         assert store.cleanup_expired(3600) == []
         assert store.get("r1") is not None
 
+    # covers: HLR-API-010, LLR-API-068
     def test_tagged_report_survives_cleanup_regardless_of_age(self, store, database):
         store.create("r1", airframe_label="Quad-1")
         store.complete("r1", make_report("r1"))
@@ -234,12 +260,14 @@ class TestRetention:
         assert store.cleanup_expired(3600) == []
         assert store.get("r1") is not None
 
+    # covers: HLR-API-010, LLR-API-068
     def test_old_failed_jobs_are_cleaned_even_when_tagged(self, store, database):
         store.create("r1", airframe_label="Quad-1")
         store.fail("r1", "bad log")
         age(database, "r1", 7200)
         assert store.cleanup_expired(3600) == ["r1"]
 
+    # covers: HLR-API-010, LLR-API-068
     def test_running_jobs_are_not_cleaned(self, store, database):
         store.create("r1")
         age(database, "r1", 7200)
@@ -247,21 +275,25 @@ class TestRetention:
 
 
 class TestDuplicates:
+    # covers: HLR-API-005, LLR-API-066
     def test_same_bytes_same_tag_within_ttl_is_found(self, store):
         store.create("r1", airframe_label="Quad-1", log_sha256=SHA_A)
         store.complete("r1", make_report("r1"))
         assert store.find_recent_duplicate(SHA_A, "Quad-1", None) == ("r1", "complete")
 
+    # covers: HLR-API-005, LLR-API-066
     def test_running_original_is_found_too(self, store):
         store.create("r1", log_sha256=SHA_A)
         assert store.find_recent_duplicate(SHA_A, None, None) == ("r1", "processing")
 
+    # covers: HLR-API-005, LLR-API-066
     def test_different_tag_or_brief_is_not_a_duplicate(self, store):
         store.create("r1", airframe_label="Quad-1", log_sha256=SHA_A)
         assert store.find_recent_duplicate(SHA_A, None, None) is None
         assert store.find_recent_duplicate(SHA_A, "Quad-2", None) is None
         assert store.find_recent_duplicate(SHA_A, "Quad-1", "c" * 64) is None
 
+    # covers: HLR-API-005, LLR-API-066
     def test_failed_or_old_original_is_not_reused(self, store, database):
         store.create("failed", log_sha256=SHA_A)
         store.fail("failed", "internal error")
@@ -272,6 +304,7 @@ class TestDuplicates:
 
 
 class TestAirframeTrends:
+    # covers: HLR-API-019, LLR-API-067
     def test_list_by_airframe_returns_only_matching_finished_reports(self, store):
         for rid, label in (("r1", "Quad-1"), ("r2", "Quad-1"), ("r3", "Quad-2"), ("r4", None)):
             store.create(rid, airframe_label=label)
@@ -280,6 +313,7 @@ class TestAirframeTrends:
 
         assert {r.report_id for r in store.list_by_airframe("Quad-1")} == {"r1", "r2"}
 
+    # covers: HLR-API-019, LLR-API-067
     def test_list_by_airframe_sorted_oldest_first(self, store, database):
         store.create("r2", airframe_label="Quad-1")
         store.complete("r2", make_report("r2"))
@@ -289,6 +323,7 @@ class TestAirframeTrends:
 
         assert [r.report_id for r in store.list_by_airframe("Quad-1")] == ["r1", "r2"]
 
+    # covers: HLR-API-019, LLR-API-067
     def test_same_log_uploaded_twice_counts_once(self, store, database):
         store.create("first", airframe_label="Quad-1", log_sha256=SHA_A)
         store.complete("first", make_report("first"))
@@ -302,6 +337,7 @@ class TestAirframeTrends:
         assert ids[0] == "first"
         assert sorted(ids) == ["first", "other"]
 
+    # covers: HLR-API-019, LLR-API-067
     def test_reports_without_a_hash_are_never_merged(self, store):
         store.create("r1", airframe_label="Quad-1")
         store.complete("r1", make_report("r1"))
@@ -309,9 +345,11 @@ class TestAirframeTrends:
         store.complete("r2", make_report("r2"))
         assert len(store.list_by_airframe("Quad-1")) == 2
 
+    # covers: HLR-API-019, LLR-API-067
     def test_unknown_airframe_returns_empty(self, store):
         assert store.list_by_airframe("Nonexistent") == []
 
+    # covers: HLR-API-019, LLR-API-067
     def test_unreadable_row_is_skipped(self, store, database):
         store.create("r1", airframe_label="Quad-1")
         store.complete("r1", make_report("r1"))
@@ -322,6 +360,7 @@ class TestAirframeTrends:
         assert [r.report_id for r in store.list_by_airframe("Quad-1")] == ["r1"]
 
 
+# covers: HLR-API-028, LLR-API-075
 def test_database_file_is_plain_sqlite(database):
     c = sqlite3.connect(database.path)
     try:

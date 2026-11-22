@@ -16,6 +16,8 @@ on where the peak sits:
   < MID_BAND_HZ        rate P too high      -> reduce P
   MID..HIGH_BAND_HZ    D term / D filtering -> reduce D, lower D cutoff
   > HIGH_BAND_HZ       mechanical / noise   -> no gain change, check frame
+
+@relation(LLR-DYN-001, LLR-DYN-019, scope=file)
 """
 
 import numpy as np
@@ -68,6 +70,7 @@ class OscillationAnalyser(BaseAnalyser):
     weight        = 20.0
 
     def analyse(self, topics, params):
+        """@relation(LLR-DYN-002, LLR-DYN-003, LLR-DYN-010, LLR-DYN-011, scope=function)"""
         df = topics["vehicle_angular_velocity"]
         if "timestamp" not in df.columns:
             return self._skip("Angular velocity topic has no timestamps.")
@@ -140,7 +143,9 @@ class OscillationAnalyser(BaseAnalyser):
         """Per-window PSDs over every gap-free stretch. Returns the band
         frequencies, PSD columns, window centre times (µs) and the full
         frequency axis + mean PSD for the chart; None if no stretch is long
-        enough for one window."""
+        enough for one window.
+
+        @relation(LLR-DYN-004, LLR-DYN-005, scope=function)"""
         nper = int(2 ** round(np.log2(SEGMENT_S * fs)))
         dt_us = 1e6 / fs
         breaks = np.flatnonzero(np.diff(ts) > GAP_FACTOR * dt_us) + 1
@@ -174,6 +179,7 @@ class OscillationAnalyser(BaseAnalyser):
         }
 
     def _worst(self, spec):
+        """@relation(LLR-DYN-006, LLR-DYN-007, LLR-DYN-008, scope=function)"""
         fb = spec["freqs"][spec["band"]]
         Sb = spec["S"][spec["band"]]
         cols = np.arange(Sb.shape[1])
@@ -217,6 +223,7 @@ class OscillationAnalyser(BaseAnalyser):
         }
 
     def _level(self, res) -> str:
+        """@relation(LLR-DYN-009, scope=function)"""
         if res["prominence"] < MIN_PROMINENCE:
             return "NONE"
         a = res["amp_dps"]
@@ -229,6 +236,7 @@ class OscillationAnalyser(BaseAnalyser):
         return "NONE"
 
     def _chart(self, spec) -> dict:
+        """@relation(LLR-DYN-012, scope=function)"""
         f = spec["freqs"]
         psd = spec["S"].mean(axis=1)
         keep = f >= CHART_FREQ_MIN
@@ -240,6 +248,7 @@ class OscillationAnalyser(BaseAnalyser):
         }
 
     def _finding(self, axis, level, res, fs, chart, params, vehicle, phases) -> Finding:
+        """@relation(LLR-DYN-013, LLR-DYN-014, LLR-DYN-015, LLR-DYN-016, LLR-DYN-017, LLR-DYN-018, scope=function)"""
         hz = res["peak_hz"]
         amp = res["amp_dps"]
         severity = {"SEVERE": Severity.CRITICAL, "MODERATE": Severity.WARNING, "MILD": Severity.INFO}[level]

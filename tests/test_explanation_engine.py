@@ -78,6 +78,7 @@ ANALYSER_KINDS = [
 ]
 
 
+# covers: HLR-RPT-008, LLR-RPT-028, LLR-RPT-031
 @pytest.mark.asyncio
 @pytest.mark.parametrize("category, kind", ANALYSER_KINDS)
 async def test_every_analyser_kind_has_a_template(engine, category, kind):
@@ -87,6 +88,7 @@ async def test_every_analyser_kind_has_a_template(engine, category, kind):
     assert f.recommendation == TEMPLATES[kind][1]
 
 
+# covers: HLR-RPT-008, LLR-RPT-028
 @pytest.mark.asyncio
 async def test_dispatch_ignores_the_title(engine):
     """Titles are display text; 'Motor Balance Warning' used to match no
@@ -98,6 +100,7 @@ async def test_dispatch_ignores_the_title(engine):
     assert b.plain_english == TEMPLATES["motors.rpm_imbalance"][0]
 
 
+# covers: HLR-RPT-009, LLR-RPT-030
 @pytest.mark.asyncio
 async def test_analyser_recommendation_is_kept(engine):
     """The analyser's own recommendation names the parameter and values;
@@ -108,6 +111,7 @@ async def test_analyser_recommendation_is_kept(engine):
     assert f.recommendation.startswith("Reduce MC_ROLLRATE_P from 0.15 to 0.1305")
 
 
+# covers: HLR-RPT-008, LLR-RPT-029
 @pytest.mark.asyncio
 async def test_mid_band_oscillation_text_does_not_say_raise_d(engine):
     [f] = await engine.explain_findings([finding(Category.OSCILLATION, "oscillation.rate_d")])
@@ -115,6 +119,7 @@ async def test_mid_band_oscillation_text_does_not_say_raise_d(engine):
     assert "Lower the rate D" in f.recommendation
 
 
+# covers: HLR-RPT-008, LLR-RPT-029
 @pytest.mark.asyncio
 async def test_unknown_kind_falls_back_to_technical_summary(engine):
     f = finding(Category.SYSTEM, None, title="Some undocumented finding")
@@ -123,6 +128,7 @@ async def test_unknown_kind_falls_back_to_technical_summary(engine):
     assert "Consult" in f.recommendation
 
 
+# covers: HLR-RPT-008, LLR-RPT-029
 @pytest.mark.asyncio
 async def test_ascent_findings_keep_their_own_text(engine):
     f = finding(Category.ASCENT_PROFILE, "ascent.apogee", severity=Severity.GOOD,
@@ -132,6 +138,7 @@ async def test_ascent_findings_keep_their_own_text(engine):
     assert f.recommendation.startswith("No action needed")
 
 
+# covers: HLR-RPT-010, LLR-RPT-033
 @pytest.mark.asyncio
 async def test_summary_without_findings(engine, metadata):
     summary = await engine.generate_summary(metadata, [], 95.0, "Excellent")
@@ -140,6 +147,7 @@ async def test_summary_without_findings(engine, metadata):
     assert "All systems" not in summary
 
 
+# covers: HLR-RPT-010, LLR-RPT-032
 @pytest.mark.asyncio
 async def test_summary_not_assessed_is_not_a_clean_bill(engine, metadata):
     summary = await engine.generate_summary(metadata, [], 0.0, "Not assessed")
@@ -147,6 +155,7 @@ async def test_summary_not_assessed_is_not_a_clean_bill(engine, metadata):
     assert "/100" not in summary
 
 
+# covers: HLR-RPT-010, LLR-RPT-034
 @pytest.mark.asyncio
 async def test_summary_lists_unassessed_modules(engine, metadata):
     results = [
@@ -158,6 +167,7 @@ async def test_summary_lists_unassessed_modules(engine, metadata):
     assert "Not assessed (no usable data): EKF Health Analysis." in summary
 
 
+# covers: HLR-RPT-010, LLR-RPT-033
 @pytest.mark.asyncio
 async def test_summary_with_findings(engine, metadata):
     findings = [

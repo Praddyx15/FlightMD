@@ -25,6 +25,7 @@ const status = (body: object, init?: ResponseInit) =>
   http.get(`${API_URL}/status/:id`, () => HttpResponse.json(body, init));
 
 describe("pollReport", () => {
+  // covers: HLR-WEB-003, LLR-WEB-008, LLR-WEB-015
   it("goes from queued through processing to done", async () => {
     const steps = [
       { status: "processing", progress: 0, message: "" },
@@ -43,11 +44,13 @@ describe("pollReport", () => {
     expect(states[2]).toMatchObject({ phase: "done", report: { report_id: "r1" } });
   });
 
+  // covers: HLR-WEB-003, LLR-WEB-008, LLR-WEB-016
   it("reports an expired report on 404", async () => {
     server.use(status({ detail: "Report not found or expired." }, { status: 404 }));
     expect(await run()).toEqual([{ phase: "expired" }]);
   });
 
+  // covers: HLR-WEB-003, LLR-WEB-008, LLR-WEB-015
   it("keeps polling when the report is still being written (202 after complete)", async () => {
     let reportCalls = 0;
     server.use(
@@ -65,6 +68,7 @@ describe("pollReport", () => {
     expect(states.map((s) => s.phase)).toEqual(["done"]);
   });
 
+  // covers: HLR-WEB-003, LLR-WEB-003, LLR-WEB-008, LLR-WEB-016
   it("fails with the server's reason when the report answers 422", async () => {
     server.use(
       status({ status: "complete", progress: 100, message: "" }),
@@ -73,11 +77,13 @@ describe("pollReport", () => {
     expect(await run()).toEqual([{ phase: "failed", error: "Not a flight log" }]);
   });
 
+  // covers: HLR-WEB-003, LLR-WEB-016
   it("fails when the status says failed", async () => {
     server.use(status({ status: "failed", progress: 0, message: "", error: "Corrupt header" }));
     expect(await run()).toEqual([{ phase: "failed", error: "Corrupt header" }]);
   });
 
+  // covers: HLR-WEB-003, LLR-WEB-016
   it("stops after five network errors in a row", async () => {
     let calls = 0;
     server.use(
@@ -93,11 +99,13 @@ describe("pollReport", () => {
     expect(states[0].phase).toBe("error");
   });
 
+  // covers: HLR-WEB-003, LLR-WEB-016
   it("gives up after the wait cap", async () => {
     server.use(status({ status: "processing", progress: 10, message: "" }));
     expect(await run("r1", { ...FAST, maxWaitMs: -1 })).toEqual([{ phase: "stopped" }]);
   });
 
+  // covers: HLR-WEB-003, LLR-WEB-016
   it("stops quietly when aborted", async () => {
     server.use(status({ status: "processing", progress: 10, message: "" }));
     const ctrl = new AbortController();

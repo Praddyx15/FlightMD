@@ -66,6 +66,8 @@ dev = [
     "pytest>=7.4",
     "pytest-asyncio>=0.23",
     "httpx>=0.26",
+    "ruff>=0.8",
+    "strictdoc>=0.31",
 ]
 
 [tool.setuptools.packages.find]
@@ -86,3 +88,35 @@ markers = [
 [tool.coverage.run]
 source = ["flightmd_core", "api"]
 omit = ["api/worker.py"]
+
+[tool.ruff]
+extend-exclude = ["tools/walkthrough"]
+
+[tool.ruff.lint]
+# every ignore below is a listed deviation in docs/lifecycle/02-standards/coding-standard-python.md
+select = ["E", "W", "F", "B", "BLE", "S", "C4", "PIE", "PGH", "ASYNC", "DTZ", "UP", "SIM", "RUF100"]
+ignore = ["E501", "B904", "B905", "SIM105", "UP007", "UP017", "UP035", "UP038"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B", "BLE", "S", "C4", "PIE", "DTZ", "UP", "SIM", "ASYNC"]
+"flightmd_core/cache.py" = ["S301"]
+"flightmd_core/orchestrator.py" = ["BLE001"]
+"flightmd_core/analysers/base.py" = ["BLE001"]
+"flightmd_core/analysers/registry.py" = ["BLE001"]
+"flightmd_core/analysers/motors.py" = ["B007"]
+"flightmd_core/analysers/gps.py" = ["C401"]
+"flightmd_core/services/ai_enhancer.py" = ["BLE001"]
+"flightmd_core/services/weather_lookup.py" = ["BLE001", "S310"]
+"flightmd_core/services/geocoding.py" = ["BLE001", "S310"]
+"flightmd_core/services/dji_parser.py" = ["S310"]
+"flightmd_core/services/ulog_parser.py" = ["SIM115"]
+"api/analysis.py" = ["BLE001"]
+"api/services/report_qa.py" = ["BLE001"]
+"api/routers/analyse.py" = ["B008"]
+"api/security.py" = ["S105"]
+"api/config.py" = ["UP011"]
+"api/legacy_import.py" = ["UP015"]
+"api/storage.py" = ["UP037"]
+"scripts/gen_param_tables.py" = ["BLE001", "S310", "S314", "DTZ011"]
+"scripts/generate_sample_logs.py" = ["C408", "UP012"]
+"tools/trace.py" = ["S603"]

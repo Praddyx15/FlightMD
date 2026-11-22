@@ -25,23 +25,27 @@ const GROUNDS = ["bg0", "bg1", "bg2"] as const;
 type Ground = (typeof GROUNDS)[number];
 
 describe("contrast", () => {
+  // covers: HLR-WEB-028
   it("knows the WCAG reference values", () => {
     expect(contrast("#000000", "#ffffff")).toBeCloseTo(21, 5);
     expect(contrast("#777777", "#ffffff")).toBeCloseTo(4.48, 2);
   });
 
   describe.each(THEMES)("%s theme", (_: string, theme: Theme) => {
+    // covers: HLR-WEB-028
     it.each(GROUNDS)("body text reaches 4.5:1 on %s", (ground: Ground) => {
       for (const fg of ["fg0", "fg1", "accentText"] as const) {
         expect(contrast(theme[fg], theme[ground]), `${fg} on ${ground}`).toBeGreaterThanOrEqual(4.5);
       }
     });
 
+    // covers: HLR-WEB-028
     it.each(GROUNDS)("alert text reaches 7:1 on %s", (ground: Ground) => {
       expect(contrast(theme.warnRedText, theme[ground])).toBeGreaterThanOrEqual(7);
     });
 
     // caution, advisory and ok always come with an icon and a word, so 4.5:1 is the bar
+    // covers: HLR-WEB-028
     it.each(GROUNDS)("status text reaches 4.5:1 on %s", (ground: Ground) => {
       for (const fg of ["cautionAmber", "advisoryCyan", "okGreen"] as const) {
         expect(contrast(theme[fg], theme[ground]), `${fg} on ${ground}`).toBeGreaterThanOrEqual(4.5);
@@ -51,6 +55,7 @@ describe("contrast", () => {
 });
 
 describe("app/tokens.css", () => {
+  // covers: HLR-WEB-028
   it("is generated from the current tokens.json", () => {
     const css = readFileSync(fileURLToPath(new URL("../app/tokens.css", import.meta.url)), "utf8");
     const [dark, light] = css.split(".light {");

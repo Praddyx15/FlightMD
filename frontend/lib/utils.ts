@@ -1,3 +1,4 @@
+// @relation(LLR-WEB-036, LLR-WEB-037, LLR-WEB-038, LLR-WEB-039, LLR-WEB-040, scope=file)
 import { clsx, type ClassValue } from "clsx";
 import type { AnalyserResult, Finding, FlightMDReport, Severity } from "./types";
 import { isNum } from "./format";

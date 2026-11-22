@@ -26,6 +26,7 @@ WHOLE_LOG = [(-math.inf, math.inf)]
 
 @dataclass
 class FlightPhases:
+    """@relation(LLR-ANL-018, scope=class)"""
     armed: list[tuple[float, float]]
     in_air: list[tuple[float, float]]
     source: str      # "vehicle_status", "vehicle_status+land_detected" or "whole_log"
@@ -35,6 +36,7 @@ class FlightPhases:
         return self.source != "whole_log"
 
     def mask(self, ts_us, phase: str = "in_air") -> np.ndarray:
+        """@relation(LLR-ANL-019, scope=function)"""
         windows = self.in_air if phase == "in_air" else self.armed
         ts = np.asarray(ts_us, dtype=float)
         m = np.zeros(ts.shape, dtype=bool)
@@ -49,6 +51,7 @@ class FlightPhases:
 
 
 def _first(topics: dict, *names):
+    """@relation(LLR-ANL-020, scope=function)"""
     for n in names:
         df = topics.get(n)
         if df is not None and len(df) and "timestamp" in df.columns:
@@ -57,6 +60,7 @@ def _first(topics: dict, *names):
 
 
 def _windows(ts: np.ndarray, on: np.ndarray) -> list[tuple[float, float]]:
+    """@relation(LLR-ANL-021, scope=function)"""
     out = []
     start = None
     for i, (t, v) in enumerate(zip(ts, on)):
@@ -71,6 +75,7 @@ def _windows(ts: np.ndarray, on: np.ndarray) -> list[tuple[float, float]]:
 
 
 def _intersect(a, b):
+    """@relation(LLR-ANL-022, scope=function)"""
     out = []
     for a0, a1 in a:
         for b0, b1 in b:
@@ -81,6 +86,7 @@ def _intersect(a, b):
 
 
 def flight_phases(topics: dict[str, pd.DataFrame]) -> FlightPhases:
+    """@relation(LLR-ANL-023, LLR-ANL-024, scope=function)"""
     status = _first(topics, "vehicle_status", "vehicle_status_0")
     armed = []
     if status is not None and "arming_state" in status.columns:

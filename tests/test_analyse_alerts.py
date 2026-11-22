@@ -39,6 +39,7 @@ def store(tmp_path, monkeypatch):
 
 
 class TestCheckAlertRules:
+    # covers: HLR-API-022, LLR-API-052
     @pytest.mark.asyncio
     async def test_no_rules_configured_does_nothing(self, store, monkeypatch):
         calls = []
@@ -47,6 +48,7 @@ class TestCheckAlertRules:
         await analyse_module._check_alert_rules("Quad-1", "r1", make_report())
         assert calls == []
 
+    # covers: HLR-API-022, LLR-API-052
     @pytest.mark.asyncio
     async def test_rules_but_no_webhook_does_nothing(self, store, monkeypatch):
         config = AirframeConfig(
@@ -60,6 +62,7 @@ class TestCheckAlertRules:
         await analyse_module._check_alert_rules("Quad-1", "r1", make_report())
         assert calls == []
 
+    # covers: HLR-API-022, LLR-API-052
     @pytest.mark.asyncio
     async def test_breached_rule_fires_webhook_with_triggered_list(self, store, monkeypatch):
         config = AirframeConfig(
@@ -81,6 +84,7 @@ class TestCheckAlertRules:
         assert len(triggered) == 1
         assert triggered[0]["value"] == 60.0
 
+    # covers: HLR-API-022, LLR-API-052
     @pytest.mark.asyncio
     async def test_unbreached_rule_does_not_fire_webhook(self, store, monkeypatch):
         config = AirframeConfig(
@@ -95,6 +99,7 @@ class TestCheckAlertRules:
         await analyse_module._check_alert_rules("Quad-1", "r1", make_report(score=60.0))
         assert calls == []
 
+    # covers: HLR-API-022, LLR-API-052
     @pytest.mark.asyncio
     async def test_exception_in_webhook_send_is_swallowed(self, store, monkeypatch):
         config = AirframeConfig(

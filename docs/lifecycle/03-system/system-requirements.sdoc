@@ -1,0 +1,595 @@
+[DOCUMENT]
+TITLE: FlightMD system requirements
+UID: FMD-SYS
+VERSION: Issue 1
+DATE: 2026-11-20
+OPTIONS:
+  MARKUP: Markdown
+
+[GRAMMAR]
+IMPORT_FROM_FILE: @flightmd
+
+[TEXT]
+STATEMENT: >>>
+What the system does, written from the code and the README as built at commit `50a1eba`, and allocated to the items of `system-architecture.md`. Parents are stakeholder needs (`stakeholder-needs.sdoc`) and safety requirements (`docs/lifecycle/04-safety/safety-requirements.sdoc`). Software high-level requirements (`docs/lifecycle/05-requirements/hlr-<item>.sdoc`) trace up to these. Proposed means needed and not built.
+<<<
+
+[[SECTION]]
+TITLE: Taking a log in
+
+[REQUIREMENT]
+UID: SYS-001
+STATUS: Active
+TITLE: Supported log formats
+STATEMENT: >>>
+The system shall analyse PX4 ULog, ArduPilot dataflash (binary and text), MAVLink telemetry logs, Betaflight and INAV blackbox logs and DJI flight records (versions 1 to 12 offline; 13 and later with a DJI key), each also inside a gzip file or a zip holding one log.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake, parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: STK-003
+
+[REQUIREMENT]
+UID: SYS-002
+STATUS: Active
+TITLE: Format from content; refusal with a reason
+STATEMENT: >>>
+The system shall identify the format from the file's content and shall refuse, with a message saying why, any file it does not recognise or recognises and cannot analyse (DJI .DAT), any log with no analysable telemetry, and any archive that is damaged, nested, password protected, holds more than one file or has an unsafe entry path.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake, report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SAF-003
+- TYPE: Parent
+  VALUE: STK-003
+
+[REQUIREMENT]
+UID: SYS-003
+STATUS: Active
+TITLE: Bounded work per log
+STATEMENT: >>>
+The system shall bound the work one log can cause: a size limit before and after decompression, a decompression ratio limit, a time limit on parsing enforced by stopping the parser process, and a limit on analyses running at once.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake, report, api
+RELATIONS:
+- TYPE: Parent
+  VALUE: STK-009
+
+[REQUIREMENT]
+UID: SYS-004
+STATUS: Active
+TITLE: One internal model for every format
+STATEMENT: >>>
+The system shall turn every supported log into the same internal form: named topics as tables on one log-relative clock in microseconds with PX4 topic and column names and units, the parameter set, and flight metadata, so that the checks do not depend on the source format.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: STK-003
+- TYPE: Parent
+  VALUE: STK-001
+
+[REQUIREMENT]
+UID: SYS-005
+STATUS: Active
+TITLE: Parse warnings
+STATEMENT: >>>
+The system shall list in the report, in plain words, what a parser skipped, could not decode or assumed, and any fallback the analysis took.
+<<<
+VERIFICATION: Test
+ALLOCATION: parsers, report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SAF-004
+- TYPE: Parent
+  VALUE: STK-004
+
+[REQUIREMENT]
+UID: SYS-006
+STATUS: Active
+TITLE: Parse reuse does not change results
+STATEMENT: >>>
+The system may reuse the parse of a log it has parsed before, found by the SHA-256 of the file, for a limited time and within a size cap; a reused parse shall give the same report content as a fresh one, and an unreadable cache entry shall be dropped, not used.
+<<<
+VERIFICATION: Test
+ALLOCATION: intake, report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SAF-011
+- TYPE: Parent
+  VALUE: STK-009
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Analysis
+
+[REQUIREMENT]
+UID: SYS-007
+STATUS: Active
+TITLE: Flight phases
+STATEMENT: >>>
+The system shall work out when the vehicle was armed and when it was in the air from the log, apply in-flight checks to those windows, and when the log carries no arming data treat the whole log as flight and say so in the report.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers, report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SAF-013
+- TYPE: Parent
+  VALUE: STK-004
+
+[REQUIREMENT]
+UID: SYS-008
+STATUS: Active
+TITLE: Health checks
+STATEMENT: >>>
+The system shall check rate-loop oscillation, vibration, estimator (EKF) health, battery, GPS, parameters, motors, board power and (for rockets and balloons) the ascent profile, each from fixed thresholds held in the code.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: STK-001
+- TYPE: Parent
+  VALUE: SAF-002
+
+[REQUIREMENT]
+UID: SYS-009
+STATUS: Active
+TITLE: What a finding carries
+STATEMENT: >>>
+Every finding shall carry a category, a severity (critical, warning, info, good), a title, the measured values, the time window in the log where one applies, a confidence from 0 to 1 with a level, and the stable identifier of the rule that fired.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers, report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SAF-005
+- TYPE: Parent
+  VALUE: STK-001
+
+[REQUIREMENT]
+UID: SYS-010
+STATUS: Active
+TITLE: Not assessed is not healthy
+STATEMENT: >>>
+A check whose inputs are missing, that finds nothing it can check, or that fails with an error shall be reported as not assessed with the reason and left out of the score; one failing check shall not stop the others.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers, report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SAF-001
+
+[REQUIREMENT]
+UID: SYS-011
+STATUS: Active
+TITLE: Health score
+STATEMENT: >>>
+The system shall give an overall score from 0 to 100 with a label and a letter grade, as the weighted mean of the assessed checks' scores, shall report the share of the weight that was assessed, and shall report "Not assessed" with no grade when no weighted check could be assessed.
+<<<
+VERIFICATION: Test
+ALLOCATION: report, analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: STK-001
+- TYPE: Parent
+  VALUE: SAF-001
+
+[REQUIREMENT]
+UID: SYS-012
+STATUS: Active
+TITLE: Rules only
+STATEMENT: >>>
+Findings, severities, scores, explanations and parameter recommendations shall be produced by fixed rules and templates with no random or learned element, so the same log gives the same result apart from the report and finding identifiers, the time of generation and the processing times.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers, report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SAF-002
+- TYPE: Parent
+  VALUE: STK-004
+
+[REQUIREMENT]
+UID: SYS-013
+STATUS: Active
+TITLE: Explanations and vehicle-aware advice
+STATEMENT: >>>
+Every finding shall have a plain-English explanation and a recommended action. Advice that names parameters shall use the parameters of the autopilot and frame type found in the log, and shall give no single-parameter tuning advice where the system holds none that is safe for that vehicle.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers, report
+RELATIONS:
+- TYPE: Parent
+  VALUE: STK-001
+- TYPE: Parent
+  VALUE: STK-002
+- TYPE: Parent
+  VALUE: SAF-007
+
+[REQUIREMENT]
+UID: SYS-014
+STATUS: Active
+TITLE: Parameter checks against firmware metadata
+STATEMENT: >>>
+The system shall check the log's parameters against the range metadata published for its firmware (PX4 1.13 to 1.15; ArduPilot Copter, Plane and Rover 4.6 and 4.7), choosing the table from the firmware in the log, against tighter safe ranges it holds, and for risky combinations.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers, data
+RELATIONS:
+- TYPE: Parent
+  VALUE: STK-002
+
+[REQUIREMENT]
+UID: SYS-015
+STATUS: Active
+TITLE: Parameter change sheet
+STATEMENT: >>>
+The report shall hold one change sheet with at most one entry per parameter (current value, suggested value, direction, reason); values that are not finite shall be left out, and where checks disagree on the direction the entry shall say so.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SAF-007
+- TYPE: Parent
+  VALUE: STK-002
+
+[REQUIREMENT]
+UID: SYS-016
+STATUS: Proposed
+TITLE: Recommended values checked against the metadata range
+STATEMENT: >>>
+Before a recommended value reaches the report the system shall check it against the firmware metadata range for that parameter and shall either hold it inside the range or withhold it with a note.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers, report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SAF-008
+
+[REQUIREMENT]
+UID: SYS-017
+STATUS: Active
+TITLE: Flight path and derived figures
+STATEMENT: >>>
+The system shall give the flight path (at most 500 points with time, and HDOP and wind where logged), and distance, maximum speed and maximum altitude where the log allows, leaving out position jumps that no vehicle could fly.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: STK-001
+- TYPE: Parent
+  VALUE: STK-006
+
+[REQUIREMENT]
+UID: SYS-018
+STATUS: Active
+TITLE: Analyser plugins
+STATEMENT: >>>
+The system shall load additional checks from installed packages through a declared entry point, run and score them like built-in ones, and leave out with a warning any plugin that fails to load, is of the wrong type or reuses a built-in name.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: STK-011
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: The report
+
+[REQUIREMENT]
+UID: SYS-019
+STATUS: Active
+TITLE: Versioned report format
+STATEMENT: >>>
+The report shall follow a versioned schema published as JSON Schema with a changelog; the published schema and the code shall not differ; every number in a report shall be valid JSON (no NaN or infinity).
+<<<
+VERIFICATION: Test
+ALLOCATION: report, tools
+RELATIONS:
+- TYPE: Parent
+  VALUE: STK-007
+
+[REQUIREMENT]
+UID: SYS-020
+STATUS: Active
+TITLE: Report identifies its input
+STATEMENT: >>>
+The report shall carry the SHA-256 of the file as uploaded, the file name and size, the detected format, the schema version, a unique identifier and the UTC time it was generated.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SAF-009
+
+[REQUIREMENT]
+UID: SYS-021
+STATUS: Proposed
+TITLE: Report identifies the engine version
+STATEMENT: >>>
+The report shall carry the version of the analysis engine that produced it, and the package shall state one version.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: SAF-010
+
+[REQUIREMENT]
+UID: SYS-022
+STATUS: Active
+TITLE: Exports
+STATEMENT: >>>
+The system shall export a report as PDF and JSON, the flight path as GPX with timestamps and as KML, and the parameter changes as a file Mission Planner or QGroundControl loads.
+<<<
+VERIFICATION: Test
+ALLOCATION: report, api, web
+RELATIONS:
+- TYPE: Parent
+  VALUE: STK-006
+- TYPE: Parent
+  VALUE: STK-002
+
+[REQUIREMENT]
+UID: SYS-023
+STATUS: Active
+TITLE: Optional AI stays outside the findings
+STATEMENT: >>>
+When an AI provider is configured and the system is not offline, the AI may rewrite the executive summary and answer questions from the report's content only. It shall never add, remove or change a finding, score or recommendation, and with no provider configured the system shall work in full without it.
+<<<
+VERIFICATION: Test
+ALLOCATION: report, api
+RELATIONS:
+- TYPE: Parent
+  VALUE: SAF-006
+
+[REQUIREMENT]
+UID: SYS-024
+STATUS: Active
+TITLE: Flight context
+STATEMENT: >>>
+When online and the log gives a position and a date, the system shall add the weather of that day and a place name; when it cannot, the report shall say why. A planning-brief SHA-256 given at upload shall be carried in the report.
+<<<
+VERIFICATION: Test
+ALLOCATION: report, api
+RELATIONS:
+- TYPE: Parent
+  VALUE: STK-010
+
+[REQUIREMENT]
+UID: SYS-025
+STATUS: Active
+TITLE: Offline mode
+STATEMENT: >>>
+In offline mode the system shall make no outbound network request (weather, geocoding, AI, DJI key exchange). The command line shall be offline unless asked otherwise.
+<<<
+VERIFICATION: Test
+ALLOCATION: report, parsers
+RELATIONS:
+- TYPE: Parent
+  VALUE: STK-008
+
+[REQUIREMENT]
+UID: SYS-026
+STATUS: Proposed
+TITLE: Limits of use on every report
+STATEMENT: >>>
+Every report shown or exported for a person to read shall state that it is advisory, that a clean report is not a release to service and that parameter changes need review and a test flight.
+<<<
+VERIFICATION: Inspection
+ALLOCATION: report, web
+RELATIONS:
+- TYPE: Parent
+  VALUE: SAF-015
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Ways in: library, command line, HTTP API, web application
+
+[REQUIREMENT]
+UID: SYS-027
+STATUS: Active
+TITLE: Library and command line
+STATEMENT: >>>
+The analysis shall be callable as a Python function that returns the report or raises one error type for a log it cannot analyse, and from a command line that analyses one log, writes the exports asked for and compares two report files.
+<<<
+VERIFICATION: Test
+ALLOCATION: report
+RELATIONS:
+- TYPE: Parent
+  VALUE: STK-007
+
+[REQUIREMENT]
+UID: SYS-028
+STATUS: Active
+TITLE: HTTP API
+STATEMENT: >>>
+The system shall offer an HTTP API to upload a log, follow the progress of its analysis, fetch the report, fetch each export, compare two reports and report its own health.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: STK-007
+- TYPE: Parent
+  VALUE: STK-006
+
+[REQUIREMENT]
+UID: SYS-029
+STATUS: Active
+TITLE: Report privacy and retention
+STATEMENT: >>>
+A report shall be reachable only by its random identifier; there shall be no listing of uploads. A report not tagged with an airframe shall expire after one hour, and the same log uploaded again within that time shall return the existing report.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: STK-008
+- TYPE: Parent
+  VALUE: SAF-011
+
+[REQUIREMENT]
+UID: SYS-030
+STATUS: Active
+TITLE: Airframe history
+STATEMENT: >>>
+Reports tagged with an airframe label shall be kept for that airframe. The first write to an airframe shall issue a token, shown once, and reading or changing that airframe's configuration, maintenance log, applied changes, trends or record shall need it. The system shall give trends of each check's headline numbers, a maintenance log and a pre-flight checklist per airframe.
+<<<
+VERIFICATION: Test
+ALLOCATION: api, web
+RELATIONS:
+- TYPE: Parent
+  VALUE: STK-005
+- TYPE: Parent
+  VALUE: STK-008
+
+[REQUIREMENT]
+UID: SYS-031
+STATUS: Active
+TITLE: Tune, fly, verify
+STATEMENT: >>>
+The system shall record which recommended parameter changes the user says were applied to an airframe and shall report, from later flights of that airframe, whether the findings behind each change are still present.
+<<<
+VERIFICATION: Test
+ALLOCATION: api, web
+RELATIONS:
+- TYPE: Parent
+  VALUE: STK-005
+- TYPE: Parent
+  VALUE: STK-002
+
+[REQUIREMENT]
+UID: SYS-032
+STATUS: Active
+TITLE: Alerts
+STATEMENT: >>>
+The system shall send a webhook when a new report for an airframe meets that airframe's alert rules, to https addresses only unless http is allowed by configuration, and a failed delivery shall not fail the analysis.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: STK-005
+
+[REQUIREMENT]
+UID: SYS-033
+STATUS: Active
+TITLE: Abuse protection and observability
+STATEMENT: >>>
+The API shall limit upload size, uploads, questions and PDF exports per client address per hour, accept browser calls from configured origins only, believe forwarded client addresses from configured proxies only, and expose counts and timings (no file names, coordinates or identifiers) to a holder of the metrics token.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: STK-009
+- TYPE: Parent
+  VALUE: STK-008
+
+[REQUIREMENT]
+UID: SYS-034
+STATUS: Active
+TITLE: Contributed logs
+STATEMENT: >>>
+Contribution of a log to the data set shall be off unless the user asks for it; a contributed report shall be stored without file name, place name and track; and the contributor shall be able to withdraw the log and its report.
+<<<
+VERIFICATION: Test
+ALLOCATION: api
+RELATIONS:
+- TYPE: Parent
+  VALUE: STK-008
+
+[REQUIREMENT]
+UID: SYS-035
+STATUS: Active
+TITLE: Storage
+STATEMENT: >>>
+The API shall keep reports, airframe records and its caches under one configured data directory, and shall take in the stores written by earlier versions on first start.
+<<<
+VERIFICATION: Test
+ALLOCATION: api, deployment
+RELATIONS:
+- TYPE: Parent
+  VALUE: STK-009
+- TYPE: Parent
+  VALUE: SAF-011
+
+[REQUIREMENT]
+UID: SYS-036
+STATUS: Active
+TITLE: Web application
+STATEMENT: >>>
+The web application shall take an upload, show progress, and show the report: score, findings with their evidence and time windows, charts, the flight path, the parameter sheet, the exports, airframe pages, and a comparison of two flights.
+<<<
+VERIFICATION: Test, Demonstration
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: STK-001
+- TYPE: Parent
+  VALUE: STK-005
+- TYPE: Parent
+  VALUE: STK-006
+
+[REQUIREMENT]
+UID: SYS-037
+STATUS: Active
+TITLE: Units and themes change display only
+STATEMENT: >>>
+The web application shall show values in metric, imperial or aviation units as the user chooses, each with its unit, converting for display only and leaving the report data unchanged.
+<<<
+VERIFICATION: Test
+ALLOCATION: web
+RELATIONS:
+- TYPE: Parent
+  VALUE: SAF-012
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Keeping results right over time
+
+[REQUIREMENT]
+UID: SYS-038
+STATUS: Active
+TITLE: Real-log regression corpus
+STATEMENT: >>>
+The project shall keep reviewed expected results for a set of real public logs covering every supported autopilot family it can obtain, and a scheduled check shall fail when the engine's result for one of them changes.
+<<<
+VERIFICATION: Test, Inspection
+ALLOCATION: tools, procedure
+RELATIONS:
+- TYPE: Parent
+  VALUE: SAF-014
+- TYPE: Parent
+  VALUE: STK-012
+
+[REQUIREMENT]
+UID: SYS-039
+STATUS: Active
+TITLE: Parameter tables come from the firmware's own metadata
+STATEMENT: >>>
+The parameter range tables shipped with the engine shall be generated by a script from the metadata the firmware projects publish, and shall record the firmware version they are for.
+<<<
+VERIFICATION: Inspection, Test
+ALLOCATION: data, tools
+RELATIONS:
+- TYPE: Parent
+  VALUE: STK-012
+- TYPE: Parent
+  VALUE: STK-002
+
+[[/SECTION]]

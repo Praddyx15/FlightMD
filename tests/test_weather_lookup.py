@@ -41,6 +41,7 @@ def urls(monkeypatch):
     return seen, responses
 
 
+# covers: HLR-RPT-024, LLR-RPT-053
 def test_no_flight_date_means_no_lookup(urls):
     seen, _ = urls
     res = weather_lookup.fetch_weather(37.77, -122.42, None)
@@ -48,6 +49,7 @@ def test_no_flight_date_means_no_lookup(urls):
     assert seen == []
 
 
+# covers: HLR-RPT-024, HLR-RPT-026, LLR-RPT-052, LLR-RPT-054
 def test_uses_the_flight_date(urls):
     seen, responses = urls
     responses.append(daily())
@@ -58,6 +60,7 @@ def test_uses_the_flight_date(urls):
     assert res["description"].endswith("Dry")
 
 
+# covers: HLR-RPT-024, LLR-RPT-055
 def test_unknown_rain_is_not_reported_as_dry(urls):
     _, responses = urls
     responses.append(daily(rain=None))
@@ -66,6 +69,7 @@ def test_unknown_rain_is_not_reported_as_dry(urls):
     assert res["rain_sum_mm"] is None
 
 
+# covers: HLR-RPT-024, HLR-RPT-026, LLR-RPT-054
 def test_recent_flight_falls_back_to_forecast_api(urls):
     seen, responses = urls
     responses.append(daily(temp_max=None, temp_min=None, wind_kmh=None, rain=None))  # archive not there yet
@@ -76,6 +80,7 @@ def test_recent_flight_falls_back_to_forecast_api(urls):
     assert res["temperature_max_c"] == 25.0
 
 
+# covers: HLR-RPT-024, HLR-RPT-026, LLR-RPT-054
 def test_equator_and_meridian_are_real_places(urls):
     seen, responses = urls
     responses.append(daily())

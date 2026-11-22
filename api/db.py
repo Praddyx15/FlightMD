@@ -5,6 +5,8 @@ state, airframes, dataset contributions and applied parameter changes.
 stdlib sqlite3 in WAL mode, one connection per thread. The SQL sticks to what
 Postgres accepts too (ON CONFLICT upserts, plain column types, no INSERT OR
 REPLACE), so moving there later is a driver swap plus "?" -> "%s".
+
+@relation(LLR-API-075, scope=file)
 """
 
 import logging
@@ -73,6 +75,7 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
 
 class Database:
     def __init__(self, data_dir: str):
+        """@relation(LLR-API-073, scope=function)"""
         self.data_dir = os.path.abspath(data_dir)
         os.makedirs(self.data_dir, exist_ok=True)
         self.path = os.path.join(self.data_dir, DB_NAME)
@@ -82,6 +85,7 @@ class Database:
         self._migrate()
 
     def conn(self) -> sqlite3.Connection:
+        """@relation(LLR-API-073, scope=function)"""
         c = getattr(self._local, "conn", None)
         if c is None:
             # isolation_level=None: we issue BEGIN ourselves, sqlite3's implicit
@@ -97,6 +101,7 @@ class Database:
 
     @contextmanager
     def transaction(self, immediate: bool = True):
+        """@relation(LLR-API-073, scope=function)"""
         # IMMEDIATE takes the write lock up front, so a read-modify-write
         # can't be interleaved by another thread or process
         c = self.conn()
@@ -125,6 +130,7 @@ class Database:
         self._local = threading.local()
 
     def _migrate(self) -> None:
+        """@relation(LLR-API-074, scope=function)"""
         self.conn().execute(
             "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at REAL NOT NULL)"
         )
@@ -147,7 +153,9 @@ _db_lock = threading.Lock()
 
 
 def get() -> Database:
-    """The process-wide database, opened on first use from FLIGHTMD_DATA_DIR."""
+    """The process-wide database, opened on first use from FLIGHTMD_DATA_DIR.
+
+    @relation(LLR-API-076, scope=function)"""
     global _db
     if _db is None:
         with _db_lock:

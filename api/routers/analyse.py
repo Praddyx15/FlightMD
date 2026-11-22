@@ -1,3 +1,9 @@
+"""
+Upload route and the dataset routes.
+
+@relation(LLR-API-012, LLR-API-015, LLR-API-017, LLR-API-019, LLR-API-020, LLR-API-021, LLR-API-022, LLR-API-023, LLR-API-024, LLR-API-025, scope=file)
+"""
+
 import hashlib
 import logging
 import os
@@ -53,6 +59,7 @@ class UploadTooLarge(Exception):
 
 
 def _uploads_dir() -> str:
+    """@relation(LLR-API-018, scope=function)"""
     # inside the data dir, not /tmp: with the Redis queue another process reads it
     path = os.path.join(db.get().data_dir, "uploads")
     os.makedirs(path, exist_ok=True)
@@ -60,7 +67,9 @@ def _uploads_dir() -> str:
 
 
 def _save_upload(src, suffix: str, limit: int) -> tuple[str, int, str]:
-    """Stream the upload to disk. Returns (path, size, sha256 of the bytes)."""
+    """Stream the upload to disk. Returns (path, size, sha256 of the bytes).
+
+    @relation(LLR-API-018, scope=function)"""
     fd, path = tempfile.mkstemp(suffix=suffix, prefix="flightmd-", dir=_uploads_dir())
     size = 0
     h = hashlib.sha256()
@@ -79,7 +88,9 @@ def _save_upload(src, suffix: str, limit: int) -> tuple[str, int, str]:
 
 
 def _detect(head: bytes, file_name: str) -> tuple[str, str]:
-    """(format id, file suffix) for an upload's first bytes. Raises HTTPException(400)."""
+    """(format id, file suffix) for an upload's first bytes. Raises HTTPException(400).
+
+    @relation(LLR-API-016, scope=function)"""
     for magic, suffix in COMPRESSED_MAGIC.items():
         if head.startswith(magic):
             return "compressed", suffix

@@ -30,6 +30,7 @@ def topics_of(*data):
 
 class TestExtractTopics:
 
+    # covers: HLR-PRS-002, HLR-PRS-004, LLR-PRS-004
     def test_instances_named_without_duplicates(self):
         topics = topics_of(
             FakeData("sensor_accel", 0, {"timestamp": [START + 1, START + 2], "x": [0.1, 0.2]}),
@@ -38,6 +39,7 @@ class TestExtractTopics:
         assert sorted(k for k in topics if k.startswith("sensor_accel")) == ["sensor_accel", "sensor_accel_1"]
         assert list(topics["sensor_accel_1"]["x"]) == pytest.approx([0.3, 0.4])
 
+    # covers: HLR-PRS-002, HLR-PRS-004, LLR-PRS-004
     def test_timestamps_are_log_relative(self):
         topics = topics_of(FakeData("vehicle_status", 0, {
             "timestamp": np.array([START, START + 500_000], dtype=np.uint64),
@@ -48,6 +50,7 @@ class TestExtractTopics:
         assert list(df["timestamp"]) == [0, 500_000]
         assert list(df["timestamp_sample"]) == [-100, 499_900]
 
+    # covers: HLR-PRS-003, HLR-PRS-007, LLR-PRS-005, LLR-PRS-007
     def test_sensor_gps_aliased_and_new_field_names_normalised(self):
         # PX4 1.15 logs sensor_gps with float latitude_deg / longitude_deg / altitude_msl_m
         topics = topics_of(FakeData("sensor_gps", 0, {
@@ -62,6 +65,7 @@ class TestExtractTopics:
         assert gps["lon"].iloc[0] == -1224194000
         assert gps["alt"].iloc[0] == 12500
 
+    # covers: HLR-PRS-007, LLR-PRS-008
     def test_esc_status_trimmed_to_esc_count(self):
         data = {"timestamp": [START, START + 1], "esc_count": [4, 4]}
         for i in range(8):
@@ -73,6 +77,7 @@ class TestExtractTopics:
         assert rpm_cols == [f"esc[{i}].esc_rpm" for i in range(4)]
         assert (esc["esc_count"] == 4).all()
 
+    # covers: HLR-PRS-007, LLR-PRS-008
     def test_esc_count_inferred_when_missing(self):
         data = {"timestamp": [START, START + 1]}
         for i in range(8):
@@ -81,6 +86,7 @@ class TestExtractTopics:
         assert (esc["esc_count"] == 6).all()
         assert "esc[6].esc_rpm" not in esc.columns
 
+    # covers: HLR-PRS-007, LLR-PRS-006
     def test_primary_ekf_instance_goes_under_bare_name(self):
         topics = topics_of(
             FakeData("estimator_selector_status", 0, {"timestamp": [START, START + 1, START + 2],
@@ -94,20 +100,24 @@ class TestExtractTopics:
 
 class TestULogParserUnit:
 
+    # covers: HLR-PRS-001, LLR-PRS-001
     def test_missing_file_raises_file_not_found(self):
         with pytest.raises(FileNotFoundError):
             ULogParser().parse("/nonexistent/path/file.ulg")
 
+    # covers: HLR-PRS-008, LLR-PRS-015
     def test_arm_count_from_arming_state(self):
         states = np.array([1, 1, 2, 2, 2, 1, 1, 2, 2])  # 2 = ARMED
         topics = {"vehicle_status": pd.DataFrame({"arming_state": states})}
         assert ULogParser()._count_arms(topics) == 2
 
+    # covers: HLR-PRS-008, LLR-PRS-017
     def test_max_altitude_from_local_position(self):
         # NED: z = -50 is 50 m up
         df = pd.DataFrame({"timestamp": [0, 1, 2], "z": [0.0, -30.0, -50.0]})
         assert ULogParser()._max_altitude({"vehicle_local_position": df}) == 50.0
 
+    # covers: HLR-PRS-008, LLR-PRS-018
     def test_total_distance_calculation(self):
         df = pd.DataFrame({
             "timestamp": [0, 1, 2],
@@ -116,6 +126,7 @@ class TestULogParserUnit:
         })
         assert ULogParser()._total_distance({"vehicle_local_position": df}) == pytest.approx(7.0)
 
+    # covers: HLR-PRS-008, LLR-PRS-018
     def test_max_speed_from_velocity(self):
         df = pd.DataFrame({
             "timestamp": [0, 1, 2],
@@ -124,6 +135,7 @@ class TestULogParserUnit:
         })
         assert ULogParser()._max_speed({"vehicle_local_position": df}) == pytest.approx(5.0)
 
+    # covers: HLR-PRS-008, LLR-PRS-010, LLR-PRS-011
     def test_extract_metadata_handles_integer_version_fields(self):
         # real firmware writes these info fields as ints
         class StubULog:
@@ -147,6 +159,7 @@ class TestULogParserUnit:
         # time_ref_utc is a timezone offset, not a start time
         assert metadata.log_start_utc is None
 
+    # covers: HLR-PRS-008, LLR-PRS-013
     def test_log_start_utc_from_gps_time(self):
         gps = pd.DataFrame({
             "timestamp": [1_000_000, 2_000_000],
@@ -172,10 +185,12 @@ class TestULogParserUnit:
         (18, "Auto Land"),
         (21, "Orbit"),
     ])
+    # covers: HLR-PRS-008, LLR-PRS-016
     def test_nav_state_names(self, nav_state, name):
         df = pd.DataFrame({"timestamp": [0], "nav_state": [nav_state]})
         assert ULogParser()._extract_flight_modes({"vehicle_status": df}) == [name]
 
+    # covers: HLR-PRS-009, LLR-PRS-014
     def test_warnings_from_dropouts_and_corruption(self):
         class Drop:
             def __init__(self, ms):
@@ -204,23 +219,27 @@ class TestULogParserIntegration:
             pytest.skip("No .ulg sample files found in tests/sample_logs/")
         return os.path.join(SAMPLE_LOGS_DIR, logs[0])
 
+    # covers: HLR-PRS-001, LLR-PRS-001
     def test_parse_returns_three_outputs(self, sample_log_path):
         topics, params, metadata = ULogParser().parse(sample_log_path)
         assert isinstance(topics, dict)
         assert isinstance(params, dict)
         assert metadata.duration_seconds > 0
 
+    # covers: HLR-PRS-007, LLR-PRS-002
     def test_topics_are_dataframes(self, sample_log_path):
         topics, _, _ = ULogParser().parse(sample_log_path)
         for name, df in topics.items():
             assert isinstance(df, pd.DataFrame), f"{name} is not a DataFrame"
             assert len(df) > 0, f"{name} is empty"
 
+    # covers: HLR-PRS-008, LLR-PRS-009
     def test_params_are_floats(self, sample_log_path):
         _, params, _ = ULogParser().parse(sample_log_path)
         for k, v in params.items():
             assert isinstance(v, float), f"{k} value {v!r} is not float"
 
+    # covers: HLR-PRS-008, LLR-PRS-010
     def test_available_topics_populated(self, sample_log_path):
         _, _, metadata = ULogParser().parse(sample_log_path)
         assert len(metadata.available_topics) > 0
@@ -234,12 +253,14 @@ class TestMetadataDecoding:
         msg_info_dict = {"ver_hw": "CUBEPILOT_CUBEORANGE", "ver_hw_subtype": "V2", "sys_name": "PX4"}
         initial_parameters = {"SYS_AUTOSTART": 13000}
 
+    # covers: HLR-PRS-008, LLR-PRS-010
     def test_airframe_name_and_board(self):
         metadata = ULogParser()._extract_metadata(self.StubULog(), {})
         assert metadata.airframe_id == 13000
         assert metadata.airframe_name == "Generic Standard VTOL"
         assert metadata.hardware_id == "CUBEPILOT_CUBEORANGE (V2)"
 
+    # covers: HLR-PRS-008, LLR-PRS-010
     def test_unknown_airframe_id_has_no_name(self):
         stub = self.StubULog()
         stub.initial_parameters = {"SYS_AUTOSTART": 987654}
@@ -252,17 +273,20 @@ class TestMetadataDecoding:
         ({"vehicle_type": [3]}, "Rover"),
         ({"is_rotary_wing": [True, True]}, "Copter"),
     ])
+    # covers: HLR-PRS-008, LLR-PRS-012
     def test_vehicle_type_from_vehicle_status(self, status, expected):
         n = len(next(iter(status.values())))
         df = pd.DataFrame({"timestamp": list(range(n)), **status})
         metadata = ULogParser()._extract_metadata(self.StubULog(), {"vehicle_status": df})
         assert metadata.vehicle_type == expected
 
+    # covers: HLR-PRS-008, LLR-PRS-012
     def test_vehicle_type_falls_back_to_sys_name(self):
         metadata = ULogParser()._extract_metadata(self.StubULog(), {})
         assert metadata.vehicle_type == "PX4"
 
 
+# covers: HLR-PRS-007, LLR-PRS-002
 def test_required_topics_include_imu_status_and_power():
     from flightmd_core.services.ulog_parser import REQUIRED_ULOG_TOPICS
 
@@ -270,6 +294,7 @@ def test_required_topics_include_imu_status_and_power():
     assert "system_power" in REQUIRED_ULOG_TOPICS
 
 
+# covers: HLR-PRS-005, LLR-PRS-003
 def test_progress_wrapper_reports_file_position(tmp_path, monkeypatch):
     from flightmd_core.services import ulog_parser
 

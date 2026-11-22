@@ -2,12 +2,14 @@ from flightmd_core.services.weather_lookup import fetch_weather
 from flightmd_core.models.findings import FlightMDReport
 from flightmd_core.models.metadata import FlightMetadata
 
+# covers: HLR-RPT-024, LLR-RPT-053
 def test_fetch_weather_fallback():
     # If coordinates are 0 or empty, return default
     res = fetch_weather(0, 0, None)
     assert res["description"] == "Weather data unavailable"
     assert res["temperature_max_c"] is None
 
+# covers: HLR-RPT-024, LLR-RPT-055
 def test_fetch_weather_valid_coordinates():
     # Try fetching with offline/online safe checks
     res = fetch_weather(37.7749, -122.4194, "2023-11-23 12:00:00")

@@ -71,14 +71,17 @@ def triggered():
 
 
 class TestValidateWebhookURL:
+    # covers: HLR-API-023, LLR-API-097
     def test_rejects_http_scheme(self):
         with pytest.raises(UnsafeWebhookURLError, match="https"):
             validate_webhook_url("http://hooks.example.com/webhook")
 
+    # covers: HLR-API-023, LLR-API-097
     def test_http_allowed_only_with_the_flag(self, monkeypatch):
         monkeypatch.setattr(get_settings(), "allow_http_webhooks", True)
         assert validate_webhook_url("http://hooks.example.com/webhook") == ["93.184.216.34"]
 
+    # covers: HLR-API-023, LLR-API-097
     @pytest.mark.parametrize("url", [
         "https://127.0.0.1/webhook",
         "https://10.0.0.5/webhook",
@@ -89,6 +92,7 @@ class TestValidateWebhookURL:
         with pytest.raises(UnsafeWebhookURLError):
             validate_webhook_url(url)
 
+    # covers: HLR-API-023, LLR-API-097
     @pytest.mark.parametrize("host", [
         "internal.example.com", "metadata.example.com", "mapped.example.com",
         "cgnat.example.com", "mixed.example.com",
@@ -97,25 +101,30 @@ class TestValidateWebhookURL:
         with pytest.raises(UnsafeWebhookURLError, match="non-public"):
             validate_webhook_url(f"https://{host}/webhook")
 
+    # covers: HLR-API-023, LLR-API-097
     def test_rejects_missing_hostname(self):
         with pytest.raises(UnsafeWebhookURLError):
             validate_webhook_url("https:///webhook")
 
+    # covers: HLR-API-023, LLR-API-097
     def test_rejects_header_injection(self):
         with pytest.raises(UnsafeWebhookURLError):
             validate_webhook_url("https://hooks.example.com/a\r\nHost: evil")
 
+    # covers: HLR-API-023, LLR-API-097
     def test_accepts_public_hostname(self):
         assert validate_webhook_url("https://hooks.example.com/api/webhooks/123/abc") == ["93.184.216.34"]
 
 
 class TestSendAlertWebhook:
+    # covers: HLR-API-023, LLR-API-099
     def test_unsafe_url_returns_false_without_connecting(self, monkeypatch):
         def no_connect(*a, **kw):
             raise AssertionError("should not connect")
         monkeypatch.setattr(wn, "_open_connection", no_connect)
         assert send_alert_webhook("https://internal.example.com/webhook", "Quad-1", "r1", triggered()) is False
 
+    # covers: HLR-API-023, LLR-API-099
     def test_success_pins_the_validated_address(self, monkeypatch):
         seen = {}
         conn = FakeConnection(204)
@@ -129,6 +138,7 @@ class TestSendAlertWebhook:
         assert seen == {"scheme": "https", "host": "hooks.example.com", "ip": "93.184.216.34"}
         assert conn.requests == [("POST", "/hook?x=1")]
 
+    # covers: HLR-API-023, LLR-API-099
     def test_redirect_is_not_followed(self, monkeypatch):
         conn = FakeConnection(302, {"Location": "http://169.254.169.254/latest/meta-data"})
         opened = []
@@ -138,6 +148,7 @@ class TestSendAlertWebhook:
         assert len(opened) == 1
         assert len(conn.requests) == 1
 
+    # covers: HLR-API-023, LLR-API-099
     def test_connection_error_returns_false(self, monkeypatch):
         class Broken(FakeConnection):
             def request(self, *a, **kw):
@@ -145,6 +156,7 @@ class TestSendAlertWebhook:
         monkeypatch.setattr(wn, "_open_connection", lambda *a: Broken(200))
         assert send_alert_webhook("https://hooks.example.com/hook", "Quad-1", "r1", triggered()) is False
 
+    # covers: HLR-API-023, LLR-API-099
     def test_pinned_connection_dials_the_ip_not_the_name(self, monkeypatch):
         dialled = []
 

@@ -8,6 +8,8 @@ default, min, max, unit, type, reboot_required. ArduPilot's metadata has no
 defaults (they live in the C++), so its tables don't either.
 
 Run: python scripts/gen_param_tables.py      (needs network; writes in place)
+
+@relation(LLR-ANL-088, scope=file)
 """
 
 import base64
@@ -51,6 +53,7 @@ def fetch(url: str) -> bytes:
 
 
 def num(s):
+    """@relation(LLR-ANL-089, scope=function)"""
     if s is None:
         return None
     try:
@@ -63,6 +66,7 @@ def num(s):
 
 
 def px4_xml(url: str) -> bytes:
+    """@relation(LLR-ANL-090, scope=function)"""
     raw = fetch(url)
     if url.endswith(".px4"):
         return zlib.decompress(base64.b64decode(json.loads(raw)["parameter_xml"]))
@@ -87,6 +91,7 @@ def parse_px4(xml: bytes) -> dict:
 
 
 def parse_pdef(xml: bytes) -> dict:
+    """@relation(LLR-ANL-091, scope=function)"""
     out = {}
     for p in ET.fromstring(xml).iter("param"):
         name = p.get("name").split(":")[-1]
@@ -118,6 +123,7 @@ def parse_pdef(xml: bytes) -> dict:
 
 
 def ap_tags(vehicle: str) -> list[str]:
+    """@relation(LLR-ANL-092, scope=function)"""
     html = fetch(AP_INDEX.format(vehicle=vehicle)).decode("utf-8", "replace")
     tags = set(re.findall(r'href="(stable-\d+\.\d+\.\d+)/"', html))
     latest = {}
@@ -131,6 +137,7 @@ def ap_tags(vehicle: str) -> list[str]:
 
 def write(path: str, header: dict, params: dict) -> None:
     # one parameter per line so a regenerated table diffs cleanly
+    """@relation(LLR-ANL-093, scope=function)"""
     lines = [json.dumps(k) + ": " + json.dumps(params[k], ensure_ascii=False) for k in sorted(params)]
     body = json.dumps(header, indent=2, ensure_ascii=False)[:-2]
     text = body + ',\n  "params": {\n    ' + ",\n    ".join(lines) + "\n  }\n}\n"
@@ -141,6 +148,7 @@ def write(path: str, header: dict, params: dict) -> None:
 
 
 def main() -> int:
+    """@relation(LLR-ANL-094, scope=function)"""
     os.makedirs(OUT_DIR, exist_ok=True)
     today = date.today().isoformat()
     failed = []

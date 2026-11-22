@@ -5,6 +5,8 @@ arq worker for the opt-in Redis queue:
 
 Needs the `queue` extra and the same FLIGHTMD_DATA_DIR as the API (the
 uploads and the database are shared through it).
+
+@relation(LLR-API-057, scope=file)
 """
 
 from arq.connections import RedisSettings
@@ -19,6 +21,7 @@ JOB_TIMEOUT_S = 900
 
 
 async def analyse(ctx, payload: dict) -> None:
+    """@relation(LLR-API-057, scope=function)"""
     await run_job(AnalysisJob(**payload))
 
 

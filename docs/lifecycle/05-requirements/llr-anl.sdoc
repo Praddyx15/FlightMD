@@ -1,0 +1,1730 @@
+[DOCUMENT]
+TITLE: Analysers low-level requirements
+UID: FMD-LLR-ANL
+VERSION: Issue 1
+DATE: 2026-11-20
+OPTIONS:
+  MARKUP: Markdown
+
+[GRAMMAR]
+IMPORT_FROM_FILE: @flightmd
+
+[TEXT]
+STATEMENT: >>>
+Low-level requirements of the analyser item, part ANL, written from the code as built: the framework in
+`flightmd_core/analysers/` (`__init__.py`, `base.py`, `registry.py`, `helpers.py`, `phases.py`, `vehicle.py`),
+the checks `gps.py`, `battery.py`, `motors.py`, `power.py` and `parameters.py`, the data files
+`flightmd_core/data/param_safe_ranges.json` and `flightmd_core/data/param_tables/*.json`, and the generator
+`scripts/gen_param_tables.py`. Timestamps are log-relative microseconds (written "us" here). Where the code does
+less than its parent asks, the statement says what the code does. The design, with the table of every threshold,
+is in `docs/lifecycle/06-design/lld-anl.md`.
+<<<
+
+[[SECTION]]
+TITLE: Base class (flightmd_core/analysers/base.py)
+
+[REQUIREMENT]
+UID: LLR-ANL-001
+STATUS: Active
+TITLE: BaseAnalyser declaration
+STATEMENT: >>>
+`BaseAnalyser` is an abstract class with class attributes `name`, `display_name`, `required_topics` (default
+`[]`), `optional_topics` (`[]`), `required_any` (`[]`), `required_columns` (`{}`, topic to list of columns),
+`formats` (`[]`, meaning any format), `weight` (`0.0`) and `metadata` (`None`), and one abstract method
+`analyse(topics, params)` that returns an `AnalyserResult`.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-001
+
+[REQUIREMENT]
+UID: LLR-ANL-002
+STATUS: Active
+TITLE: is_applicable
+STATEMENT: >>>
+`BaseAnalyser.is_applicable(available_topics)` returns `False` when any name in `required_topics` is not in the
+set, else `True` when `required_any` is empty or at least one of its names is in the set, else `False`. It does
+not look at `formats` or `required_columns`.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-001
+- TYPE: Parent
+  VALUE: HLR-ANL-002
+
+[REQUIREMENT]
+UID: LLR-ANL-003
+STATUS: Active
+TITLE: missing_inputs
+STATEMENT: >>>
+`BaseAnalyser.missing_inputs(topics)` returns the first of these that applies, else `None`:
+`"Required topics not available: <names>"` when a required topic is missing; `"Needs one of these topics:
+<names>"` when `required_any` is set and none is present; `"Not available for <fmt> logs."` when `formats` is
+not empty, `metadata.source_format` is set and is not in `formats`; and, only when `topics` is a dict,
+`"<topic> has no <columns> column"` for the first present topic in `required_columns` that lacks a listed
+column. A topic that is present with zero rows passes.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-002
+
+[REQUIREMENT]
+UID: LLR-ANL-004
+STATUS: Active
+TITLE: Skipped result
+STATEMENT: >>>
+`BaseAnalyser._skip(reason)` returns an `AnalyserResult` with the analyser's `name` and `display_name`, no
+findings, `skipped=True` and `skip_reason=reason`. `skip_result(topics)` returns `_skip` with the text of
+`missing_inputs(topics)`, or `"Not applicable to this log."` when that is `None`.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-002
+
+[REQUIREMENT]
+UID: LLR-ANL-005
+STATUS: Active
+TITLE: safe_analyse checks inputs first
+STATEMENT: >>>
+`BaseAnalyser.safe_analyse(topics, params)` calls `missing_inputs(topics)` and, when it returns a reason, returns
+`_skip(reason)` without calling `analyse`; otherwise it returns the result of `analyse(topics, params)`.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-002
+
+[REQUIREMENT]
+UID: LLR-ANL-006
+STATUS: Active
+TITLE: safe_analyse turns an exception into a skip and times the run
+STATEMENT: >>>
+`BaseAnalyser.safe_analyse` catches any `Exception` raised by `analyse` and returns
+`_skip("Analysis error: <type name>: <message>")`. On every path it sets `result.processing_ms` to the elapsed
+wall-clock time in whole milliseconds.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test in the analyser test files makes `analyse` raise or reads `processing_ms`. Review checks the
+`try`/`except Exception` and the assignment after it.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-003
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Registry (flightmd_core/analysers/registry.py, __init__.py)
+
+[REQUIREMENT]
+UID: LLR-ANL-007
+STATUS: Active
+TITLE: Built-in list and order
+STATEMENT: >>>
+`registry.BUILTINS` lists, in this order, `OscillationAnalyser`, `VibrationAnalyser`, `EKFAnalyser`,
+`BatteryAnalyser`, `GPSAnalyser`, `ParameterAnalyser`, `MotorAnalyser`, `AscentProfileAnalyser`, `PowerAnalyser`.
+`analyser_classes()` returns `BUILTINS` followed by `plugin_classes()`. The package `flightmd_core.analysers`
+re-exports the nine classes and `load_analysers`.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-004
+
+[REQUIREMENT]
+UID: LLR-ANL-008
+STATUS: Active
+TITLE: plugin_classes loads and filters entry points
+STATEMENT: >>>
+`plugin_classes()` reads the entry points of group `flightmd.analysers` (`ENTRY_POINT_GROUP`) and for each one:
+logs a warning and leaves it out when `load()` raises any `Exception`, when the loaded object is not a class
+derived from `BaseAnalyser`, or when its `name` is already taken by a built-in or by a plugin accepted earlier
+in the same call; otherwise it appends the class. The warnings name the entry point.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-005
+- TYPE: Parent
+  VALUE: HLR-ANL-004
+
+[REQUIREMENT]
+UID: LLR-ANL-009
+STATUS: Active
+TITLE: plugin_classes does not guard a plugin class with no name
+STATEMENT: >>>
+`plugin_classes()` raises `AttributeError` when a loaded `BaseAnalyser` subclass defines no `name` attribute,
+and does not catch an exception raised by `entry_points()` itself; in both cases the exception leaves
+`plugin_classes`, `analyser_classes`, `load_analysers` and `module_weights`.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test loads a plugin class without a `name`. Review checks that `taken.add(cls.name)` is outside the `try`
+and that `getattr(cls, "name", None)` returns `None` for such a class, which is not in `taken`. Reported as a
+defect against HLR-ANL-005.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-005
+
+[REQUIREMENT]
+UID: LLR-ANL-010
+STATUS: Active
+TITLE: load_analysers
+STATEMENT: >>>
+`load_analysers(metadata=None)` constructs one new instance of every class of `analyser_classes()`, sets its
+`metadata` attribute to the argument and returns the instances in order. A class whose constructor raises any
+`Exception` is left out and a warning naming it is logged.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Tests cover the order, the plugin instance and the metadata. No test makes a constructor raise; review checks
+that branch.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-004
+- TYPE: Parent
+  VALUE: HLR-ANL-005
+
+[REQUIREMENT]
+UID: LLR-ANL-011
+STATUS: Active
+TITLE: module_weights and the built-in weights
+STATEMENT: >>>
+`module_weights()` returns `{name: float(weight)}` for every class of `analyser_classes()` whose `weight` is
+truthy and above 0. The class weights of this part are `GPSAnalyser` 15.0, `BatteryAnalyser` 15.0,
+`MotorAnalyser` 5.0, `ParameterAnalyser` 5.0 and `PowerAnalyser` 0.0; with the oscillation, vibration and EKF
+weights of 20.0 each the built-in total is 100.0. A plugin's weight is included as declared, with no rescaling.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-006
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Shared helpers (flightmd_core/analysers/helpers.py)
+
+[REQUIREMENT]
+UID: LLR-ANL-012
+STATUS: Active
+TITLE: find_col and find_runs
+STATEMENT: >>>
+`find_col(df, candidates)` returns the first candidate that is a column of `df`, else `None`. `find_runs(mask)`
+returns the `(start, end)` index pairs of each run of true values, end exclusive, and `[]` for an empty mask.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test names this requirement; the behaviour is exercised only indirectly by other tests. A review reads
+`find_col` and `find_runs` in `helpers.py`.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-009
+
+[REQUIREMENT]
+UID: LLR-ANL-013
+STATUS: Active
+TITLE: run_seconds and sample_rate_hz
+STATEMENT: >>>
+`run_seconds(ts_us, start, end)` returns `(ts_us[end] - ts_us[start]) / 1e6` when `end` is inside the array;
+otherwise `(ts_us[end - 1] - ts_us[start] + median sample interval) / 1e6` when the array has more than one
+sample, else `0.0`. `sample_rate_hz(ts_us, default)` returns `1e6 / median sample interval`, or `default` when
+there are fewer than 2 samples or the median interval is not above 0.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test names this requirement; the behaviour is exercised only indirectly by other tests. A review reads
+`run_seconds` and `sample_rate_hz` in `helpers.py`.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-009
+
+[REQUIREMENT]
+UID: LLR-ANL-014
+STATUS: Active
+TITLE: to_list and downsample
+STATEMENT: >>>
+`to_list(arr)` returns a list of floats with every NaN and infinite value replaced by `None`.
+`downsample(ts_us, *series, n=500)` takes every `step`-th element, `step = max(1, ceil(len(ts_us) / n))`, of the
+timestamps and of each series, and returns `[timestamps in ms, series 1, ...]` as `to_list` lists, so no list
+is longer than `n` (`MAX_CHART_POINTS` = 500).
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test names this requirement; the behaviour is exercised only indirectly by other tests. A review reads
+`to_list` and `downsample` in `helpers.py`.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-010
+
+[REQUIREMENT]
+UID: LLR-ANL-015
+STATUS: Active
+TITLE: when
+STATEMENT: >>>
+`when(start_us=None, end_us=None)` returns a dict with `timestamp_start_ms = int(start_us / 1e3)` and
+`t_start_s = round(start_us / 1e6, 3)` when `start_us` is given and finite, and `timestamp_end_ms` and `t_end_s`
+likewise for `end_us`; a missing or non-finite bound adds no key.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test names this requirement; the behaviour is exercised only indirectly by other tests. A review reads `when`
+in `helpers.py`.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-009
+
+[REQUIREMENT]
+UID: LLR-ANL-016
+STATUS: Active
+TITLE: confidence
+STATEMENT: >>>
+`confidence(margin, duration_s=None, quality=1.0)` returns `round(m * d * q, 3)` with
+`m = 0.5 + 0.5 * clamp(margin, 0, 1)`, `d = 1.0` when `duration_s` is `None` else
+`0.4 + 0.6 * min(1, max(0, duration_s) / 2.0)`, and `q = clamp(quality, 0, 1)`. The result lies between 0.0 and
+1.0; with full quality it is never below 0.2.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test asserts a confidence value. Review checks the three factors and the rounding against the function.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-009
+
+[REQUIREMENT]
+UID: LLR-ANL-017
+STATUS: Active
+TITLE: clean
+STATEMENT: >>>
+`clean(obj)` returns a JSON-safe copy: dict keys become strings, lists, tuples and numpy arrays become lists,
+numpy and Python booleans become `bool`, integers become `int`, floats become `float` with NaN and infinity
+replaced by `None`, each applied recursively; any other object is returned unchanged.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+The modules of this part do not call `clean`; it is used by the report builder. No analyser test calls it
+directly. Review checks each type branch and that `bool` is tested before `int`.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-010
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Flight phases (flightmd_core/analysers/phases.py)
+
+[REQUIREMENT]
+UID: LLR-ANL-018
+STATUS: Active
+TITLE: FlightPhases record
+STATEMENT: >>>
+`FlightPhases` holds `armed` and `in_air`, each a list of `(start_us, end_us)` windows, and `source`, one of
+`"vehicle_status"`, `"vehicle_status+land_detected"` or `"whole_log"`. `known` is `False` only when `source` is
+`"whole_log"`. `describe(phase)` returns `"whole log (no arming data)"` when not known, else `"in flight"` for
+`"in_air"` and `"while armed"` for any other phase.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: Tests check `known`, `armed` and `in_air`. The `describe` strings are checked by review.
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-007
+
+[REQUIREMENT]
+UID: LLR-ANL-019
+STATUS: Active
+TITLE: FlightPhases.mask
+STATEMENT: >>>
+`FlightPhases.mask(ts_us, phase="in_air")` returns a boolean array that is true where a timestamp lies inside
+any window of the phase, both ends included; `"in_air"` selects the in-air windows and any other value the
+armed windows. It returns all false when no timestamp falls in a window.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-007
+
+[REQUIREMENT]
+UID: LLR-ANL-020
+STATUS: Active
+TITLE: Topic lookup
+STATEMENT: >>>
+`_first(topics, *names)` returns the first named topic that exists, has at least one row and has a `timestamp`
+column, else `None`. `flight_phases` looks up `vehicle_status` then `vehicle_status_0`, and
+`vehicle_land_detected` then `vehicle_land_detected_0`.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test names this requirement; the behaviour is exercised only indirectly by other tests. A review reads
+`_first` in `phases.py`.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-007
+
+[REQUIREMENT]
+UID: LLR-ANL-021
+STATUS: Active
+TITLE: Windows from a state series
+STATEMENT: >>>
+`_windows(ts, on)` returns one `(start, end)` window per run of true values of `on`: the start is the timestamp
+of the first true row, or `-inf` when that is row 0; the end is the timestamp of the first false row after it,
+or `+inf` when the run reaches the last row.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-007
+
+[REQUIREMENT]
+UID: LLR-ANL-022
+STATUS: Active
+TITLE: Window intersection
+STATEMENT: >>>
+`_intersect(a, b)` returns, for every pair of one window from `a` and one from `b`, the overlap
+`(max of starts, min of ends)` when the start is below the end.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-007
+
+[REQUIREMENT]
+UID: LLR-ANL-023
+STATUS: Active
+TITLE: flight_phases: armed windows and the whole-log fallback
+STATEMENT: >>>
+`flight_phases(topics)` takes the rows of the status topic with both `timestamp` and `arming_state` present,
+sorted by time, and builds the armed windows with `_windows` from `arming_state == 2` (`ARMED`). When there is
+no status topic, no `arming_state` column or no armed window, it returns
+`FlightPhases([(-inf, +inf)], [(-inf, +inf)], "whole_log")`.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-007
+
+[REQUIREMENT]
+UID: LLR-ANL-024
+STATUS: Active
+TITLE: flight_phases: in-air windows
+STATEMENT: >>>
+With armed windows, `flight_phases` returns `FlightPhases(armed, armed, "vehicle_status")` when there is no
+land-detector topic or it has no `landed` column. Otherwise it builds the not-landed windows with `_windows`
+from the rows with both `timestamp` and `landed` present, intersects them with the armed windows and returns
+source `"vehicle_status+land_detected"`; when the intersection is empty the in-air windows are the armed
+windows.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-007
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Vehicle identification (flightmd_core/analysers/vehicle.py)
+
+[REQUIREMENT]
+UID: LLR-ANL-025
+STATUS: Active
+TITLE: vehicle_from_params
+STATEMENT: >>>
+`vehicle_from_params(params)` returns `Vehicle("ardupilot", frame)` when any parameter name starts with one of
+`ATC_`, `INS_`, `AHRS_`, `SYSID_`, `SERVO1_`, `ARMING_CHECK`, `BATT_MONITOR`, `RLL2SRV_`, `Q_ENABLE`,
+`FRAME_CLASS`; else `Vehicle("px4", frame)` when any name starts with one of `MAV_TYPE`, `SYS_AUTOSTART`,
+`EKF2_`, `MPC_`, `MC_`, `COM_`, `NAV_DLL_`; else `Vehicle("unknown", "unknown")`. `Vehicle` is a frozen record
+of `autopilot` and `frame`.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-008
+
+[REQUIREMENT]
+UID: LLR-ANL-026
+STATUS: Active
+TITLE: PX4 frame type
+STATEMENT: >>>
+`_px4_frame(params)` returns the frame of `int(MAV_TYPE)` when it is one of: 1 fixed_wing; 2, 3, 4, 13, 14, 15,
+29 multirotor; 10, 11 rover; 19 to 23 vtol. Otherwise it uses `int(SYS_AUTOSTART)` (0 when absent): 13000 to
+13999 vtol, 2000 to 3999 fixed_wing, 4000 to 16999 multirotor, 50000 to 60999 rover, tested in that order.
+Otherwise: vtol when `VT_TYPE` is present, multirotor when `MC_ROLLRATE_P` is present and `FW_RR_P` is not,
+fixed_wing when `FW_RR_P` is present and `MC_ROLLRATE_P` is not, else `"unknown"`.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Tests cover `MAV_TYPE` 1, 2, 10, 22 and `SYS_AUTOSTART` 2100, 4001, 13000. The other values and the last three
+rules are checked by review.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-008
+
+[REQUIREMENT]
+UID: LLR-ANL-027
+STATUS: Active
+TITLE: ArduPilot frame type
+STATEMENT: >>>
+`_ardupilot_frame(params)` returns, first match wins: rover when `ATC_STR_RAT_P` or `CRUISE_THROTTLE` is
+present; vtol when `Q_ENABLE` is 1 or more; multirotor when `FRAME_CLASS` or `ATC_RAT_RLL_P` is present;
+fixed_wing when any of `RLL_RATE_P`, `RLL2SRV_P`, `PTCH2SRV_P`, `TECS_CLMB_MAX` is present; else `"unknown"`.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-008
+
+[REQUIREMENT]
+UID: LLR-ANL-028
+STATUS: Active
+TITLE: Rate gain names
+STATEMENT: >>>
+`rate_gain_names(vehicle, axis)` returns the `(P name, D name)` pair from `RATE_GAINS` for the vehicle's
+`(autopilot, frame)` and the axis `roll`, `pitch` or `yaw`, and `(None, None)` for any other vehicle or axis.
+The table holds PX4 multirotor (`MC_ROLLRATE_P`/`_D`, `MC_PITCHRATE_P`/`_D`, `MC_YAWRATE_P`/`_D`), PX4
+fixed_wing (`FW_RR_P`, `FW_PR_P`, `FW_YR_P`, no D), ArduPilot multirotor (`ATC_RAT_RLL_P`/`_D`,
+`ATC_RAT_PIT_P`/`_D`, `ATC_RAT_YAW_P`/`_D`) and ArduPilot fixed_wing (`RLL_RATE_P`/`_D`, `PTCH_RATE_P`/`_D`, no
+yaw gain).
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-008
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: GPS check (flightmd_core/analysers/gps.py)
+
+[REQUIREMENT]
+UID: LLR-ANL-029
+STATUS: Active
+TITLE: GPSAnalyser declaration and skips
+STATEMENT: >>>
+`GPSAnalyser` has `name` `"gps"`, `display_name` `"GPS Analysis"`, `required_topics`
+`["vehicle_gps_position"]`, `optional_topics` `["vehicle_status", "vehicle_land_detected"]` and `weight` 15.0.
+`analyse` returns `_skip("GPS topic has no timestamps.")` when the topic has no `timestamp` column and
+`_skip("Fewer than 5 GPS samples <phase description>.")` when fewer than 5 rows remain after the selection of
+LLR-ANL-030.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+A test checks that the check is not applicable without the topic. No test triggers the two skips inside
+`analyse`; review checks them.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-013
+
+[REQUIREMENT]
+UID: LLR-ANL-030
+STATUS: Active
+TITLE: GPS sample selection
+STATEMENT: >>>
+`GPSAnalyser.analyse` sorts the topic by `timestamp` and keeps the rows for which
+`flight_phases(topics).mask(ts, "in_air")` is true. When the phases are not known and a `fix_type` column
+exists, it also drops every row before the first row with `fix_type >= 3`; when no row has a 3D fix nothing is
+dropped.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-013
+
+[REQUIREMENT]
+UID: LLR-ANL-031
+STATUS: Active
+TITLE: GPS sample rate, sustain length and fix mask
+STATEMENT: >>>
+`GPSAnalyser.analyse` computes the rate of the kept rows with `sample_rate_hz(ts, 5.0)`, the sustain length
+`sustain_n = max(1, round(SUSTAIN_S * rate))` samples with `SUSTAIN_S` = 2.0 s, and `has_fix` as
+`fix_type >= 3` per row, or all true when there is no `fix_type` column.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-014
+
+[REQUIREMENT]
+UID: LLR-ANL-032
+STATUS: Active
+TITLE: gps.no_fix
+STATEMENT: >>>
+`GPSAnalyser._fix` returns no finding and penalty 0 when no kept sample has `fix_type < 3`. When every kept
+sample has `fix_type < 3` it returns one CRITICAL finding of kind `gps.no_fix`, confidence 0.9, window from the
+first to the last kept sample, and penalty 30.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-014
+
+[REQUIREMENT]
+UID: LLR-ANL-033
+STATUS: Active
+TITLE: gps.fix_lost
+STATEMENT: >>>
+When some but not all kept samples have `fix_type < 3`, `GPSAnalyser._fix` measures each run with
+`run_seconds` and, when the longest is `FIX_LOSS_MIN_S` (1.0 s) or more, returns one CRITICAL finding of kind
+`gps.fix_lost` with the worst fix label from `FIX_LABELS` in the title, the count of runs and the longest
+duration in the text, the window of the longest run, confidence `confidence(longest / 1.0 - 1, longest)` and
+penalty 30.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-014
+
+[REQUIREMENT]
+UID: LLR-ANL-034
+STATUS: Active
+TITLE: gps.fix_degraded
+STATEMENT: >>>
+When the longest run below 3D is shorter than 1.0 s, `GPSAnalyser._fix` returns one WARNING finding of kind
+`gps.fix_degraded`, the window of the longest run, confidence `confidence(number of runs / 5.0, longest)` and
+penalty 15.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-014
+
+[REQUIREMENT]
+UID: LLR-ANL-035
+STATUS: Active
+TITLE: gps.sat_drop
+STATEMENT: >>>
+When `satellites_used` exists, `GPSAnalyser.analyse` sets counts below 0 or above `SAT_MAX_VALID` (60) to NaN.
+`_satellites` ignores samples without a 3D fix, takes for each sample the minimum over that sample and the next
+`n - 1`, `n = max(2, round(SAT_DROP_WINDOW_S * rate))` with `SAT_DROP_WINDOW_S` = 5.0 s, and at the first sample
+where the count exceeds that minimum by `SAT_DROP_THRESH` (4) or more returns one WARNING finding of kind
+`gps.sat_drop`, window from that sample to the minimum, confidence `confidence(drop / 4 - 1)` and penalty 15.
+Later drops add no finding.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-014
+
+[REQUIREMENT]
+UID: LLR-ANL-036
+STATUS: Active
+TITLE: gps.hdop
+STATEMENT: >>>
+`GPSAnalyser.analyse` reads the column `hdop`, or `eph` when there is no `hdop`, sets values at or below 0, at
+or above `HDOP_UNKNOWN` (50.0) and samples without a 3D fix to NaN, and takes the rolling median over
+`sustain_n` samples (windows holding a NaN give NaN). `_hdop` takes the highest rolling median: above
+`HDOP_CRITICAL` (4.0) it returns a CRITICAL finding with penalty 30, above `HDOP_WARNING` (2.0) a WARNING with
+penalty 15, both of kind `gps.hdop`, with the window of the run above 2.0 that holds the peak and confidence
+`confidence(worst / threshold - 1, run duration)`. The same thresholds and the title text "HDOP" are used when
+the column is `eph`.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: Tests use the `hdop` column. The `eph` fallback is checked by review.
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-014
+
+[REQUIREMENT]
+UID: LLR-ANL-037
+STATUS: Active
+TITLE: gps.jamming
+STATEMENT: >>>
+`GPSAnalyser._jamming` takes the rolling median of `jamming_indicator` over `sustain_n` samples; a peak above
+`JAMMING_CRITICAL` (180) sets level critical and above `JAMMING_WARNING` (100) level warning. It takes the
+rolling minimum of `jamming_state` over `sustain_n` samples; a peak of `JAM_STATE_CRITICAL` (3) or more raises
+the level to critical and of `JAM_STATE_WARNING` (2) or more to at least warning. With a level set it returns
+one finding of kind `gps.jamming`: CRITICAL, confidence 0.85, penalty 30; or WARNING, confidence 0.6, penalty
+15. The window spans the samples where the indicator median is above 100, else those where the state minimum is
+2 or more.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-014
+
+[REQUIREMENT]
+UID: LLR-ANL-038
+STATUS: Active
+TITLE: gps.spoofing
+STATEMENT: >>>
+When `spoofing_state` exists, `GPSAnalyser._spoofing` takes its highest finite value over the kept samples with
+no sustain test: `SPOOF_MULTIPLE` (3) or more gives a CRITICAL finding, confidence 0.9, penalty 30;
+`SPOOF_INDICATED` (2) gives a WARNING, confidence 0.6, penalty 15; both of kind `gps.spoofing` with the window
+from the first to the last sample at 2 or more. Values 0 and 1 give no finding.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-014
+
+[REQUIREMENT]
+UID: LLR-ANL-039
+STATUS: Active
+TITLE: GPS health score and key metrics
+STATEMENT: >>>
+`GPSAnalyser.analyse` returns `health_score = max(0.0, 100.0 - sum of the penalties)` of the fix, satellite,
+HDOP, jamming and spoofing rules (at most one finding each). `key_metrics` holds `min_satellites`, the lowest
+valid satellite count among samples with a 3D fix, when one exists, and `max_hdop`, the highest rolling-median
+HDOP rounded to 3 places, when one exists.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-011
+- TYPE: Parent
+  VALUE: HLR-ANL-012
+
+[REQUIREMENT]
+UID: LLR-ANL-040
+STATUS: Active
+TITLE: GPS chart data
+STATEMENT: >>>
+`GPSAnalyser.analyse` gives every finding without chart data the dict `timestamps`, `satellites`, `hdop`,
+`fix_type`, `jamming`, built with `downsample` from the whole sorted topic (not only the kept rows, and with
+sentinel values left in); a series whose column is absent is an empty list.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-010
+
+[REQUIREMENT]
+UID: LLR-ANL-041
+STATUS: Active
+TITLE: Rolling statistic and span helpers
+STATEMENT: >>>
+`gps._rolling(x, n, how)` returns the trailing rolling median (`how == "median"`) or minimum over `n` samples,
+NaN wherever the window holds fewer than `n` non-NaN samples. `gps._span(mask, ts)` returns the timestamps of
+the first and last true element, or `(None, None)` when none is true.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-014
+
+[REQUIREMENT]
+UID: LLR-ANL-042
+STATUS: Active
+TITLE: GPS result when no rule could be evaluated
+STATEMENT: >>>
+`GPSAnalyser.analyse` returns a skipped result (not assessed) when at least 5 samples are kept but fewer than
+`sustain_n` of them (less than `SUSTAIN_S` = 2 s at the sample rate), with the reason "Less than 2 s of GPS
+samples <where>.", or when `_any_usable` finds no usable value: no finite `fix_type`, no `satellites_used` from
+0 to `SAT_MAX_VALID` (60), no `hdop` (or `eph`) above 0 and below `HDOP_UNKNOWN` (50.0), and no finite
+`jamming_indicator`, `jamming_state` or `spoofing_state`, with the reason "No usable fix, satellite, HDOP,
+jamming or spoofing values <where>.".
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+COMMENT: >>>
+Problem report PR-027, fixed: before, such a frame gave an unskipped 100 with no findings.
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-013
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Battery check (flightmd_core/analysers/battery.py)
+
+[REQUIREMENT]
+UID: LLR-ANL-043
+STATUS: Active
+TITLE: BatteryAnalyser declaration, row selection and skips
+STATEMENT: >>>
+`BatteryAnalyser` has `name` `"battery"`, `display_name` `"Battery Analysis"`, `required_topics`
+`["battery_status"]` and `weight` 15.0. `analyse` takes the voltage from the first of `voltage_v`,
+`voltage_filtered_v`, `voltage` and the current from the first of `current_a`, `current_filtered_a`, `current`,
+and returns `_skip("battery_status missing voltage, current or timestamp columns.")` when either or `timestamp`
+is absent. It drops rows where timestamp, voltage or current is NaN, sorts by time, drops rows with voltage not
+above 0, and returns `_skip("Fewer than 10 battery samples with both voltage and current.")` when fewer than 10
+rows remain. It does not use the flight phases.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-015
+
+[REQUIREMENT]
+UID: LLR-ANL-044
+STATUS: Active
+TITLE: Cell count
+STATEMENT: >>>
+`BatteryAnalyser._cells` returns `(int(max of cell_count), "log")` when the `cell_count` column has a value
+above 0; else `(int(value), name)` for the first of the parameters `BAT1_N_CELLS`, `BAT_N_CELLS` that is above
+0; else `(max(1, round(highest voltage / 4.2)), "estimated")` with `LIPO_FULL_V` = 4.2 V.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: Tests cover the logged count and the estimate. The parameter path is checked by review.
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-015
+
+[REQUIREMENT]
+UID: LLR-ANL-045
+STATUS: Active
+TITLE: Rated capacity
+STATEMENT: >>>
+`BatteryAnalyser._capacity` returns the highest value of the `capacity` column in mAh when it is above 100;
+else the first of the parameters `BAT1_CAPACITY`, `BAT_CAPACITY`, `BATT_CAPACITY` that is above 100; else
+`None`.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-015
+
+[REQUIREMENT]
+UID: LLR-ANL-046
+STATUS: Active
+TITLE: State of charge
+STATEMENT: >>>
+`BatteryAnalyser._remaining` reads the first of the columns `remaining`, `remaining_capacity`, sets negative
+values to NaN, divides by 100 when the highest value is above 1.5, and returns the series as a fraction, or
+`None` when the column is absent or has no finite value.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-015
+
+[REQUIREMENT]
+UID: LLR-ANL-047
+STATUS: Active
+TITLE: Charge drawn
+STATEMENT: >>>
+`BatteryAnalyser._integrate(current, ts_s)` returns the trapezoidal integral of the current in A over time in
+s, divided by 3.6, in mAh, and `0.0` for fewer than 2 samples. The current is not clipped, so a negative current
+lowers the total.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-016
+
+[REQUIREMENT]
+UID: LLR-ANL-048
+STATUS: Active
+TITLE: Internal resistance and sag
+STATEMENT: >>>
+`BatteryAnalyser._sag` steps through the log in windows of `IR_WINDOW_S` (10.0 s) from the first timestamp. In
+each window with at least `IR_MIN_SAMPLES` (10) samples and a current range of at least
+`max(IR_MIN_STEP_A, 0.2 * (95th - 5th percentile of the current))`, `IR_MIN_STEP_A` = 2.0 A, it fits
+`V = a + b * t - R * I` by least squares. It returns `(None, None)` when no window qualifies. Otherwise the pack
+resistance is `max(0, median of R)` in ohm and the sag per cell is
+`R * max(0, peak - resting) / n_cells` in V, where `peak` is the 99th percentile of the current and `resting`
+the lowest 10-sample rolling median of the current.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-016
+
+[REQUIREMENT]
+UID: LLR-ANL-049
+STATUS: Active
+TITLE: battery.sag
+STATEMENT: >>>
+`BatteryAnalyser._sag_finding` returns one finding of kind `battery.sag` when the sag per cell is above
+`SAG_CRITICAL_PER_CELL` (1.00 V; CRITICAL, penalty 30) or above `SAG_WARNING_PER_CELL` (0.50 V; WARNING, penalty
+15), with confidence `confidence(sag / threshold - 1, quality=0.8 when the cell count is estimated else 1.0)`,
+the time of the highest current sample as window start, and a text that says when the cell count was estimated
+from voltage.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-016
+
+[REQUIREMENT]
+UID: LLR-ANL-050
+STATUS: Active
+TITLE: battery.c_rate
+STATEMENT: >>>
+Only when a rated capacity is known, `BatteryAnalyser._c_rate` takes the rolling median of the current over the
+number of samples in 1 s (`round(1e6 / max(median sample interval in us, 1))`, at least 1), and divides its peak
+by the capacity in Ah. Above `CRATE_WARNING` (30.0) it returns one WARNING finding of kind `battery.c_rate`,
+confidence `confidence(c_rate / 30 - 1)`, window start at the peak, penalty 10. It always returns the C-rate.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-016
+
+[REQUIREMENT]
+UID: LLR-ANL-051
+STATUS: Active
+TITLE: battery.capacity_fade
+STATEMENT: >>>
+Only when both a state of charge and a rated capacity are known, `BatteryAnalyser._capacity_fade` returns no
+finding when: fewer than 10 state-of-charge samples are finite; or the state of charge is within
+`CIRCULAR_TOLERANCE` (0.03) of `1 - drawn / capacity` at every finite sample; or the fall in state of charge
+between the first and last finite sample is below `MIN_USED_FRACTION` (0.3); or
+`estimated * CAPACITY_FADE_FACTOR (1.15) >= capacity`, with `estimated = charge drawn between those samples /
+fall`. Otherwise it returns one WARNING finding of kind `battery.capacity_fade`, with no time window, confidence
+`confidence(fade percent / 30.0, quality=min(1, fall / 0.6))` and penalty 15.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-016
+
+[REQUIREMENT]
+UID: LLR-ANL-052
+STATUS: Active
+TITLE: battery.thermal
+STATEMENT: >>>
+When the column `temperature` (else `temperature_filtered`) exists and has a finite value above
+`TEMP_WARNING_C` (60.0 deg C), `BatteryAnalyser._temperature` returns one WARNING finding of kind
+`battery.thermal`, window from the first to the last sample above the threshold, confidence
+`confidence((peak - 60) / 20.0)` and penalty 15; otherwise no finding.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-016
+
+[REQUIREMENT]
+UID: LLR-ANL-053
+STATUS: Active
+TITLE: Battery health score, key metrics and chart data
+STATEMENT: >>>
+`BatteryAnalyser.analyse` returns `health_score = max(0.0, 100.0 - sum of the penalties)`. `key_metrics` always
+holds `consumed_mah` (1 place); `sag_per_cell_v` (4 places) and `internal_resistance_mohm_per_cell` (2 places)
+when a resistance was fitted, also when no finding fires; and `peak_c_rate` (2 places) when a capacity is known.
+Every finding without chart data gets `timestamps`, `voltage`, `current`, `remaining_pct` (from `downsample`)
+and `n_cells`.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-011
+- TYPE: Parent
+  VALUE: HLR-ANL-012
+- TYPE: Parent
+  VALUE: HLR-ANL-010
+
+[REQUIREMENT]
+UID: LLR-ANL-054
+STATUS: Active
+TITLE: Battery result when no rule could be evaluated
+STATEMENT: >>>
+`BatteryAnalyser.analyse` returns a skipped result (not assessed) with the reason "No current step, rated
+capacity or temperature in battery_status." when 10 or more rows have a voltage above 0 and a non-NaN current
+but no rule had data: `_sag` found no current step (for example a current that is 0.0 or -1.0 on every row),
+there is no rated capacity and no temperature column holds a finite value.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+COMMENT: >>>
+Problem report PR-028, fixed for the clean 100 only: before, such a frame gave an unskipped 100. The negative
+consumed charge from a negative current and the use of the whole log rather than the flight windows remain
+open under PR-028.
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-015
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Motor check (flightmd_core/analysers/motors.py)
+
+[REQUIREMENT]
+UID: LLR-ANL-055
+STATUS: Active
+TITLE: MotorAnalyser declaration and skips
+STATEMENT: >>>
+`MotorAnalyser` has `name` `"motors"`, `display_name` `"Motor / ESC Analysis"`, `required_topics`
+`["esc_status"]` and `weight` 5.0. `analyse` returns `_skip("esc_status has no timestamps.")` when there is no
+`timestamp` column and `_skip("No ESC RPM telemetry in this log.")` when `_motor_cols` finds no RPM column.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-017
+
+[REQUIREMENT]
+UID: LLR-ANL-056
+STATUS: Active
+TITLE: Real ESC columns
+STATEMENT: >>>
+`MotorAnalyser._motor_cols(df, field, esc_count)` returns `(motor index, column)` pairs sorted by index for
+columns named `esc[<i>].esc_<x>` where `<x>` contains `field` (`rpm`, `temperature` or `current`). When none
+match it falls back to the alphabetically sorted columns whose lower-case name contains `field` and `esc` or
+`motor`, numbered from 0. It drops indices at or above `esc_count` (the highest value of the `esc_count` column)
+when that is known and above 0, and drops columns that are all NaN or never non-zero.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: Tests cover the `esc[i].esc_*` names, empty slots and numeric order. The loose-name fallback is checked by review.
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-017
+
+[REQUIREMENT]
+UID: LLR-ANL-057
+STATUS: Active
+TITLE: Motor in-air mask
+STATEMENT: >>>
+`MotorAnalyser.analyse` takes `flight_phases(topics).mask(ts, "in_air")` as the in-air mask. When the phases are
+not known it also requires that more than half of the motors are above `SPINNING_RPM` (500 RPM) on that row,
+counting NaN as 0.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-017
+
+[REQUIREMENT]
+UID: LLR-ANL-058
+STATUS: Active
+TITLE: Hover samples
+STATEMENT: >>>
+`MotorAnalyser._hover_mask` marks a row as hover when it is in the air, every motor's RPM is finite and above
+500, and the mean RPM of the row is within `HOVER_BAND` (0.15) of the median of that mean over all such rows.
+The balance rules run only when more than `MIN_HOVER_SAMPLES` (50) rows are hover and there are 2 or more
+motors.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-017
+- TYPE: Parent
+  VALUE: HLR-ANL-018
+
+[REQUIREMENT]
+UID: LLR-ANL-059
+STATUS: Active
+TITLE: motors.rpm_imbalance
+STATEMENT: >>>
+`MotorAnalyser._balance` takes each motor's median hover RPM and the balance index `std / mean` of those
+medians (population standard deviation). Above `BALANCE_CRITICAL` (0.15) it adds one CRITICAL finding with
+penalty 30, above `BALANCE_WARNING` (0.08) one WARNING with penalty 15, of kind `motors.rpm_imbalance`, naming
+the motor (index + 1) with the largest absolute deviation, with confidence
+`confidence(index / threshold - 1, hover rows / 50.0)`, the window of the longest hover run and chart data
+`per_motor` (motor, hover_rpm, deviation_pct, and hover_current_a when known).
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-018
+
+[REQUIREMENT]
+UID: LLR-ANL-060
+STATUS: Active
+TITLE: motors.current_imbalance
+STATEMENT: >>>
+When 2 or more current columns exist and each has a finite hover sample, `MotorAnalyser._balance` takes each
+motor's median hover current; when the mean is above 0 and the highest motor exceeds the mean by more than
+`CURRENT_IMBALANCE_PCT` (0.20) it adds one WARNING finding of kind `motors.current_imbalance` for that motor,
+penalty 15, confidence `confidence(excess / 0.20 - 1, hover rows / 50.0)`, the same window and `per_motor`
+chart data.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-018
+
+[REQUIREMENT]
+UID: LLR-ANL-061
+STATUS: Active
+TITLE: motors.esc_thermal
+STATEMENT: >>>
+For each ESC temperature column `MotorAnalyser.analyse` takes the highest finite value over the whole log (no
+flight gating); above `TEMP_WARNING_C` (80.0 deg C) it adds one WARNING finding of kind `motors.esc_thermal`
+naming motor index + 1, window from the first to the last sample above the threshold, confidence
+`confidence((peak - 80) / 20.0)` and penalty 15.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-018
+
+[REQUIREMENT]
+UID: LLR-ANL-062
+STATUS: Active
+TITLE: motors.dropout
+STATEMENT: >>>
+`MotorAnalyser._dropouts` marks, for each motor, the in-air rows where its RPM is below `STOPPED_RPM` (100)
+and the median RPM of the other motors (NaN counted as 0; infinity when there is one motor) is above
+`OTHERS_FLYING_RPM` (1000). For the first such run lasting more than `RPM_DROPOUT_MS` (100 ms, by
+`run_seconds`) it adds one CRITICAL finding of kind `motors.dropout`, penalty 30, confidence
+`confidence(duration_ms / 100 - 1, duration in s)`, and looks no further for that motor. A NaN sample is never
+below the threshold.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-018
+- TYPE: Parent
+  VALUE: HLR-ANL-017
+
+[REQUIREMENT]
+UID: LLR-ANL-063
+STATUS: Active
+TITLE: Motor health score, key metrics and chart data
+STATEMENT: >>>
+`MotorAnalyser.analyse` returns `health_score = max(0.0, 100.0 - sum of the penalties)`. When the balance rules
+ran, `key_metrics` holds `motor_balance_index` (4 places) and `motor_<index + 1>_rpm_dev_pct` (2 places) per
+motor; otherwise it is empty. Every finding's chart data gets `timestamps` and `rpm_per_motor` (column name to
+series, from `downsample`) merged under its own entries.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-011
+- TYPE: Parent
+  VALUE: HLR-ANL-012
+- TYPE: Parent
+  VALUE: HLR-ANL-010
+
+[REQUIREMENT]
+UID: LLR-ANL-064
+STATUS: Active
+TITLE: Motor result when no in-air sample exists
+STATEMENT: >>>
+`MotorAnalyser.analyse` returns a skipped result (not assessed) with the reason "No in-air ESC RPM samples and no
+ESC temperature." when RPM columns exist but the in-air mask is all false (no ESC row inside an in-air window,
+or with unknown phases no row with most motors above 500 RPM) and no ESC temperature column holds a finite
+value. With in-air rows the dropout rule runs, so the result is assessed even when 50 or fewer rows are hover
+and the balance rules do not run.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+COMMENT: >>>
+Problem report PR-029, fixed for the case with no in-air row: before, it gave an unskipped 100.
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-017
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Board power check (flightmd_core/analysers/power.py)
+
+[REQUIREMENT]
+UID: LLR-ANL-065
+STATUS: Active
+TITLE: PowerAnalyser declaration, armed gating and skips
+STATEMENT: >>>
+`PowerAnalyser` has `name` `"power"`, `display_name` `"Board Power"`, `required_topics` `["system_power"]`,
+`required_columns` `{"system_power": ["timestamp"]}` and `weight` 0.0. `analyse` drops rows with no timestamp,
+sorts by time, keeps the rows inside the armed windows of `flight_phases(topics)` and returns
+`_skip("No board power samples <phase description>.")` when fewer than 2 remain. After the rules it returns
+`_skip("system_power has no voltage or fault fields.")` when no voltage metric was computed, neither
+`periph_5v_oc` nor `hipower_5v_oc` exists and there is no `power_flags` column.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: Tests cover the missing topic and the armed gating. The two skips inside `analyse` are checked by review.
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-019
+
+[REQUIREMENT]
+UID: LLR-ANL-066
+STATUS: Active
+TITLE: USB-powered samples
+STATEMENT: >>>
+`PowerAnalyser.analyse` marks a sample as USB powered when `usb_connected` is above 0 or bit `USB_CONNECTED`
+(4) of `power_flags` is set (NaN flags read as 0), and leaves such samples out of the voltage rule.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-019
+
+[REQUIREMENT]
+UID: LLR-ANL-067
+STATUS: Active
+TITLE: power.vcc_out_of_range
+STATEMENT: >>>
+When `voltage5v_v` exists and 2 or more armed samples are finite, above 0 and not USB powered,
+`PowerAnalyser.analyse` sets `min_vcc_v` and `vcc_range_v` (3 places) from them and, when any is below
+`VCC_MIN` (4.3 V) or above `VCC_MAX` (5.8 V), adds one CRITICAL finding of kind `power.vcc_out_of_range`,
+penalty 30, titled Low when the minimum is below 4.3 V and High otherwise, with confidence
+`confidence((4.3 - min) / 0.3)` or `confidence((max - 5.8) / 0.3)`, the window from the first to the last bad
+run and chart data `timestamps`, `vcc`, `min`, `max`.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-019
+
+[REQUIREMENT]
+UID: LLR-ANL-068
+STATUS: Active
+TITLE: power.overcurrent
+STATEMENT: >>>
+`PowerAnalyser.analyse` marks an armed sample as over-current when `periph_5v_oc` or `hipower_5v_oc` is above 0
+or `power_flags` has bit `PERIPH_OVERCURRENT` (8) or `PERIPH_HIPOWER_OVERCURRENT` (16) set. When any sample is
+marked it adds one WARNING finding of kind `power.overcurrent`, penalty 15, confidence
+`confidence(number of runs / 3.0)`, window from the first to the last run.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: >>>
+No test names this requirement; the behaviour is exercised only indirectly by other tests. A review reads the
+overcurrent rule in `PowerAnalyser.analyse`.
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-019
+
+[REQUIREMENT]
+UID: LLR-ANL-069
+STATUS: Active
+TITLE: Board power health score and result
+STATEMENT: >>>
+`PowerAnalyser.analyse` returns `health_score = max(0.0, 100.0 - sum of the penalties)` and `key_metrics` with
+`min_vcc_v` and `vcc_range_v` when the voltage rule ran. When a `power_flags` or over-current column exists but
+no voltage sample qualified (all NaN, 0 or USB powered) it returns an unskipped result with score 100.0 and
+empty `key_metrics`.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: A test covers the clean result with `min_vcc_v`. The result without a usable voltage is checked by review.
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-011
+- TYPE: Parent
+  VALUE: HLR-ANL-012
+- TYPE: Parent
+  VALUE: HLR-ANL-019
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Parameter check (flightmd_core/analysers/parameters.py and data files)
+
+[REQUIREMENT]
+UID: LLR-ANL-070
+STATUS: Active
+TITLE: f32
+STATEMENT: >>>
+`f32(v)` returns `float(v)` unchanged when it is a whole number, else the float whose decimal text is the
+shortest representation of `numpy.float32(v)`, so that 0.05000000074505806 becomes 0.05.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-023
+
+[REQUIREMENT]
+UID: LLR-ANL-071
+STATUS: Active
+TITLE: Recommended ranges file
+STATEMENT: >>>
+`load_safe_ranges()` reads `data/param_safe_ranges.json` once per process and returns its top-level keys that
+do not start with `_`: `px4` and `ardupilot`, each a map from parameter name to `min`, `max` (number or null),
+optional `unit`, and `why`. The shipped file holds 21 PX4 entries and no ArduPilot entry.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: Tests use the PX4 entries and their `why` text. The entry count is checked by review of the file.
+ALLOCATION: analysers, data
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-025
+
+[REQUIREMENT]
+UID: LLR-ANL-072
+STATUS: Active
+TITLE: Firmware tables
+STATEMENT: >>>
+`load_tables()` reads every `*.json` file of `data/param_tables/` once per process, in name order, and adds to
+each a `series` tuple, the first two integers of its `version`. Each file holds `autopilot` (`px4` or
+`ardupilot`), `vehicle` (null, `copter`, `plane` or `rover`), `version`, `source`, `generated` and `params`, a
+map from parameter name to any of `default`, `min`, `max`, `unit`, `type`, `reboot_required`, `read_only`. The
+shipped files are PX4 1.13.3, 1.14.0 and 1.15.0 and ArduPilot Copter, Plane and Rover 4.6.3 and 4.7.1; the
+ArduPilot tables hold no `default`.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: Tests load the tables and use `series`, `vehicle`, `default`, `min`, `max`. The list of versions is checked by review of the file headers.
+ALLOCATION: analysers, data
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-025
+
+[REQUIREMENT]
+UID: LLR-ANL-073
+STATUS: Active
+TITLE: Firmware series from the metadata
+STATEMENT: >>>
+`firmware_series(metadata, autopilot)` returns `(major, minor)` from the first `<digits>.<digits>` found in
+`metadata.px4_version` then `metadata.firmware_version` for `"px4"`, and in `metadata.firmware_version` only for
+any other autopilot, taking the first field whose major is above 0. It returns `None` when `metadata` is `None`
+or no field matches.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-020
+
+[REQUIREMENT]
+UID: LLR-ANL-074
+STATUS: Active
+TITLE: ArduPilot vehicle
+STATEMENT: >>>
+`ap_vehicle(metadata, frame)` returns `metadata.vehicle_type` in lower case when it is `copter`, `plane` or
+`rover`; else the mapping of the frame: multirotor to `copter`, fixed_wing and vtol to `plane`, rover to
+`rover`; else `None`.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-020
+
+[REQUIREMENT]
+UID: LLR-ANL-075
+STATUS: Active
+TITLE: pick_table: nearest table
+STATEMENT: >>>
+`pick_table(autopilot, vehicle, series)` takes the tables of the autopilot (for ArduPilot with a known vehicle,
+of that vehicle only) and returns `({}, "")` when there are none. With a series, and for ArduPilot a known
+vehicle, it returns the `params` of the table with the lowest
+`abs(major difference) * 100 + abs(minor difference)`, the higher minor winning a tie, and the text
+`"<name> <major>.<minor> metadata"` with name `PX4` or `Ardu<Vehicle>`. There is no limit on the distance: any
+older or newer version gets the nearest table.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-020
+
+[REQUIREMENT]
+UID: LLR-ANL-076
+STATUS: Active
+TITLE: pick_table: merged table
+STATEMENT: >>>
+With no series, or for ArduPilot with no known vehicle, `pick_table` merges the candidate tables in series
+order: for each parameter the fields other than `min` and `max` are taken from the newest table that states
+them, `min` is the lowest and `max` the highest among the tables that state one (a table that states no bound
+does not remove the bound), and the text is `"<name> metadata, widest range across releases"` with name `PX4`,
+`Ardu<Vehicle>` or `ArduPilot`.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-020
+
+[REQUIREMENT]
+UID: LLR-ANL-077
+STATUS: Active
+TITLE: ParameterAnalyser declaration and set-up
+STATEMENT: >>>
+`ParameterAnalyser` has `name` `"parameters"`, `display_name` `"Parameter Analysis"`, no required topic,
+`weight` 5.0 and `is_applicable` always `True`. `analyse` returns `_skip("No parameters found in log.")` for an
+empty parameter set. It takes the vehicle from `vehicle_from_params`, uses autopilot `"px4"` when that is
+`"unknown"`, keeps the parameters that are real numbers and finite, converted with `f32`, and takes the table
+from `pick_table(autopilot, ap_vehicle(...), firmware_series(...))` and the recommended ranges of that
+autopilot.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-020
+- TYPE: Parent
+  VALUE: HLR-ANL-001
+
+[REQUIREMENT]
+UID: LLR-ANL-078
+STATUS: Active
+TITLE: Parameter loop, health score and key metrics
+STATEMENT: >>>
+`ParameterAnalyser.analyse` runs `_range_check` on every kept parameter except those the table marks
+`read_only` and, on a PX4 fixed_wing or rover, those whose name starts with `MC_` or `MPC_`; then evaluates
+each entry of `DANGEROUS_COMBOS` of the same autopilot, leaving out on a PX4 fixed_wing or rover the entries
+that name an `MC_` or `MPC_` parameter. It subtracts 30.0 per CRITICAL and 15.0 per WARNING finding from 100.0
+and returns `health_score = max(0.0, ...)` and `key_metrics` `param_count` (all parameters in the log) and
+`anomaly_count` (number of findings), both as floats.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: Tests cover the fixed-wing exclusion, the score and the findings. The `read_only` exclusion and the key metrics are checked by review.
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-021
+- TYPE: Parent
+  VALUE: HLR-ANL-011
+- TYPE: Parent
+  VALUE: HLR-ANL-012
+
+[REQUIREMENT]
+UID: LLR-ANL-079
+STATUS: Active
+TITLE: Range check: which limit is reported
+STATEMENT: >>>
+`ParameterAnalyser._range_check` reports the first limit broken, in this order: below the table `min`, above
+the table `max` (both "firmware"), below the recommended `min`, above the recommended `max` (both
+"recommended"). A value equal to a limit is in range. It returns `None` when no limit is broken or the
+parameter is in neither the table nor the recommended ranges.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-021
+
+[REQUIREMENT]
+UID: LLR-ANL-080
+STATUS: Active
+TITLE: Range check: severity
+STATEMENT: >>>
+`_range_check` takes `lo` as the higher of the firmware and recommended minimum and `hi` as the lower of the
+two maxima. The finding is CRITICAL when `abs(value - broken limit) / scale > 0.5`, with `scale = hi - lo` when
+both exist and `hi > lo`, else `max(abs(broken limit), 1.0)`; or when the value is negative and `lo` (0 when
+there is none) is 0 or more. Otherwise it is WARNING.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-021
+
+[REQUIREMENT]
+UID: LLR-ANL-081
+STATUS: Active
+TITLE: Range check: suggested value
+STATEMENT: >>>
+`_range_check` suggests the table `default` when one exists and it is not below `lo` and not above `hi`;
+otherwise `lo` when the value is below a limit and `hi` when it is above one. The suggestion is passed through
+`f32`. It is therefore always inside the range of the table that was picked (nearest or merged) and the
+recommended range; it is not checked against the range of the log's own firmware when that differs from the
+table, and for ArduPilot (no defaults) it is always the limit itself.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-023
+
+[REQUIREMENT]
+UID: LLR-ANL-082
+STATUS: Active
+TITLE: Range check: finding content
+STATEMENT: >>>
+`_range_check` returns a finding of kind `params.below_range` or `params.above_range` with title
+`"Parameter Below Safe Range: <name>"` or `"Parameter Above Safe Range: <name>"`, a text giving the value, the
+limit, its unit (omitted for `norm` and `%/100`), the table description in brackets when the limit is the
+firmware's and the `why` text when it is a recommended one, a recommendation
+`"Set <name> to <suggested> (usable range <lo> to <hi>)."` with `" Takes effect after a reboot."` added when
+the table marks `reboot_required`, confidence 0.9 for a firmware limit and 0.8 for a recommended one, and one
+`ParamRecommendation` with the parameter name, current value, suggested value, unit, direction `increase` when
+below and `decrease` when above, and the reason.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-021
+- TYPE: Parent
+  VALUE: HLR-ANL-023
+
+[REQUIREMENT]
+UID: LLR-ANL-083
+STATUS: Active
+TITLE: Combination table
+STATEMENT: >>>
+`DANGEROUS_COMBOS` holds eight entries. PX4: `MC_ROLLRATE_P > 0.3` and `MC_ROLLRATE_D < 0.001` (WARNING,
+`params.rate_p_high_d_low`, fix `MC_ROLLRATE_D` increase); `MC_PITCHRATE_P > 0.3` and `MC_PITCHRATE_D < 0.001`
+(WARNING, same kind, fix `MC_PITCHRATE_D` increase); `MPC_XY_P > 1.5` and `MPC_XY_VEL_P_ACC < 1.5` (WARNING,
+`params.pos_loop_risk`, fix `MPC_XY_P` decrease); `BAT_LOW_THR < BAT_CRIT_THR` (CRITICAL,
+`params.bat_thr_inverted`, fix `BAT_LOW_THR` increase); `COM_RC_LOSS_T < 0.5` (WARNING, `params.rc_loss_short`,
+fix `COM_RC_LOSS_T` increase). ArduPilot, no fix: `BATT_LOW_VOLT > 0`, `BATT_CRT_VOLT > 0` and
+`BATT_LOW_VOLT <= BATT_CRT_VOLT` (CRITICAL, `params.bat_thr_inverted`); the same with `BATT_LOW_MAH` and
+`BATT_CRT_MAH` (CRITICAL, `params.bat_thr_inverted`); `ARMING_CHECK == 0` (WARNING,
+`params.arming_checks_off`).
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-022
+
+[REQUIREMENT]
+UID: LLR-ANL-084
+STATUS: Active
+TITLE: Combination test
+STATEMENT: >>>
+`ParameterAnalyser._check_combo(conditions, params)` returns `True` only when every condition
+`(name, op, rhs)` holds, with `op` one of `>`, `<`, `>=`, `<=`, `==` and `rhs` a number or the name of another
+parameter; it returns `False` when a named parameter is not in `params`.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-022
+
+[REQUIREMENT]
+UID: LLR-ANL-085
+STATUS: Active
+TITLE: Combination finding
+STATEMENT: >>>
+For each combination that holds, `ParameterAnalyser.analyse` adds a finding with the entry's severity, kind and
+title, a text made of the entry's reason followed by `<name>=<value>` for each parameter involved, the reason as
+recommendation, confidence 0.95, `params` set to the involved names in order of first mention, and
+`param_changes` from `_combo_fix`.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-022
+
+[REQUIREMENT]
+UID: LLR-ANL-086
+STATUS: Active
+TITLE: Combination fix
+STATEMENT: >>>
+`ParameterAnalyser._combo_fix` returns no change when the entry has no fix, the fix parameter has no current
+value, or the picked table has no `default` for it. Otherwise the target is the table default, except for
+`BAT_LOW_THR` where it is `max(default, BAT_CRIT_THR + 0.05)`; the target is passed through `f32` and returned
+as one `ParamRecommendation` (name, current value, target, direction, the entry's title as reason, no unit)
+unless it does not move the value in the entry's direction, in which case no change is returned. The target is
+not compared with the table `min` or `max` or the recommended range.
+<<<
+VERIFICATION: Test, Inspection
+VERIFICATION_NOTE: >>>
+Tests cover the `BAT_LOW_THR` and `MC_ROLLRATE_D` fixes. That the target is not bounded is checked by review
+and reported as a defect (see HLR-ANL-024).
+<<<
+ALLOCATION: analysers
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-023
+
+[REQUIREMENT]
+UID: LLR-ANL-087
+STATUS: Active
+TITLE: Parameter result when no parameter is known to any table
+STATEMENT: >>>
+`ParameterAnalyser.analyse` returns a skipped result (not assessed) with the reason "None of the <n> parameters
+is in the <AUTOPILOT> tables (<autopilot> autopilot)." when the parameter set is not empty but none of its
+finite numeric names is in the picked table, the recommended ranges of that autopilot or a combination rule of
+that autopilot (for example a set that is neither PX4 nor ArduPilot, which is checked against the PX4 tables).
+The table description appears only in the text of findings that report a firmware limit.
+<<<
+VERIFICATION: Test
+ALLOCATION: analysers
+COMMENT: >>>
+Problem report PR-030, fixed: before, such a set scored an unskipped 100. Whether the Betaflight and DJI parsers
+emit parameters is still not established.
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-020
+
+[[/SECTION]]
+
+[[SECTION]]
+TITLE: Parameter table generator (scripts/gen_param_tables.py)
+
+[REQUIREMENT]
+UID: LLR-ANL-088
+STATUS: Active
+TITLE: Sources and fetch
+STATEMENT: >>>
+`PX4_SOURCES` maps the releases 1.13.3, 1.14.0 and 1.15.0 to one or two addresses each (the `fmu-v6x` default
+board file or its `parameters.xml`). `AP_INDEX` and `AP_PDEF` address the ArduPilot versioned parameter pages
+for `AP_VEHICLES` Copter, Plane and Rover, and `AP_SERIES` is 2. `fetch(url)` performs one HTTP GET with the
+`User-Agent` `FlightMD gen_param_tables` and a 120 s timeout and returns the body bytes.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: No test runs the generator (it needs the network). Review checks the constants and `fetch`.
+ALLOCATION: tools
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-026
+
+[REQUIREMENT]
+UID: LLR-ANL-089
+STATUS: Active
+TITLE: num
+STATEMENT: >>>
+`num(s)` returns `None` for `None`, for text that is not a number and for NaN or infinity; an `int` when the
+value is whole and the text has no `.` and no exponent; else a `float`.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: No test calls `num`. Review checks the four branches.
+ALLOCATION: tools
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-026
+
+[REQUIREMENT]
+UID: LLR-ANL-090
+STATUS: Active
+TITLE: PX4 metadata
+STATEMENT: >>>
+`px4_xml(url)` returns the fetched bytes, or for an address ending `.px4` the zlib-decompressed, base64-decoded
+`parameter_xml` field of the fetched JSON. `parse_px4(xml)` returns, for each `parameter` element, its name
+mapped to `default`, `min`, `max` (through `num`), `unit`, `type` (`BOOL` when the `boolean` attribute is
+`true`) and `reboot_required`, leaving out fields that are `None` or `False`.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: No test calls these. Review checks them against a PX4 `parameters.xml` and the shipped PX4 tables.
+ALLOCATION: tools
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-026
+
+[REQUIREMENT]
+UID: LLR-ANL-091
+STATUS: Active
+TITLE: ArduPilot metadata
+STATEMENT: >>>
+`parse_pdef(xml)` returns, for each `param` element, its name after the last `:` mapped to `min` and `max` when
+the `Range` field holds exactly two numbers, `unit` from `Units`, `type` `bitmask` when a `Bitmask` field exists
+else `enum` when it has `values`, `reboot_required` and `read_only` when those fields are `true`. When a name
+occurs twice the entries are merged, the later fields winning, and the range is the lower `min` and higher
+`max` of the two, or the earlier range when the later has none. No `default` is written.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: No test calls `parse_pdef`. Review checks it against an `apm.pdef.xml` and the shipped ArduPilot tables.
+ALLOCATION: tools
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-026
+
+[REQUIREMENT]
+UID: LLR-ANL-092
+STATUS: Active
+TITLE: ArduPilot release tags
+STATEMENT: >>>
+`ap_tags(vehicle)` fetches the vehicle's index page, finds every link `stable-<a>.<b>.<c>/`, keeps the highest
+patch release of each `<a>.<b>` series and returns the tags of the `AP_SERIES` (2) highest series, oldest
+first.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: No test calls `ap_tags`. Review checks the pattern, the per-series maximum and the slice.
+ALLOCATION: tools
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-026
+
+[REQUIREMENT]
+UID: LLR-ANL-093
+STATUS: Active
+TITLE: Table file writer
+STATEMENT: >>>
+`write(path, header, params)` writes UTF-8 JSON with LF line ends: the header fields indented by 2, then
+`"params"` with one parameter per line in name order. It writes to `<path>.tmp` and then replaces `path`, so an
+existing table is replaced whole or left as it was.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: No test calls `write`. Review checks it and that the shipped tables have this layout.
+ALLOCATION: tools, data
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-026
+- TYPE: Parent
+  VALUE: HLR-ANL-025
+
+[REQUIREMENT]
+UID: LLR-ANL-094
+STATUS: Active
+TITLE: Generator main
+STATEMENT: >>>
+`main()` writes `px4_<major>.<minor>.json` for each PX4 release from the first of its addresses that fetches and
+parses, with header `autopilot` `px4`, `vehicle` null, `version`, `source` (the address used) and `generated`
+(today's date); and `ardupilot_<vehicle>_<major>.<minor>.json` for each tag of each vehicle, with header
+`autopilot` `ardupilot`, `vehicle` in lower case, `version`, `source` and `generated`. A source that fails is
+printed to standard error and skipped; `main` then prints the list of failures and returns 1, else 0. Tables
+already on disk for a failed source are left unchanged.
+<<<
+VERIFICATION: Inspection
+VERIFICATION_NOTE: No test runs `main`. Review checks the loop, the headers and the return value.
+ALLOCATION: tools, data
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-ANL-026
+- TYPE: Parent
+  VALUE: HLR-ANL-025
+
+[[/SECTION]]

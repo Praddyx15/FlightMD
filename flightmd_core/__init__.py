@@ -12,6 +12,8 @@ or from a shell:
     flightmd compare before.json after.json
 
 (python -m flightmd_core works the same without the console script)
+
+@relation(LLR-INT-070, scope=file)
 """
 
 from flightmd_core.orchestrator import run_analysis

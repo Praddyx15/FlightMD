@@ -4,6 +4,7 @@ Tests for BatteryAnalyser — voltage sag, capacity fade, temperature, C-rate.
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from flightmd_core.analysers.battery import BatteryAnalyser
 from flightmd_core.models.findings import Severity, Category
@@ -59,6 +60,7 @@ class TestBatteryAnalyser:
         assert not result.skipped
         assert len(result.findings) == 0
 
+    # covers: HLR-ANL-016, LLR-ANL-048
     def test_sag_per_cell_key_metric_populated_below_threshold(self, healthy_battery):
         """sag_per_cell_v must be there even when no finding fires; trends
         chart it to catch a pack degrading before it crosses a threshold."""
@@ -66,6 +68,7 @@ class TestBatteryAnalyser:
         assert len(result.findings) == 0
         assert "sag_per_cell_v" in result.key_metrics
 
+    # covers: HLR-ANL-016, LLR-ANL-048
     def test_normal_discharge_is_not_sag(self):
         """A healthy pack going from 16.8 V to 12.8 V over a flight used to be
         reported as ~1 V/cell sag. Only the voltage response to current
@@ -75,11 +78,13 @@ class TestBatteryAnalyser:
         assert result.key_metrics["internal_resistance_mohm_per_cell"] < 6
         assert result.key_metrics["sag_per_cell_v"] < 0.2
 
+    # covers: HLR-ANL-016, LLR-ANL-048
     def test_high_internal_resistance_is_found_on_discharge(self):
         result = run(make_discharge_df(r_pack=0.12))
         sag = [f for f in result.findings if f.kind == "battery.sag"]
         assert len(sag) == 1
 
+    # covers: HLR-ANL-016, LLR-ANL-049
     def test_high_sag_warning(self):
         """2.4 V step on 4S at a 23 A load step = 0.6 V/cell."""
         result = run(make_battery_df(idle_v=16.8, loaded_v=14.4))
@@ -87,24 +92,29 @@ class TestBatteryAnalyser:
         assert len(sag) == 1
         assert sag[0].severity == Severity.WARNING
 
+    # covers: HLR-ANL-016, LLR-ANL-049
     def test_extreme_sag_critical(self):
         """4.8 V step on 4S = 1.2 V/cell."""
         result = run(make_battery_df(idle_v=16.8, loaded_v=12.0))
         assert any(f.severity == Severity.CRITICAL for f in result.findings)
 
+    # covers: HLR-ANL-016, LLR-ANL-052
     def test_temperature_warning(self):
         result = run(make_battery_df(max_temp=65.0))
         assert any("thermal" in f.title.lower() for f in result.findings)
 
+    # covers: HLR-ANL-016, LLR-ANL-052
     def test_hot_day_temperature_is_not_a_warning(self):
         """45-55 °C is a normal pack temperature in summer."""
         result = run(make_battery_df(max_temp=52.0))
         assert not any("thermal" in f.title.lower() for f in result.findings)
 
+    # covers: HLR-ANL-016, LLR-ANL-052
     def test_normal_temperature_no_thermal_finding(self):
         result = run(make_battery_df(max_temp=32.0))
         assert not any("thermal" in f.title.lower() for f in result.findings)
 
+    # covers: HLR-ANL-015, LLR-ANL-045
     def test_c_rate_uses_rated_capacity(self):
         """A short hop on a big pack: 40 A on 10 Ah is 4C. The old code
         divided by the mAh used in the flight and called it 100C."""
@@ -119,6 +129,7 @@ class TestBatteryAnalyser:
         assert not any(f.kind == "battery.c_rate" for f in result.findings)
         assert result.key_metrics["peak_c_rate"] == 4.0
 
+    # covers: HLR-ANL-015, HLR-ANL-016, LLR-ANL-045, LLR-ANL-050
     def test_c_rate_warning_against_capacity_param(self):
         t = np.linspace(0, 120, 1200)
         df = pd.DataFrame({
@@ -129,11 +140,13 @@ class TestBatteryAnalyser:
         result = run(df, {"BAT1_CAPACITY": 1300.0})
         assert any(f.kind == "battery.c_rate" for f in result.findings)
 
+    # covers: HLR-ANL-016, LLR-ANL-050
     def test_no_c_rate_without_capacity(self):
         result = run(make_battery_df(peak_current=60.0))
         assert not any(f.kind == "battery.c_rate" for f in result.findings)
         assert "peak_c_rate" not in result.key_metrics
 
+    # covers: HLR-ANL-015, LLR-ANL-043
     def test_voltage_and_current_stay_row_aligned(self):
         """Gaps in one column must drop the whole row, not shift the other
         column against it (tlog voltage and current arrive separately)."""
@@ -147,9 +160,11 @@ class TestBatteryAnalyser:
         chart = result2.findings[0].chart_data
         assert chart["timestamps"][-1] > 290_000
 
+    # covers: HLR-ANL-010, HLR-ANL-011, HLR-ANL-012, LLR-ANL-053
     def test_health_score_penalised(self):
         assert run(make_battery_df(idle_v=16.8, loaded_v=12.0)).health_score < 100.0
 
+    # covers: HLR-ANL-010, HLR-ANL-011, HLR-ANL-012, LLR-ANL-053
     def test_chart_data_present_on_findings(self):
         result = run(make_battery_df(idle_v=16.8, loaded_v=13.0))
         assert result.findings
@@ -157,6 +172,7 @@ class TestBatteryAnalyser:
             assert "voltage" in f.chart_data
             assert "current" in f.chart_data
 
+    # covers: HLR-ANL-015, LLR-ANL-043
     def test_missing_topic_skipped(self):
         assert not BatteryAnalyser().is_applicable(set())
 
@@ -165,6 +181,7 @@ class TestBatteryAnalyser:
         for f in result.findings:
             assert f.category == Category.BATTERY
 
+    # covers: HLR-ANL-015, LLR-ANL-044
     def test_cell_count_from_log_beats_voltage_guess(self):
         """6S Li-ion peaks at 25.2 V; 25.2/4.2 = 6 is right, but at 22.2 V
         (storage) the guess gives 5. A logged cell_count wins."""
@@ -177,6 +194,7 @@ class TestBatteryAnalyser:
         assert sag[0].chart_data["n_cells"] == 6
         assert "6S" in sag[0].technical_summary
 
+    # covers: HLR-ANL-015, LLR-ANL-043
     def test_missing_voltage_column_skipped(self):
         df = pd.DataFrame({
             "timestamp": np.arange(100) * 1000,
@@ -184,6 +202,7 @@ class TestBatteryAnalyser:
         })
         assert run(df).skipped
 
+    # covers: HLR-ANL-015, HLR-ANL-016, LLR-ANL-046, LLR-ANL-047, LLR-ANL-051
     def test_capacity_fade_detected(self):
         """1000 mAh drawn while remaining fell 90% -> ~1111 mAh pack, rated 2000."""
         df = make_battery_df(n=1000, peak_current=12.0)
@@ -195,6 +214,7 @@ class TestBatteryAnalyser:
         assert len(fade) == 1
         assert fade[0].severity == Severity.WARNING
 
+    # covers: HLR-ANL-016, LLR-ANL-051
     def test_capacity_fade_not_computed_from_its_own_output(self):
         """When remaining is just 1 - drawn/capacity (PX4 with capacity set,
         ArduPilot), it can't reveal fade."""
@@ -206,3 +226,22 @@ class TestBatteryAnalyser:
         df["remaining"] = 1.0 - drawn / 2000.0
         result = run(df)
         assert not any(f.kind == "battery.capacity_fade" for f in result.findings)
+
+
+# covers: HLR-ANL-015, LLR-ANL-054
+@pytest.mark.parametrize("flat", [0.0, -1.0])
+def test_flat_current_without_capacity_or_temperature_is_not_assessed(flat):
+    """PR-028: a constant (or "not measured") current with nothing else used to score 100."""
+    t = np.linspace(0, 120, 600)
+    df = pd.DataFrame({"timestamp": (t * 1e6).astype(int), "voltage_v": 16.4 - t / 1200,
+                       "current_a": np.full(len(t), flat)})
+    result = run(df)
+    assert result.skipped and not result.assessed
+
+
+# covers: LLR-ANL-054
+def test_flat_current_with_temperature_is_still_assessed():
+    t = np.linspace(0, 120, 600)
+    df = pd.DataFrame({"timestamp": (t * 1e6).astype(int), "voltage_v": 16.4 - t / 1200,
+                       "current_a": np.zeros(len(t)), "temperature": np.full(len(t), 30.0)})
+    assert not run(df).skipped

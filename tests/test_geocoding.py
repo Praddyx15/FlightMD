@@ -10,16 +10,19 @@ from flightmd_core.services import geocoding
 
 
 class TestReverseGeocode:
+    # covers: HLR-RPT-025, HLR-RPT-026, LLR-RPT-050
     def test_missing_coordinates_returns_none(self):
         assert geocoding.reverse_geocode(0.0, 0.0) is None
         assert geocoding.reverse_geocode(None, None) is None
 
+    # covers: HLR-RPT-025, HLR-RPT-026, LLR-RPT-050
     def test_network_failure_returns_none_not_raise(self, monkeypatch):
         def raise_error(*args, **kwargs):
             raise urllib.error.URLError("no network")
         monkeypatch.setattr(geocoding.urllib.request, "urlopen", raise_error)
         assert geocoding.reverse_geocode(37.7749, -122.4194) is None
 
+    # covers: HLR-RPT-025, LLR-RPT-051
     def test_prefers_city_and_country(self, monkeypatch):
         class FakeResponse:
             def __enter__(self):
@@ -35,6 +38,7 @@ class TestReverseGeocode:
         monkeypatch.setattr(geocoding.urllib.request, "urlopen", lambda *a, **k: FakeResponse())
         assert geocoding.reverse_geocode(37.7749, -122.4194) == "San Francisco, United States"
 
+    # covers: HLR-RPT-025, LLR-RPT-051
     def test_falls_back_to_display_name(self, monkeypatch):
         class FakeResponse:
             def __enter__(self):
@@ -47,6 +51,7 @@ class TestReverseGeocode:
         monkeypatch.setattr(geocoding.urllib.request, "urlopen", lambda *a, **k: FakeResponse())
         assert geocoding.reverse_geocode(1.23, 4.56) == "Somewhere remote"
 
+    # covers: HLR-RPT-025, LLR-RPT-051
     def test_malformed_response_returns_none(self, monkeypatch):
         class FakeResponse:
             def __enter__(self):

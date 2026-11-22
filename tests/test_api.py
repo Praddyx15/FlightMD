@@ -91,6 +91,7 @@ def finished(report_id, **kwargs):
 
 
 class TestHealthEndpoint:
+    # covers: HLR-API-015, LLR-API-034
     @pytest.mark.asyncio
     async def test_health_reports_versions_and_ai_flag(self, client):
         resp = await client.get("/health")
@@ -102,6 +103,7 @@ class TestHealthEndpoint:
         assert isinstance(data["ai_configured"], bool)
         assert data["uptime_seconds"] >= 0
 
+    # covers: HLR-API-025, LLR-API-002
     @pytest.mark.asyncio
     async def test_every_response_has_a_request_id(self, client):
         resp = await client.get("/health")
@@ -109,6 +111,7 @@ class TestHealthEndpoint:
 
 
 class TestAnalyseEndpoint:
+    # covers: HLR-API-001, LLR-API-016, LLR-API-018, LLR-API-023
     @pytest.mark.asyncio
     async def test_valid_ulg_file_accepted_and_queued(self, client, queue):
         resp = await client.post("/analyse", files=upload())
@@ -127,11 +130,13 @@ class TestAnalyseEndpoint:
         with open(job.log_path, "rb") as f:
             assert f.read() == ULOG_MAGIC
 
+    # covers: HLR-API-001, LLR-API-018
     @pytest.mark.asyncio
     async def test_upload_is_spooled_inside_the_data_dir(self, client, queue, database):
         await client.post("/analyse", files=upload())
         assert queue.jobs[0].log_path.startswith(os.path.join(database.data_dir, "uploads"))
 
+    # covers: HLR-API-006, LLR-API-027, LLR-API-064
     @pytest.mark.asyncio
     async def test_status_has_eta_seconds(self, client):
         resp = await client.post("/analyse", files=upload())
@@ -140,6 +145,7 @@ class TestAnalyseEndpoint:
         assert "eta_seconds" in status
         assert status["eta_seconds"] is None
 
+    # covers: HLR-API-001, LLR-API-016
     @pytest.mark.asyncio
     async def test_compressed_upload_is_left_for_the_engine_to_unpack(self, client, queue):
         packed = gzip.compress(ULOG_MAGIC)
@@ -151,6 +157,7 @@ class TestAnalyseEndpoint:
         # the hash is of the bytes as uploaded
         assert job.log_sha256 == hashlib.sha256(packed).hexdigest()
 
+    # covers: HLR-API-004, LLR-API-022
     @pytest.mark.asyncio
     async def test_queue_failure_is_503(self, client, queue):
         from api.storage import job_store
@@ -159,17 +166,20 @@ class TestAnalyseEndpoint:
         assert resp.status_code == 503
         assert job_store.job_count == 0
 
+    # covers: HLR-API-002, LLR-API-016
     @pytest.mark.asyncio
     async def test_invalid_magic_bytes_rejected(self, client):
         resp = await client.post("/analyse", files=upload("bad.ulg", b"\x00\x01\x02\x03" + b"\x00" * 100))
         assert resp.status_code == 400
         assert "ULog" in resp.json()["detail"]
 
+    # covers: HLR-API-002, LLR-API-015
     @pytest.mark.asyncio
     async def test_too_small_file_rejected(self, client):
         resp = await client.post("/analyse", files=upload("tiny.ulg", b"\x55\x4C"))
         assert resp.status_code == 400
 
+    # covers: HLR-API-003, LLR-API-001
     @pytest.mark.asyncio
     async def test_oversized_file_rejected(self, client, monkeypatch):
         from api.config import get_settings
@@ -177,6 +187,7 @@ class TestAnalyseEndpoint:
         resp = await client.post("/analyse", files=upload("big.ulg", ULOG_MAGIC + b"\x00" * (2 * 1024 * 1024)))
         assert resp.status_code == 413
 
+    # covers: HLR-API-003, LLR-API-018
     @pytest.mark.asyncio
     async def test_oversized_file_rejected_without_content_length_check(self, client, monkeypatch, database):
         # just over the limit, under the middleware's multipart allowance:
@@ -187,16 +198,19 @@ class TestAnalyseEndpoint:
         assert resp.status_code == 413
         assert os.listdir(os.path.join(database.data_dir, "uploads")) == []
 
+    # covers: HLR-API-002, LLR-API-016
     @pytest.mark.asyncio
     async def test_non_ulg_file_rejected(self, client):
         resp = await client.post("/analyse", files={"file": ("flight.txt", io.BytesIO(b"this is not a ulog file"), "text/plain")})
         assert resp.status_code == 400
 
+    # covers: HLR-API-002, LLR-API-017, LLR-API-058
     @pytest.mark.asyncio
     async def test_label_with_slash_rejected(self, client):
         resp = await client.post("/analyse", files=upload(), data={"airframe_label": "Quad/1"})
         assert resp.status_code == 400
 
+    # covers: HLR-API-017, LLR-API-013, LLR-API-021, LLR-API-023, LLR-API-086
     @pytest.mark.asyncio
     async def test_first_tagged_upload_claims_the_airframe(self, client):
         first = await client.post("/analyse", files=upload(), data={"airframe_label": "Quad-1"})
@@ -220,6 +234,7 @@ class TestAnalyseEndpoint:
         assert right.status_code == 200
         assert "airframe_token" not in right.json()
 
+    # covers: HLR-API-017, LLR-API-014, LLR-API-021
     @pytest.mark.asyncio
     async def test_rejected_upload_does_not_claim_the_airframe(self, client, monkeypatch):
         from api.config import get_settings
@@ -233,6 +248,7 @@ class TestAnalyseEndpoint:
         resp = await client.put("/airframe/Quad-9/config", json={})
         assert resp.json()["airframe_token"]
 
+    # covers: HLR-API-007, HLR-API-008, LLR-API-026, LLR-API-051
     @pytest.mark.asyncio
     async def test_failed_analysis_returns_422_without_server_paths(self, client):
         from api.analysis import AnalysisJob, run_job
@@ -247,18 +263,21 @@ class TestAnalyseEndpoint:
         assert resp.status_code == 422
         assert resp.json()["detail"] == "no analysable telemetry"
 
+    # covers: HLR-API-002, LLR-API-017
     @pytest.mark.asyncio
     @pytest.mark.parametrize("value", ["abc", "g" * 64, "a" * 63])
     async def test_bad_brief_hash_rejected(self, client, value):
         resp = await client.post("/analyse", files=upload(), data={"planning_brief_sha256": value})
         assert resp.status_code == 400
 
+    # covers: HLR-API-002, LLR-API-017
     @pytest.mark.asyncio
     async def test_brief_hash_is_passed_on_lowercased(self, client, queue):
         resp = await client.post("/analyse", files=upload(), data={"planning_brief_sha256": "AB" * 32})
         assert resp.status_code == 200
         assert queue.jobs[0].planning_brief_sha256 == "ab" * 32
 
+    # covers: HLR-API-027, LLR-API-023, LLR-API-103
     @pytest.mark.asyncio
     async def test_contributing_upload_gets_a_contribution_id(self, client, queue):
         resp = await client.post("/analyse", files=upload(), data={"contribute_to_dataset": "true"})
@@ -267,6 +286,7 @@ class TestAnalyseEndpoint:
 
 
 class TestDedupe:
+    # covers: HLR-API-005, LLR-API-019, LLR-API-066
     @pytest.mark.asyncio
     async def test_same_log_again_returns_the_existing_report(self, client, queue):
         first = (await client.post("/analyse", files=upload())).json()
@@ -277,6 +297,7 @@ class TestDedupe:
         assert again["status"] == "processing"
         assert len(queue.jobs) == 1
 
+    # covers: HLR-API-005, LLR-API-019, LLR-API-066
     @pytest.mark.asyncio
     async def test_finished_original_comes_back_complete(self, client, queue):
         from api.storage import job_store
@@ -287,6 +308,7 @@ class TestDedupe:
         assert again == {"report_id": first["report_id"], "status": "complete",
                          "estimated_seconds": 0, "deduplicated": True}
 
+    # covers: HLR-API-005, LLR-API-019, LLR-API-066
     @pytest.mark.asyncio
     async def test_failed_original_is_not_reused(self, client, queue):
         from api.storage import job_store
@@ -297,6 +319,7 @@ class TestDedupe:
         assert again["deduplicated"] is False
         assert again["report_id"] != first["report_id"]
 
+    # covers: HLR-API-005, LLR-API-019, LLR-API-066
     @pytest.mark.asyncio
     async def test_different_bytes_are_analysed(self, client, queue):
         await client.post("/analyse", files=upload())
@@ -304,6 +327,7 @@ class TestDedupe:
         assert other["deduplicated"] is False
         assert len(queue.jobs) == 2
 
+    # covers: HLR-API-005, LLR-API-019, LLR-API-066
     @pytest.mark.asyncio
     async def test_tagged_upload_is_not_matched_with_an_untagged_one(self, client, queue):
         await client.post("/analyse", files=upload())
@@ -318,6 +342,7 @@ class TestDedupe:
         assert again["report_id"] == tagged["report_id"]
         assert again["deduplicated"] is True
 
+    # covers: HLR-API-005, LLR-API-019, LLR-API-066
     @pytest.mark.asyncio
     async def test_contributing_upload_always_runs(self, client, queue):
         await client.post("/analyse", files=upload())
@@ -325,6 +350,7 @@ class TestDedupe:
         assert again["deduplicated"] is False
         assert len(queue.jobs) == 2
 
+    # covers: HLR-API-005, LLR-API-019, LLR-API-066
     @pytest.mark.asyncio
     async def test_different_brief_is_analysed_again(self, client, queue):
         await client.post("/analyse", files=upload())
@@ -333,6 +359,7 @@ class TestDedupe:
 
 
 class TestRunJob:
+    # covers: HLR-API-006, HLR-API-008, LLR-API-049, LLR-API-051, LLR-API-061, LLR-API-064
     @pytest.mark.asyncio
     async def test_progress_eta_and_hashes_land_on_the_report(self, client, monkeypatch, tmp_path):
         import api.analysis as analysis_module
@@ -364,6 +391,7 @@ class TestRunJob:
         assert report.metadata.planning_brief_sha256 == "b" * 64
         assert not log.exists()
 
+    # covers: HLR-API-008, LLR-API-049
     @pytest.mark.asyncio
     async def test_engine_hash_wins_over_ours(self, client, monkeypatch, tmp_path):
         import api.analysis as analysis_module
@@ -383,16 +411,19 @@ class TestRunJob:
 
 
 class TestPublicError:
+    # covers: HLR-API-008, LLR-API-048
     def test_value_error_message_kept_but_paths_scrubbed(self):
         from api.analysis import public_error
         msg = public_error(ValueError("cannot parse /tmp/flightmd-abc/x.ulg: bad header"))
         assert "/tmp" not in msg
         assert "bad header" in msg
 
+    # covers: HLR-API-008, LLR-API-048
     def test_units_are_not_mistaken_for_paths(self):
         from api.analysis import public_error
         assert public_error(ValueError("speed above 30 m/s")) == "speed above 30 m/s"
 
+    # covers: HLR-API-008, LLR-API-048
     def test_unexpected_errors_are_generic(self):
         from api.analysis import public_error
         msg = public_error(KeyError("/srv/app/secret"))
@@ -400,6 +431,7 @@ class TestPublicError:
 
 
 class TestStatusAndReport:
+    # covers: HLR-API-006, HLR-API-007, LLR-API-026, LLR-API-027
     @pytest.mark.asyncio
     async def test_unknown_report_id_returns_404(self, client):
         assert (await client.get("/status/nonexistent-id-12345")).status_code == 404
@@ -407,12 +439,14 @@ class TestStatusAndReport:
         assert resp.status_code == 404
         assert "not found" in resp.json()["detail"].lower()
 
+    # covers: HLR-API-007, LLR-API-026
     @pytest.mark.asyncio
     async def test_processing_report_returns_202(self, client):
         from api.storage import job_store
         job_store.create("busy")
         assert (await client.get("/report/busy")).status_code == 202
 
+    # covers: HLR-API-007, LLR-API-028
     @pytest.mark.asyncio
     async def test_report_carries_schema_version_header(self, client):
         finished("done-1")
@@ -420,6 +454,7 @@ class TestStatusAndReport:
         assert resp.status_code == 200
         assert resp.headers["x-flightmd-schema-version"] == resp.json()["schema_version"]
 
+    # covers: HLR-API-007, LLR-API-028
     @pytest.mark.asyncio
     async def test_report_serializes_with_nan_floats(self, client):
         rep = make_report("done-nan")
@@ -433,6 +468,7 @@ class TestStatusAndReport:
         data = resp.json()
         assert data["metadata"]["max_altitude_m"] is None
 
+    # covers: HLR-API-007, HLR-API-011, LLR-API-026, LLR-API-069
     @pytest.mark.asyncio
     async def test_interrupted_job_reports_failed_on_status(self, client):
         from api.storage import job_store
@@ -445,6 +481,7 @@ class TestStatusAndReport:
 
 
 class TestNoGlobalListing:
+    # covers: HLR-API-007, LLR-API-028
     @pytest.mark.asyncio
     async def test_reports_index_is_gone(self, client):
         finished("someone-elses-report")
@@ -454,18 +491,21 @@ class TestNoGlobalListing:
 
 
 class TestExportEndpoints:
+    # covers: HLR-API-012, LLR-API-026
     @pytest.mark.asyncio
     @pytest.mark.parametrize("kind", ["pdf", "json", "gpx", "kml"])
     async def test_export_404_for_unknown(self, client, kind):
         resp = await client.get(f"/export/{kind}/no-such-id")
         assert resp.status_code == 404
 
+    # covers: HLR-API-012, LLR-API-031
     @pytest.mark.asyncio
     async def test_gpx_export_422_when_no_gps_path(self, client):
         finished("no-gps-report")
         resp = await client.get("/export/gpx/no-gps-report")
         assert resp.status_code == 422
 
+    # covers: HLR-API-012, LLR-API-031
     @pytest.mark.asyncio
     async def test_gpx_and_kml_export_succeed_with_gps_path(self, client):
         finished("with-gps-report", gps_path=[[37.7749, -122.4194, 10.0], [37.7750, -122.4195, 12.0]])
@@ -480,6 +520,7 @@ class TestExportEndpoints:
         assert kml_resp.headers["content-type"].startswith("application/vnd.google-earth.kml+xml")
         assert b"<coordinates>" in kml_resp.content
 
+    # covers: HLR-API-012, LLR-API-032
     @pytest.mark.asyncio
     async def test_json_export_passes_schema_version_through(self, client):
         finished("json-report")
@@ -487,6 +528,7 @@ class TestExportEndpoints:
         assert resp.status_code == 200
         assert resp.json()["schema_version"] == resp.headers["x-flightmd-schema-version"]
 
+    # covers: HLR-API-012, HLR-API-013, LLR-API-030, LLR-API-081, LLR-API-082
     @pytest.mark.asyncio
     async def test_pdf_is_generated_once_then_cached_on_disk(self, client, monkeypatch, database):
         import api.routers.export as export_module
@@ -501,6 +543,7 @@ class TestExportEndpoints:
         assert len(calls) == 1
         assert os.listdir(os.path.join(database.data_dir, "exports", "pdf-report"))
 
+    # covers: HLR-API-013, LLR-API-082
     @pytest.mark.asyncio
     async def test_gpx_is_cached_too(self, client, monkeypatch):
         import api.routers.export as export_module
@@ -512,6 +555,7 @@ class TestExportEndpoints:
             assert (await client.get("/export/gpx/gpx-report")).content == b"<gpx/>"
         assert len(calls) == 1
 
+    # covers: HLR-API-012, LLR-API-030
     @pytest.mark.asyncio
     async def test_missing_weasyprint_is_501(self, client, monkeypatch):
         import api.routers.export as export_module
@@ -524,12 +568,14 @@ class TestExportEndpoints:
 
 
 class TestAsk:
+    # covers: HLR-API-016, LLR-API-029
     @pytest.mark.asyncio
     async def test_question_length_capped(self, client):
         finished("ask-report")
         resp = await client.post("/ask/ask-report", json={"question": "x" * 501})
         assert resp.status_code == 422
 
+    # covers: HLR-API-016, LLR-API-029
     @pytest.mark.asyncio
     async def test_not_configured_falls_back(self, client, monkeypatch):
         import api.routers.report as report_module
@@ -540,11 +586,13 @@ class TestAsk:
         assert resp.status_code == 200
         assert resp.json() == {"configured": False, "answer": None}
 
+    # covers: HLR-API-007, HLR-API-016, LLR-API-026, LLR-API-029
     @pytest.mark.asyncio
     async def test_unknown_report_404(self, client):
         resp = await client.post("/ask/nope", json={"question": "hi"})
         assert resp.status_code == 404
 
+    # covers: HLR-API-016, LLR-API-029, LLR-API-113, LLR-API-114, LLR-API-115
     @pytest.mark.asyncio
     async def test_prompt_is_grounded_and_sanitised(self, client, monkeypatch):
         import api.routers.report as report_module
@@ -579,6 +627,7 @@ class TestAsk:
         assert "12.3456789" not in prompt
         assert "Not in this report." in seen["system"]
 
+    # covers: HLR-API-016, LLR-API-113
     def test_context_is_size_capped(self):
         from api.services import report_qa
         report = make_report("big", summary="y" * 100_000)
@@ -591,12 +640,14 @@ def fake_request(peer, xff=None):
 
 
 class TestClientIP:
+    # covers: HLR-API-024, LLR-API-011
     def test_no_trusted_proxies_uses_the_peer(self, monkeypatch):
         from api.config import get_settings
         from api.security import client_ip
         monkeypatch.setattr(get_settings(), "trusted_proxies", "")
         assert client_ip(fake_request("203.0.113.7", "1.1.1.1")) == "203.0.113.7"
 
+    # covers: HLR-API-024, LLR-API-011
     def test_trusted_proxy_takes_rightmost_untrusted_hop(self, monkeypatch):
         from api.config import get_settings
         from api.security import client_ip
@@ -605,6 +656,7 @@ class TestClientIP:
         assert client_ip(fake_request("10.0.0.5", "6.6.6.6, 5.6.7.8")) == "5.6.7.8"
         assert client_ip(fake_request("10.0.0.5", "6.6.6.6, 5.6.7.8, 10.1.2.3")) == "5.6.7.8"
 
+    # covers: HLR-API-024, LLR-API-011
     def test_untrusted_peer_cannot_spoof(self, monkeypatch):
         from api.config import get_settings
         from api.security import client_ip
@@ -613,12 +665,14 @@ class TestClientIP:
 
 
 class TestDatasetEndpoints:
+    # covers: HLR-API-027, LLR-API-024, LLR-API-107
     @pytest.mark.asyncio
     async def test_returns_count_and_bytes(self, client):
         resp = await client.get("/dataset/stats")
         assert resp.status_code == 200
         assert resp.json() == {"contributed_logs": 0, "total_bytes": 0}
 
+    # covers: HLR-API-027, LLR-API-025, LLR-API-105, LLR-API-106
     @pytest.mark.asyncio
     async def test_withdraw_a_contribution(self, client, tmp_path):
         from api.training_data_store import training_data_store
@@ -631,6 +685,7 @@ class TestDatasetEndpoints:
         assert (await client.get("/dataset/stats")).json()["contributed_logs"] == 0
         assert (await client.delete(f"/dataset/{contribution_id}")).status_code == 404
 
+    # covers: HLR-API-027, LLR-API-025
     @pytest.mark.asyncio
     @pytest.mark.parametrize("bad", ["nope", "A" * 32, "a" * 33])
     async def test_withdraw_with_a_malformed_id_is_404(self, client, bad):

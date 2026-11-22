@@ -54,6 +54,7 @@ def make_report(report_id, osc_score=100.0, gps_score=100.0, overall=90.0, findi
 
 
 class TestVerify:
+    # covers: HLR-API-021, LLR-API-094
     def test_no_later_flight_is_pending(self):
         result = verify(make_report("a"), None, {"MC_ROLLRATE_P"})
         assert result == {
@@ -61,6 +62,7 @@ class TestVerify:
             "findings_resolved": [], "findings_new": [], "metric_deltas": {},
         }
 
+    # covers: HLR-API-021, LLR-API-094
     def test_finding_gone_and_module_up_is_improved(self):
         before = make_report("a", osc_score=60.0, overall=70.0, findings=[osc_finding()])
         after = make_report("b", osc_score=95.0, overall=88.0)
@@ -71,11 +73,13 @@ class TestVerify:
         assert result["findings_new"] == []
         assert result["metric_deltas"] == {"overall_score": 18.0, "module.oscillation": 35.0}
 
+    # covers: HLR-API-021, LLR-API-094
     def test_param_names_match_case_insensitively(self):
         before = make_report("a", findings=[osc_finding()])
         after = make_report("b")
         assert verify(before, after, {"mc_rollrate_p"})["status"] == "improved"
 
+    # covers: HLR-API-021, LLR-API-094
     def test_same_finding_kind_with_new_value_is_not_resolved(self):
         before = make_report("a", osc_score=60.0, findings=[osc_finding("Roll oscillation at 6.0 Hz")])
         after = make_report("b", osc_score=61.0, findings=[osc_finding("Roll oscillation at 5.1 Hz")])
@@ -84,6 +88,7 @@ class TestVerify:
         assert result["findings_new"] == []
         assert result["status"] == "unchanged"
 
+    # covers: HLR-API-021, LLR-API-094
     def test_new_relevant_finding_is_worse(self):
         before = make_report("a", osc_score=90.0)
         after = make_report("b", osc_score=90.0, findings=[osc_finding()])
@@ -91,6 +96,7 @@ class TestVerify:
         assert result["status"] == "worse"
         assert result["findings_new"] == ["Roll oscillation at 6.0 Hz"]
 
+    # covers: HLR-API-021, LLR-API-094
     def test_resolved_but_new_problem_is_mixed(self):
         pitch = osc_finding("Pitch oscillation at 4 Hz", kind="oscillation.pitch", params=("MC_PITCHRATE_P",))
         before = make_report("a", osc_score=70.0, findings=[osc_finding()])
@@ -98,6 +104,7 @@ class TestVerify:
         result = verify(before, after, {"MC_ROLLRATE_P", "MC_PITCHRATE_P"})
         assert result["status"] == "mixed"
 
+    # covers: HLR-API-021, LLR-API-094
     def test_unrelated_findings_and_modules_are_ignored(self):
         before = make_report("a", osc_score=60.0, gps_score=100.0, findings=[osc_finding()])
         after = make_report("b", osc_score=95.0, gps_score=40.0, findings=[gps_finding()])
@@ -106,11 +113,13 @@ class TestVerify:
         assert "module.gps" not in result["metric_deltas"]
         assert result["findings_new"] == []
 
+    # covers: HLR-API-021, LLR-API-094
     def test_small_score_wobble_is_unchanged(self):
         before = make_report("a", osc_score=80.0, overall=80.0)
         after = make_report("b", osc_score=81.0, overall=79.0)
         assert verify(before, after, {"MC_ROLLRATE_P"})["status"] == "unchanged"
 
+    # covers: HLR-API-021, LLR-API-094
     def test_older_reports_fall_back_to_param_recommendations(self):
         old_style = Finding(
             category=Category.OSCILLATION, severity=Severity.WARNING, title="Roll oscillation",
@@ -165,6 +174,7 @@ BODY = {
 
 
 class TestChangesEndpoints:
+    # covers: HLR-API-021, LLR-API-046, LLR-API-047
     @pytest.mark.asyncio
     async def test_needs_the_airframe_token(self, client):
         auth = claim()
@@ -175,10 +185,12 @@ class TestChangesEndpoints:
         assert (await client.get("/airframe/Quad-1/changes")).status_code == 401
         assert (await client.get("/airframe/Quad-1/changes", headers=auth)).status_code == 200
 
+    # covers: HLR-API-021, LLR-API-046
     @pytest.mark.asyncio
     async def test_unclaimed_airframe_is_refused(self, client):
         assert (await client.post("/airframe/Nobody/changes", json=BODY)).status_code == 401
 
+    # covers: HLR-API-021, LLR-API-046, LLR-API-093
     @pytest.mark.asyncio
     async def test_record_returns_201_and_pending(self, client):
         auth = claim()
@@ -194,6 +206,7 @@ class TestChangesEndpoints:
         assert data["applied_by"] == "user"
         assert data["verify"]["status"] == "pending"
 
+    # covers: HLR-API-021, LLR-API-046
     @pytest.mark.asyncio
     async def test_report_of_another_airframe_is_refused(self, client):
         auth = claim()
@@ -201,6 +214,7 @@ class TestChangesEndpoints:
         resp = await client.post("/airframe/Quad-1/changes", json=BODY, headers=auth)
         assert resp.status_code == 400
 
+    # covers: HLR-API-021, LLR-API-046
     @pytest.mark.asyncio
     async def test_unfinished_or_unknown_report_is_refused(self, client):
         from api.storage import job_store
@@ -210,6 +224,7 @@ class TestChangesEndpoints:
             resp = await client.post("/airframe/Quad-1/changes", json={**BODY, "report_id": rid}, headers=auth)
             assert resp.status_code == 400
 
+    # covers: HLR-API-021, LLR-API-045
     @pytest.mark.asyncio
     @pytest.mark.parametrize("change", [
         {"name": "MC ROLL; drop", "to_value": 1.0},
@@ -222,6 +237,7 @@ class TestChangesEndpoints:
         resp = await client.post("/airframe/Quad-1/changes", json={**BODY, "changes": [change]}, headers=auth)
         assert resp.status_code == 422
 
+    # covers: HLR-API-021, LLR-API-045
     @pytest.mark.asyncio
     async def test_applied_by_is_user_or_uaop(self, client):
         auth = claim()
@@ -231,6 +247,7 @@ class TestChangesEndpoints:
         resp = await client.post("/airframe/Quad-1/changes", json={**BODY, "applied_by": "uaop"}, headers=auth)
         assert resp.status_code == 201
 
+    # covers: HLR-API-021, LLR-API-047, LLR-API-095
     @pytest.mark.asyncio
     async def test_next_flight_verifies_the_change(self, client, database):
         auth = claim()
@@ -254,6 +271,7 @@ class TestChangesEndpoints:
         assert v["findings_new"] == []
         assert v["metric_deltas"]["module.oscillation"] == 35.0
 
+    # covers: HLR-API-021, LLR-API-095
     @pytest.mark.asyncio
     async def test_reupload_of_the_source_log_is_not_the_next_flight(self, client, database):
         auth = claim()
@@ -266,6 +284,7 @@ class TestChangesEndpoints:
         [item] = (await client.get("/airframe/Quad-1/changes", headers=auth)).json()
         assert item["verify"]["status"] == "pending"
 
+    # covers: HLR-API-021, LLR-API-047, LLR-API-093
     @pytest.mark.asyncio
     async def test_list_is_newest_first(self, client, database):
         auth = claim()
@@ -279,6 +298,7 @@ class TestChangesEndpoints:
 
 
 class TestRefreshPending:
+    # covers: HLR-API-021, LLR-API-096
     def test_stores_the_result_once_a_later_flight_lands(self, database):
         flight("before", osc_score=60.0, findings=[osc_finding()])
         backdate(database, "reports", "report_id", "before", 600)

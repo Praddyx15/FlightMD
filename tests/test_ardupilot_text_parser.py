@@ -33,6 +33,7 @@ class FakeReader:
         return None
 
 
+# covers: HLR-PRS-010, LLR-PRS-049
 def test_uses_the_text_reader(monkeypatch, tmp_path):
     from pymavlink import DFReader
 
@@ -81,6 +82,7 @@ IMU, 1207500, 0, 0.0130, 0.0230, 0.0330, 0.1300, 0.2300, -9.8300
 """
 
 
+# covers: HLR-PRS-010, LLR-PRS-023, LLR-PRS-049
 def test_real_text_log(tmp_path):
     p = tmp_path / "flight.log"
     p.write_bytes(TEXT_LOG.encode("ascii"))

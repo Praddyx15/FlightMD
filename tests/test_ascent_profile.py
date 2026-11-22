@@ -62,23 +62,27 @@ def rocket_altitude(apogee_m=1200.0, n=300) -> np.ndarray:
 
 
 class TestSkipConditions:
+    # covers: HLR-DYN-020, LLR-DYN-056
     def test_missing_altitude_column_skips(self):
         gps = make_gps_df(np.linspace(0, 50, 50))
         gps = gps.drop(columns=["alt"])
         result = AscentProfileAnalyser().safe_analyse({"vehicle_gps_position": gps}, {})
         assert result.skipped
 
+    # covers: HLR-DYN-020, LLR-DYN-056
     def test_too_few_samples_skips(self):
         gps = make_gps_df(np.linspace(0, 50, 5))
         result = AscentProfileAnalyser().safe_analyse({"vehicle_gps_position": gps}, {})
         assert result.skipped
 
+    # covers: HLR-DYN-020, LLR-DYN-057
     def test_multirotor_multi_peak_profile_skips(self):
         gps = make_gps_df(multirotor_survey_altitude())
         result = AscentProfileAnalyser().safe_analyse({"vehicle_gps_position": gps}, {})
         assert result.skipped
         assert "single dominant peak" in result.skip_reason
 
+    # covers: HLR-DYN-020, HLR-DYN-021, LLR-DYN-058
     def test_low_altitude_single_peak_without_high_g_skips(self):
         """An ordinary 'climb up, come back down' drone test flight has a
         single altitude peak too — must not be mistaken for a rocket."""
@@ -91,6 +95,7 @@ class TestSkipConditions:
 
 
 class TestApogeeDetection:
+    # covers: HLR-DYN-020, HLR-DYN-021, LLR-DYN-058, LLR-DYN-059
     def test_high_altitude_single_peak_qualifies(self):
         alt = rocket_altitude(apogee_m=1200.0)
         gps = make_gps_df(alt, dt_s=0.05)
@@ -101,6 +106,7 @@ class TestApogeeDetection:
         assert apogee_findings[0].severity == Severity.GOOD
         assert result.key_metrics["apogee_altitude_m"] == pytest.approx(1200.0, rel=0.05)
 
+    # covers: HLR-DYN-020, HLR-DYN-021, LLR-DYN-058
     def test_low_altitude_with_high_g_boost_qualifies(self):
         """A small rocket that only reaches ~200m can still be identified
         via its boost signature even though altitude alone wouldn't qualify."""
@@ -134,6 +140,7 @@ class TestLaunchProfile:
             topics["vehicle_angular_velocity"] = make_gyro_df(gyro_rate_profile, dt_s=0.02)
         return topics
 
+    # covers: HLR-DYN-021, LLR-DYN-060
     def test_high_g_launch_reports_peak_g(self):
         topics = self._rocket_topics(boost_g=5.0, boost_samples=40)
         result = AscentProfileAnalyser().safe_analyse(topics, {})
@@ -141,12 +148,14 @@ class TestLaunchProfile:
         assert result.key_metrics["peak_boost_g"] == pytest.approx(5.0, rel=0.05)
         assert result.key_metrics["boost_duration_s"] > 0
 
+    # covers: HLR-DYN-021, LLR-DYN-061
     def test_stable_boost_no_asymmetric_warning(self):
         stable_gyro = np.full(600, 0.01)  # negligible, uniform rate
         topics = self._rocket_topics(boost_g=4.0, boost_samples=40, gyro_rate_profile=stable_gyro)
         result = AscentProfileAnalyser().safe_analyse(topics, {})
         assert not any("Asymmetric Loading" in f.title for f in result.findings)
 
+    # covers: HLR-DYN-021, LLR-DYN-061
     def test_tumbling_boost_triggers_asymmetric_warning(self):
         rng = np.random.default_rng(1)
         chaotic_gyro = rng.uniform(-8, 8, 600)  # wildly varying rate during boost
@@ -180,6 +189,7 @@ class TestParachuteDeployment:
         ascent = np.linspace(0, apogee_m, max(len(descent), 10))
         return np.concatenate([ascent, descent])
 
+    # covers: HLR-DYN-022, LLR-DYN-062, LLR-DYN-065
     def test_deployment_detected_mid_descent(self):
         alt = self._descent_profile(apogee_m=1000.0, deploy_frac=0.3)
         gps = make_gps_df(alt, dt_s=0.1)
@@ -190,6 +200,7 @@ class TestParachuteDeployment:
         assert deploy_findings[0].severity == Severity.GOOD
         assert "parachute_deployment_altitude_m" in result.key_metrics
 
+    # covers: HLR-DYN-022, LLR-DYN-063
     def test_low_altitude_deployment_warns(self):
         # A larger apogee than the "mid descent" case above — at small
         # scale, the smoothing window's inherent detection lag (a roughly
@@ -206,6 +217,7 @@ class TestParachuteDeployment:
         assert not result.skipped
         assert any("Low-Altitude Deployment" in f.title for f in result.findings)
 
+    # covers: HLR-DYN-022, LLR-DYN-064
     def test_no_deployment_reaching_ground_is_critical(self):
         """Pure ballistic descent all the way to near-ground — no chute ever."""
         n = 400
@@ -220,6 +232,7 @@ class TestParachuteDeployment:
         assert len(critical) == 1
         assert "No Parachute Deployment Detected" in critical[0].title
 
+    # covers: HLR-DYN-022, LLR-DYN-064
     def test_descent_ending_high_above_ground_does_not_claim_no_deployment(self):
         """Log ends mid-descent (e.g. telemetry loss) — must not claim
         'no deployment' since the flight may have deployed after the log ends."""
@@ -241,6 +254,7 @@ class TestNeverRaises:
 
 
 class TestPreFixRows:
+    # covers: HLR-DYN-020, LLR-DYN-056
     def test_rows_before_first_fix_do_not_set_launch_altitude(self):
         """Before the first fix lat=lon=alt=0; taking that as the launch
         altitude put a 100 m hop at a 450 m site at '550 m AGL'."""
@@ -254,6 +268,7 @@ class TestPreFixRows:
         assert result.skipped
         assert "ordinary drone flight" in result.skip_reason
 
+    # covers: HLR-DYN-022, LLR-DYN-065
     def test_touchdown_is_not_a_parachute_deployment(self):
         """Fast descent that slows to a crawl in the last 20 m and stops. The
         slow-down to ~0.5 m/s is touchdown, not a canopy opening."""

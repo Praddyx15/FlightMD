@@ -11,6 +11,8 @@ def reverse_geocode(lat: float, lon: float) -> Optional[str]:
     """
     Place name for a coordinate via OpenStreetMap Nominatim (free, no key).
     Returns None on any failure; never raises.
+
+    @relation(LLR-RPT-050, LLR-RPT-051, scope=function)
     """
     # 0,0 is what an unset GPS reports
     if lat is None or lon is None or (lat == 0 and lon == 0):
