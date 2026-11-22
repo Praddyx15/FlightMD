@@ -29,7 +29,7 @@ analogy (`01-plans/psaa.md` section 2).
 | Trace tool | None | `tools/trace.py`, hooked into `pytest` and CI; passes |
 | Verification | Good test base, CI on three Python versions, weekly real-log corpus, schema test, dependency audit | Described; gaps listed; regression tests for the fixed defects; full suite, web checks and StrictDoc export run on this branch |
 | Configuration management | Git, pull requests, pinned CI actions, release by tag | Unchanged, now written down; problem-report register started |
-| Problem reports | GitHub issues only | 48 reports from reading the code; 8 fixed (2 in part), each with a regression test; 1 closed by a CI change |
+| Problem reports | GitHub issues only | 48 reports from reading the code; 8 fixed (2 in part), each with a regression test |
 | Reviews, QA | None recorded | Checklists; no review recorded |
 | Summary | None | Draft |
 

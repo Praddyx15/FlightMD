@@ -16,7 +16,8 @@ This file is the state.
 | Trace check | `tests/test_trace.py`, `tools/trace.py --check` | 4 | CI (added in this issue; passes, section 3) |
 
 Static checks in CI: ruff (rule sets in `pyproject.toml`), `tsc --noEmit`,
-`pip-audit`, a bundle-size budget, and since this issue ESLint (`npm run lint`).
+`pip-audit`, a bundle-size budget. The wider ruff run, the trace check as its own step and ESLint wait for
+the workflow change of OI-019; until then the trace check runs in CI through `tests/test_trace.py`.
 
 ## 2. What was run for issue 1
 

@@ -55,7 +55,7 @@ prefixed `fix:`, `test:`, `docs:`, `ci:`, `deps:`.
 
 `git log`, the pull requests, the problem-report register, the traceability
 matrix (`08-traceability/matrix.md`, regenerated in the pull request that
-changes requirements, tests or tags; CI fails if the committed copy is stale)
+changes requirements, tests or tags; CI fails if the committed copy is stale, once OI-019 lands)
 and the accomplishment summary (`11-summary/sas.md`).
 
 ## 5. Problem reports

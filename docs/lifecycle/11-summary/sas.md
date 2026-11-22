@@ -26,12 +26,12 @@ if users load parameter files without review.
 | Area | Exists | Partial | Open |
 |---|---|---|---|
 | Plans | PSAA, SDP, SVP, SCMP, SQAP | - | Not reviewed or agreed |
-| Standards | Requirements, design, Python, TypeScript; ruff and ESLint in CI | - | No type checker for the engine (OI-009) |
+| Standards | Requirements, design, Python, TypeScript; ruff (E, W, F) in CI | Wider ruff run and ESLint in CI wait for OI-019 | No type checker for the engine (OI-009) |
 | System | ConOps, 12 needs, 39 system requirements (3 proposed), architecture, 7 ICDs | - | Validation with stakeholders (OI-005) |
 | Safety | Hazard assessment, FMEA, 15 safety requirements (3 proposed) | - | Review by a safety engineer; security assessment (OI-011) |
 | Software requirements | 198 HLR and 566 LLR over seven items | Web pages and most components at HLR level (OI-012) | Review of all (OI-016) |
 | Design | HLD, LLD for all seven items | - | Not reviewed |
-| Code | All items built; tags in docstrings and comments; eight defects fixed with tests | - | 39 problem reports open |
+| Code | All items built; tags in docstrings and comments; eight defects fixed with tests | - | 40 problem reports open |
 | Verification | Tests name what they cover; trace check passes; full suite, web checks and StrictDoc export run (`07-verification/README.md`) | Structural coverage measured in CI, not analysed | Results not archived per release (OI-008) |
 | Configuration | Git, pull requests, tags; problem-report register | - | Archive per release (OI-008) |
 | Quality assurance | Plan and checklists | Automated checks recorded | No review by a second person; no independence (OI-003) |
@@ -46,7 +46,7 @@ if users load parameter files without review.
 
 ## 5. Open problem reports
 
-39 of 48 open, plus the open parts of PR-028 and PR-029. Safety-related and
+40 of 48 open (PR-026 with a fix ready, OI-019), plus the open parts of PR-028 and PR-029. Safety-related and
 still open, fully or in part: PR-001, 005, 007, 009, 017, 022, 028 (part), 029 (part), 031, 032, 037, 040,
 042, 046. Register: `10-configuration/problem-reports.md`.
 

@@ -14,7 +14,7 @@ text are marked "to confirm".
 
 **The trace check passes on issue 1.** Every active HLR and LLR is either
 named by a test or says why it is verified by review instead; every active LLR
-is tagged in the code. The check runs in `pytest` and in CI. What was run and
+is tagged in the code. The check runs in `pytest`, and so in CI (its own CI step is OI-019). What was run and
 what is still open is in `07-verification/README.md`. Nothing has been
 reviewed by a second person.
 
@@ -53,7 +53,7 @@ the plugin guide (`docs/plugins.md`), the walkthrough, and the July 2026
 | Software quality assurance plan | `01-plans/sqap.md` | Exists |
 | Requirements standard | `02-standards/requirements-standard.md`, `requirements.sgra` | Exists |
 | Design standard | `02-standards/design-standard.md` | Exists |
-| Code standards | `02-standards/coding-standard-python.md`, `coding-standard-typescript.md` | Exists; ruff configuration and ESLint enforced in CI |
+| Code standards | `02-standards/coding-standard-python.md`, `coding-standard-typescript.md` | Exists; ruff configuration and ESLint run clean; their CI steps wait for OI-019 |
 | High-level requirements | `05-requirements/hlr-{int,prs,anl,dyn,rpt,api,web}.sdoc` | Exists for all seven items: 198 HLR (5 proposed). Not reviewed |
 | Low-level requirements | `05-requirements/llr-{int,prs,anl,dyn,rpt,api,web}.sdoc` | Exists: 566 LLR (INT 72, PRS 90, ANL 94, DYN 65, RPT 66, API 116, WEB 63). Web pages and most components are at HLR level (D-10, OI-012). Not reviewed (OI-016) |
 | Design description | `06-design/hld.md`, `lld-{int,prs,anl,dyn,rpt,api,web}.md` | Exists, as built |
@@ -63,7 +63,7 @@ the plugin guide (`docs/plugins.md`), the walkthrough, and the July 2026
 | Verification results | CI runs; `07-verification/README.md` | Partial: the local runs of issue 1 are listed there; results are not archived per release (OI-008) |
 | Environment configuration index | `01-plans/sdp.md` section 2; `pyproject.toml`, `api/requirements*.txt`, `frontend/package-lock.json` | Partial: no full lock for the engine |
 | Configuration index | Git commit and tag (`01-plans/scmp.md`) | Exists |
-| Problem reports | `10-configuration/problem-reports.md` | Exists: 48 reports; 8 fixed (2 in part) with regression tests, 1 closed by a CI change, the rest open |
+| Problem reports | `10-configuration/problem-reports.md` | Exists: 48 reports; 8 fixed (2 in part) with regression tests, the rest open |
 | Configuration management records | Git history, pull requests | Exists |
 | Quality assurance records | `09-reviews/review-records.md` | Partial: the automated checks of issue 1 are recorded; no review by a second person |
 | Accomplishment summary | `11-summary/sas.md` | Partial: draft |

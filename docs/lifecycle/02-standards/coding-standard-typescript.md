@@ -44,4 +44,4 @@ above it (`// covers: HLR-WEB-..., LLR-WEB-...`).
 | TS-D3 | Flags beyond `strict` (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitOverride`) are off | `tsconfig.json` | Never enabled; not tried in this issue |
 | TS-D4 | `tailwindcss/classnames-order` and `enforces-shorthand` off; `react/no-array-index-key` is a warning | `.eslintrc.json` | The repository's choice |
 | TS-D5 | Tags are file scope only | All tagged files | A React component file is one unit; function-level markers add noise for no gain |
-| TS-D6 | `npm run lint` was not part of CI before this issue (CI ran `tsc`, Vitest and the build) | `.github/workflows/ci.yml` | Closed in issue 1: lint ran clean locally and is now a CI step (PR-026) |
+| TS-D6 | `npm run lint` was not part of CI before this issue (CI ran `tsc`, Vitest and the build) | `.github/workflows/ci.yml` | Lint ran clean locally in issue 1; the CI step is ready but not yet pushed (OI-019, PR-026) |

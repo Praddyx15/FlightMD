@@ -71,5 +71,5 @@ tests and the corpus results is made for them (open item OI-007).
 
 | To | Needs |
 |---|---|
-| Merge to `main` | CI green: unit tests on three Python versions, trace check, ruff, dependency audit, frontend type check, ESLint, unit tests, build and bundle budget, Playwright smoke test; review checklist done |
+| Merge to `main` | CI green: unit tests on three Python versions, trace check, ruff, dependency audit, frontend type check, ESLint (once OI-019 lands), unit tests, build and bundle budget, Playwright smoke test; review checklist done |
 | Release tag | CI green on the tag; the tag matches the package version (checked by `publish.yml`); corpus run green since the last parser or rule change; problem reports classed S (safety-related) closed or accepted in writing in the release notes |

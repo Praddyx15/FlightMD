@@ -2,7 +2,7 @@
 
 FMD-CS-PY, issue 1, 2026-11-20. For `flightmd_core/`, `api/`, `scripts/`,
 `tools/` and `tests/`. Python 3.11 to 3.13. Rules marked **ruff** are enforced
-in CI (job "Python lint": `ruff check flightmd_core api scripts tools tests`,
+in CI, once OI-019 lands (job "Python lint": `ruff check flightmd_core api scripts tools tests`,
 ruff 0.8.4, configuration in `pyproject.toml` `[tool.ruff]`); the others are
 review items. Every exception is in the deviations list, section 4.
 
