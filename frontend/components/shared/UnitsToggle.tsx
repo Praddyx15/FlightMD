@@ -1,4 +1,5 @@
 "use client";
+// @relation(LLR-WEB-032, scope=file)
 
 import { Ruler } from "lucide-react";
 import { useTranslations } from "next-intl";

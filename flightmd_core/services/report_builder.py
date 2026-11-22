@@ -41,6 +41,7 @@ class ReportBuilder:
         file_size: int,
         start_time_ms: Optional[int] = None,
     ) -> FlightMDReport:
+        """@relation(LLR-RPT-021, LLR-RPT-024, LLR-RPT-027, scope=function)"""
         overall_score, score_label, letter_grade = score
 
         for f in findings:
@@ -79,6 +80,7 @@ class ReportBuilder:
         )
 
     def _sanitise_finding(self, f: Finding) -> None:
+        """@relation(LLR-RPT-022, scope=function)"""
         if f.chart_data is not None:
             f.chart_data = clean(f.chart_data)
         f.param_changes = [
@@ -89,6 +91,7 @@ class ReportBuilder:
         f.params = list(dict.fromkeys(f.params + [p.param_name for p in f.param_changes]))
 
     def _sanitise_metadata(self, metadata: FlightMetadata) -> FlightMetadata:
+        """@relation(LLR-RPT-023, scope=function)"""
         data = clean(metadata.model_dump())
         if data.get("duration_seconds") is None:
             data["duration_seconds"] = 0.0
@@ -98,7 +101,9 @@ class ReportBuilder:
         """One entry per parameter. Findings arrive most severe first, so the
         first recommendation for a parameter wins; a later one that pulls the
         other way is noted on it instead of silently replacing it (the sheet
-        used to say "increase" while a finding card said "decrease")."""
+        used to say "increase" while a finding card said "decrease").
+
+        @relation(LLR-RPT-025, LLR-RPT-026, scope=function)"""
         seen: dict[str, ParamRecommendation] = {}
         conflicts: dict[str, list[str]] = {}
 

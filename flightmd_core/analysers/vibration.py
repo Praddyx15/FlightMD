@@ -21,6 +21,8 @@ reads on VIBE's scale, so 30 / 60 apply there too.
 The level is the 95th percentile over the flight, so a few spikes (a hard
 landing, a gust) don't make a finding and a sustained level does. Raw
 accel gets the whole-flight RMS instead; it's an average already.
+
+@relation(LLR-DYN-019, LLR-DYN-020, scope=file)
 """
 
 import re
@@ -70,7 +72,9 @@ _CLIP_K = re.compile(r"^clipping_(\d)$")
 
 def _instances(topics, pattern):
     """[(index, topic, df)]: the bare name is instance 0, _1/_2 the others.
-    An old-style name_0 next to the bare name is the same data."""
+    An old-style name_0 next to the bare name is the same data.
+
+    @relation(LLR-DYN-021, scope=function)"""
     found = {}
     for key, df in topics.items():
         m = pattern.match(key)
@@ -84,7 +88,9 @@ def _instances(topics, pattern):
 
 
 def counter_increase(v, inflight) -> int:
-    """How much a running total went up between in-flight samples."""
+    """How much a running total went up between in-flight samples.
+
+    @relation(LLR-DYN-022, scope=function)"""
     v = np.asarray(v, dtype=float)
     ok = np.isfinite(v)
     v, inflight = v[ok], np.asarray(inflight)[ok]
@@ -103,6 +109,7 @@ class VibrationAnalyser(BaseAnalyser):
     optional_topics = ["vehicle_status", "vehicle_land_detected"]
 
     def analyse(self, topics, params):
+        """@relation(LLR-DYN-023, LLR-DYN-029, LLR-DYN-032, LLR-DYN-033, LLR-DYN-034, LLR-DYN-035, LLR-DYN-037, scope=function)"""
         phases = flight_phases(topics)
         px4 = vehicle_from_params(params).autopilot == "px4"
 
@@ -213,6 +220,7 @@ class VibrationAnalyser(BaseAnalyser):
         )
 
     def _level_finding(self, imu, phases):
+        """@relation(LLR-DYN-028, scope=function)"""
         warn, crit = imu["limits"]
         level = imu["level"]
         if level <= warn:
@@ -246,11 +254,13 @@ class VibrationAnalyser(BaseAnalyser):
         )
 
     def _in_flight(self, df, cols, phases):
+        """@relation(LLR-DYN-036, scope=function)"""
         d = df.dropna(subset=["timestamp"]).sort_values("timestamp")
         d = d.dropna(subset=cols, how="all")
         return d[phases.mask(d["timestamp"].to_numpy(float), "in_air")]
 
     def _imu_status(self, topics, phases):
+        """@relation(LLR-DYN-024, scope=function)"""
         out = []
         for idx, topic, df in _instances(topics, _IMU_STATUS):
             if "accel_vibration_metric" not in df.columns:
@@ -282,6 +292,7 @@ class VibrationAnalyser(BaseAnalyser):
         return out
 
     def _vibe(self, topics, phases, px4):
+        """@relation(LLR-DYN-025, LLR-DYN-026, scope=function)"""
         out = []
         for idx, topic, df in _instances(topics, _VIBE):
             axes = [c for c in ("vibration_x", "vibration_y", "vibration_z") if c in df.columns]
@@ -318,6 +329,7 @@ class VibrationAnalyser(BaseAnalyser):
         return out
 
     def _raw(self, topics, phases):
+        """@relation(LLR-DYN-027, scope=function)"""
         out = []
         for idx, topic, df in _instances(topics, _RAW):
             x_col = find_col(df, ["x", "xyz[0]"])
@@ -358,7 +370,9 @@ class VibrationAnalyser(BaseAnalyser):
 
     def _clip_counts(self, topics, phases) -> dict:
         """IMU index -> (in-flight clip count, source text, from a counter?,
-        in-flight sample count). Autopilot counters first."""
+        in-flight sample count). Autopilot counters first.
+
+        @relation(LLR-DYN-030, scope=function)"""
         out = {}
 
         for idx, _, df in _instances(topics, _IMU_STATUS):
@@ -389,6 +403,7 @@ class VibrationAnalyser(BaseAnalyser):
         return out
 
     def _raw_clips(self, df, phases):
+        """@relation(LLR-DYN-031, scope=function)"""
         d = df.dropna(subset=["timestamp"]).sort_values("timestamp")
         flying = phases.mask(d["timestamp"].to_numpy(float), "in_air")
         counters = [c for c in d.columns if c.startswith("clip_counter")]

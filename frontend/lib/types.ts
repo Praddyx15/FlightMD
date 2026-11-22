@@ -1,3 +1,4 @@
+// @relation(LLR-WEB-063, scope=file)
 // Mirrors flightmd_core/models (schema 1.7). Fields added after 1.5 are optional so
 // older stored reports still render.
 

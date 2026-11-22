@@ -38,6 +38,7 @@ def _noop() -> None:
 
 
 def open_log(path: str, max_bytes: int) -> tuple[str, Callable[[], None]]:
+    """@relation(LLR-INT-013, LLR-INT-014, LLR-INT-015, scope=function)"""
     with open(path, "rb") as f:
         head = f.read(4)
     if head.startswith(GZIP_MAGIC):
@@ -65,6 +66,7 @@ def open_log(path: str, max_bytes: int) -> tuple[str, Callable[[], None]]:
 
 
 def _gzip_source(path: str):
+    """@relation(LLR-INT-016, scope=function)"""
     # .ulg.gz -> .ulg; the detector only uses the extension for messages and .tlog hints
     inner = os.path.basename(path)
     if inner.lower().endswith(".gz"):
@@ -73,6 +75,7 @@ def _gzip_source(path: str):
 
 
 def _zip_source(path: str, max_bytes: int):
+    """@relation(LLR-INT-017, LLR-INT-018, LLR-INT-019, scope=function)"""
     try:
         zf = zipfile.ZipFile(path)
     except zipfile.BadZipFile as e:
@@ -107,7 +110,10 @@ def _zip_source(path: str, max_bytes: int):
 
 
 class _ClosingMember:
-    """The member stream, plus closing the ZipFile it came from."""
+    """The member stream, plus closing the ZipFile it came from.
+
+    @relation(LLR-INT-020, scope=class)
+    """
 
     def __init__(self, zf, member):
         self.zf, self.member = zf, member
@@ -124,17 +130,20 @@ class _ClosingMember:
 
 
 def _unsafe_name(name: str) -> bool:
+    """@relation(LLR-INT-017, scope=function)"""
     if name.startswith("/") or re.match(r"^[A-Za-z]:", name):
         return True
     return ".." in name.split("/")
 
 
 def _extension(name: str) -> str:
+    """@relation(LLR-INT-014, scope=function)"""
     ext = os.path.splitext(name)[1].lower()
     return ext if re.fullmatch(r"\.[a-z0-9]{1,8}", ext) else ""
 
 
 def _copy_capped(opener, out: str, max_bytes: int, packed_size: int) -> None:
+    """@relation(LLR-INT-021, LLR-INT-022, scope=function)"""
     limit = min(max_bytes, max(MAX_RATIO * packed_size, RATIO_FLOOR_BYTES))
     written = 0
     try:

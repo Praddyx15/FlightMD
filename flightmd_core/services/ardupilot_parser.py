@@ -119,6 +119,7 @@ _MODE_TO_NAV_STATE = {
 
 
 def ardupilot_nav_state(mode: Optional[str], vehicle: Optional[str]) -> float:
+    """@relation(LLR-PRS-032, scope=function)"""
     if not mode:
         return np.nan
     mode = mode.upper()
@@ -152,6 +153,8 @@ def _row_getter(msg, inst_field, fields) -> Callable:
     format's own multipliers (that's what DFMessage.__getattr__ does, minus the
     per-field overhead). Text-log messages hold strings, so they go through getattr;
     anything else (test fakes) through to_dict().
+
+    @relation(LLR-PRS-022, LLR-PRS-023, scope=function)
     """
     mtype = msg.get_type()
     fallback_inst = TYPE_INSTANCE.get(mtype, 0)
@@ -216,6 +219,7 @@ class ArduPilotBinParser:
     _progress: Optional[Callable[[float], None]] = None
 
     def _open_reader(self, path):
+        """@relation(LLR-PRS-021, scope=function)"""
         from pymavlink import DFReader
 
         report = self._progress
@@ -231,7 +235,9 @@ class ArduPilotBinParser:
         bin_path: str,
         progress: Optional[Callable[[float], None]] = None,
     ) -> tuple[dict[str, pd.DataFrame], dict[str, float], FlightMetadata]:
-        """progress, if given, is called now and then with the fraction done (0-1)."""
+        """progress, if given, is called now and then with the fraction done (0-1).
+
+        @relation(LLR-PRS-019, LLR-PRS-020, LLR-PRS-024, LLR-PRS-025, LLR-PRS-026, LLR-PRS-027, LLR-PRS-028, LLR-PRS-030, LLR-PRS-033, LLR-PRS-034, LLR-PRS-042, LLR-PRS-045, LLR-PRS-046, LLR-PRS-047, LLR-PRS-048, scope=function)"""
         if not os.path.exists(bin_path):
             raise FileNotFoundError(f"ArduPilot log file not found: {bin_path}")
 
@@ -402,6 +408,7 @@ def _type_count(reader, types) -> int:
 
 
 def _instances(df: pd.DataFrame) -> dict[int, pd.DataFrame]:
+    """@relation(LLR-PRS-036, scope=function)"""
     return {
         int(i): g.drop(columns="inst").reset_index(drop=True)
         for i, g in df.groupby("inst", sort=True)
@@ -446,6 +453,7 @@ def merge_esc(frames: dict[int, pd.DataFrame]) -> pd.DataFrame:
 
 
 def _imu_topics(topics, imu) -> None:
+    """@relation(LLR-PRS-035, scope=function)"""
     if imu is None:
         return
     accel, gyro = {}, None
@@ -463,6 +471,7 @@ def _imu_topics(topics, imu) -> None:
 
 
 def _battery_topics(topics, bat, bcl, params) -> None:
+    """@relation(LLR-PRS-037, scope=function)"""
     if bat is None:
         return
     cells = _instances(bcl) if bcl is not None else {}
@@ -489,6 +498,7 @@ def _battery_topics(topics, bat, bcl, params) -> None:
 
 
 def _with_cells(bat: pd.DataFrame, bcl: pd.DataFrame) -> pd.DataFrame:
+    """@relation(LLR-PRS-038, scope=function)"""
     mv = bcl[[f"cell{k}" for k in range(1, 15)]]
     mv = mv.where((mv > 0) & (mv < NO_CELL_MV))
     live = [c for c in mv.columns if mv[c].notna().any()]
@@ -505,7 +515,9 @@ def _with_cells(bat: pd.DataFrame, bcl: pd.DataFrame) -> pd.DataFrame:
 
 
 def _gps_topics(topics, gps, gpa) -> Optional[str]:
-    """vehicle_gps_position per receiver; returns log_start_utc from the first 3D fix."""
+    """vehicle_gps_position per receiver; returns log_start_utc from the first 3D fix.
+
+    @relation(LLR-PRS-039, LLR-PRS-040, LLR-PRS-041, scope=function)"""
     if gps is None:
         return None
     log_start_utc = None
@@ -544,7 +556,9 @@ def _gps_topics(topics, gps, gpa) -> Optional[str]:
 
 def _vibration_topics(topics, vibe) -> None:
     """VIBE -> vibration: vibration_x/y/z (m/s^2) and cumulative clipping_<imu> counts.
-    4.1+ logs one VIBE per IMU with a single Clip; older ones Clip0-2 on one message."""
+    4.1+ logs one VIBE per IMU with a single Clip; older ones Clip0-2 on one message.
+
+    @relation(LLR-PRS-043, scope=function)"""
     if vibe is None or vibe.empty:
         return
     per_imu = {}
@@ -574,6 +588,8 @@ def _ekf_topics(topics, xkf4, nkf4, params) -> None:
 
     ArduPilot logs the square root of each innovation test ratio (Mission Planner's
     "variance"); squared here so the columns mean what PX4's do: 1.0 = rejected.
+
+    @relation(LLR-PRS-044, scope=function)
     """
     ekf_type = int(params.get("AHRS_EKF_TYPE", 3) or 3)
     src = nkf4 if (ekf_type == 2 and nkf4 is not None) or xkf4 is None else xkf4
@@ -605,7 +621,9 @@ def _ekf_topics(topics, xkf4, nkf4, params) -> None:
 
 def _vehicle_status(arm, modes, vehicle_type, t0):
     """vehicle_status rows from arm/disarm and mode changes; arming_state only when the
-    log has any arm information. Returns (df or None, arm count)."""
+    log has any arm information. Returns (df or None, arm count).
+
+    @relation(LLR-PRS-031, scope=function)"""
     if not arm and not modes:
         return None, 0
     arm = sorted(arm)
@@ -644,7 +662,9 @@ def _is_numeric(v) -> bool:
 
 def _vehicle_type_from_firmware_string(firmware_version: Optional[str]) -> Optional[str]:
     """The startup MSG line ("ArduCopter V4.3.5 (02ff7ea3)") is the only place a
-    dataflash log records the vehicle type."""
+    dataflash log records the vehicle type.
+
+    @relation(LLR-PRS-029, scope=function)"""
     if not firmware_version:
         return None
     for prefix, vehicle_type in _FIRMWARE_TO_VEHICLE_TYPE.items():

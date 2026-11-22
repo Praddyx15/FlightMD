@@ -26,6 +26,7 @@ SCORE_TOLERANCE = 2.0
 
 
 def pending() -> dict:
+    """@relation(LLR-API-094, scope=function)"""
     return {
         "status": "pending",
         "next_report_id": None,
@@ -36,11 +37,13 @@ def pending() -> dict:
 
 
 def _finding_params(f) -> set[str]:
+    """@relation(LLR-API-094, scope=function)"""
     # the model fills `params` from param_changes too, so pre-1.7 reports match as well
     return {n.upper() for n in f.params}
 
 
 def _finding_key(f) -> str:
+    """@relation(LLR-API-094, scope=function)"""
     # titles carry values ("... at 1.1 Hz"), kind doesn't
     return f.kind or f.title
 
@@ -56,6 +59,7 @@ def _unique(items: list[str]) -> list[str]:
 
 
 def verify(before: FlightMDReport, after: Optional[FlightMDReport], changed: set[str]) -> dict:
+    """@relation(LLR-API-094, scope=function)"""
     if after is None:
         return pending()
     changed = {n.upper() for n in changed}
@@ -113,6 +117,7 @@ def verify(before: FlightMDReport, after: Optional[FlightMDReport], changed: set
 class ParamChangeStore:
     def add(self, airframe_label: str, report_id: str, changes: list[dict], applied_by: str,
             note: Optional[str] = None) -> dict:
+        """@relation(LLR-API-093, scope=function)"""
         row = {
             "id": uuid.uuid4().hex,
             "airframe_label": airframe_label,
@@ -130,7 +135,9 @@ class ParamChangeStore:
         return row
 
     def for_airframe(self, airframe_label: str) -> list[dict]:
-        """Newest first."""
+        """Newest first.
+
+        @relation(LLR-API-093, scope=function)"""
         rows = db.get().query(
             "SELECT * FROM param_changes WHERE airframe_label = ? ORDER BY created_at DESC, id",
             (airframe_label,),
@@ -149,6 +156,7 @@ class ParamChangeStore:
         ]
 
     def save_verify(self, change_id: str, result: dict) -> None:
+        """@relation(LLR-API-096, scope=function)"""
         db.get().execute("UPDATE param_changes SET verify_json = ? WHERE id = ?", (json.dumps(result), change_id))
 
 
@@ -156,7 +164,9 @@ param_change_store = ParamChangeStore()
 
 
 def with_verification(airframe_label: str, changes: list[dict]) -> list[dict]:
-    """The changes with a fresh `verify` block each. Loads the airframe's flights once."""
+    """The changes with a fresh `verify` block each. Loads the airframe's flights once.
+
+    @relation(LLR-API-095, scope=function)"""
     if not changes:
         return []
     flights = job_store.list_by_airframe_with_created_at(airframe_label)
@@ -176,7 +186,9 @@ def with_verification(airframe_label: str, changes: list[dict]) -> list[dict]:
 
 
 def refresh_pending(airframe_label: str) -> int:
-    """After a tagged report lands: store the verification of changes that were still pending."""
+    """After a tagged report lands: store the verification of changes that were still pending.
+
+    @relation(LLR-API-096, scope=function)"""
     pending = []
     for r in db.get().query(
         "SELECT id, verify_json FROM param_changes WHERE airframe_label = ?", (airframe_label,)

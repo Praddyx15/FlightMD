@@ -1,3 +1,4 @@
+// @relation(LLR-WEB-057, scope=file)
 import { useMemo } from "react";
 import { useMessages } from "next-intl";
 import { makeLabels, type Labels } from "./metricLabels";

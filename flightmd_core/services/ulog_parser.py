@@ -119,7 +119,9 @@ class ULogParser:
         progress: Optional[Callable[[float], None]] = None,
     ) -> tuple[dict[str, pd.DataFrame], dict[str, float], FlightMetadata]:
         """load_topic_names=None loads every topic in the file (handy for debugging).
-        progress, if given, is called now and then with the fraction read (0-1)."""
+        progress, if given, is called now and then with the fraction read (0-1).
+
+        @relation(LLR-PRS-001, LLR-PRS-002, LLR-PRS-003, scope=function)"""
         if not os.path.exists(ulog_path):
             raise FileNotFoundError(f"ULog file not found: {ulog_path}")
 
@@ -146,6 +148,7 @@ class ULogParser:
         return topics, params, metadata
 
     def _extract_topics(self, ulog: ULog) -> dict[str, pd.DataFrame]:
+        """@relation(LLR-PRS-004, LLR-PRS-005, scope=function)"""
         start = int(ulog.start_timestamp)
         topics: dict[str, pd.DataFrame] = {}
 
@@ -178,6 +181,7 @@ class ULogParser:
         return topics
 
     def _extract_params(self, ulog: ULog) -> dict[str, float]:
+        """@relation(LLR-PRS-009, scope=function)"""
         params: dict[str, float] = {}
         for k, v in ulog.initial_parameters.items():
             try:
@@ -191,6 +195,7 @@ class ULogParser:
         ulog: ULog,
         topics: dict[str, pd.DataFrame],
     ) -> FlightMetadata:
+        """@relation(LLR-PRS-010, scope=function)"""
         duration_s = (ulog.last_timestamp - ulog.start_timestamp) / 1e6
 
         # Real firmware writes some of these info fields as ints (ver_sw_release is a
@@ -226,6 +231,7 @@ class ULogParser:
         )
 
     def _warnings(self, ulog) -> list[str]:
+        """@relation(LLR-PRS-014, scope=function)"""
         out = []
         if getattr(ulog, "file_corruption", False):
             out.append("The log file is corrupted in places; pyulog skipped the damaged parts.")
@@ -236,6 +242,7 @@ class ULogParser:
         return out
 
     def _count_arms(self, topics: dict[str, pd.DataFrame]) -> int:
+        """@relation(LLR-PRS-015, scope=function)"""
         df = topics.get("vehicle_status")
         if df is None or "arming_state" not in df.columns:
             return 0
@@ -243,6 +250,7 @@ class ULogParser:
         return int((np.diff(armed) == 1).sum())
 
     def _extract_flight_modes(self, topics: dict[str, pd.DataFrame]) -> list[str]:
+        """@relation(LLR-PRS-016, scope=function)"""
         df = topics.get("vehicle_status")
         if df is None or "nav_state" not in df.columns:
             return []
@@ -253,6 +261,7 @@ class ULogParser:
         return sorted(modes)
 
     def _max_altitude(self, topics: dict[str, pd.DataFrame]) -> Optional[float]:
+        """@relation(LLR-PRS-017, scope=function)"""
         df = topics.get("vehicle_local_position")
         if df is None:
             return None
@@ -268,6 +277,7 @@ class ULogParser:
         return round(float(vals.max()), 1)
 
     def _max_speed(self, topics: dict[str, pd.DataFrame]) -> Optional[float]:
+        """@relation(LLR-PRS-018, scope=function)"""
         df = topics.get("vehicle_local_position")
         if df is None or "vx" not in df.columns or "vy" not in df.columns:
             return None
@@ -286,6 +296,7 @@ class ULogParser:
 
 
 def _vehicle_type(topics: dict[str, pd.DataFrame]) -> Optional[str]:
+    """@relation(LLR-PRS-012, scope=function)"""
     df = topics.get("vehicle_status")
     if df is None or df.empty:
         return None
@@ -303,7 +314,9 @@ def _vehicle_type(topics: dict[str, pd.DataFrame]) -> Optional[str]:
 
 
 def _use_primary_ekf(topics: dict[str, pd.DataFrame]) -> None:
-    """With multi-EKF the primary isn't always instance 0; swap it onto the bare name."""
+    """With multi-EKF the primary isn't always instance 0; swap it onto the bare name.
+
+    @relation(LLR-PRS-006, scope=function)"""
     sel = topics.get("estimator_selector_status")
     if sel is None or "primary_instance" not in sel.columns or sel.empty:
         return
@@ -319,7 +332,9 @@ def _use_primary_ekf(topics: dict[str, pd.DataFrame]) -> None:
 
 
 def _normalise_gps(df: pd.DataFrame) -> None:
-    """PX4 1.15 renamed lat/lon/alt to float latitude_deg etc.; put back degE7 / mm."""
+    """PX4 1.15 renamed lat/lon/alt to float latitude_deg etc.; put back degE7 / mm.
+
+    @relation(LLR-PRS-007, scope=function)"""
     if "lat" not in df.columns and "latitude_deg" in df.columns:
         df["lat"] = (df["latitude_deg"].fillna(0) * 1e7).round().astype("int64")
         df["lon"] = (df["longitude_deg"].fillna(0) * 1e7).round().astype("int64")
@@ -328,7 +343,9 @@ def _normalise_gps(df: pd.DataFrame) -> None:
 
 
 def _trim_esc(df: pd.DataFrame) -> pd.DataFrame:
-    """esc_status always carries 8 slots; keep only the ones that are real ESCs."""
+    """esc_status always carries 8 slots; keep only the ones that are real ESCs.
+
+    @relation(LLR-PRS-008, scope=function)"""
     slots = {c: int(m.group(1)) for c in df.columns if (m := _ESC_COL.match(c))}
     if not slots:
         return df
@@ -343,7 +360,9 @@ def _trim_esc(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _px4_release(value) -> Optional[str]:
-    """ver_sw_release is packed 0xAABBCCTT: major, minor, patch, type (255 = release)."""
+    """ver_sw_release is packed 0xAABBCCTT: major, minor, patch, type (255 = release).
+
+    @relation(LLR-PRS-011, scope=function)"""
     if value is None:
         return None
     try:
@@ -356,7 +375,9 @@ def _px4_release(value) -> Optional[str]:
 
 
 def _log_start_utc(topics: dict[str, pd.DataFrame]) -> Optional[str]:
-    """GPS time_utc_usec minus the (log-relative) sample time of the same row."""
+    """GPS time_utc_usec minus the (log-relative) sample time of the same row.
+
+    @relation(LLR-PRS-013, scope=function)"""
     for name in ("vehicle_gps_position", "sensor_gps"):
         df = topics.get(name)
         if df is None or "time_utc_usec" not in df.columns:

@@ -19,6 +19,7 @@ _KEY_RE = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}$")
 
 
 def _check_key(key: str) -> str:
+    """@relation(LLR-API-077, scope=function)"""
     if not _KEY_RE.match(key) or ".." in key:
         raise ValueError(f"bad blob key {key!r}")
     return key
@@ -29,9 +30,11 @@ class LocalBlobStore:
         self.root = root
 
     def _path(self, key: str) -> str:
+        """@relation(LLR-API-077, scope=function)"""
         return os.path.join(self.root, _check_key(key))
 
     def put(self, key: str, src_path: str) -> None:
+        """@relation(LLR-API-078, scope=function)"""
         dest = self._path(key)
         os.makedirs(self.root, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=self.root, prefix=".tmp-")
@@ -45,9 +48,11 @@ class LocalBlobStore:
             raise
 
     def exists(self, key: str) -> bool:
+        """@relation(LLR-API-078, scope=function)"""
         return os.path.exists(self._path(key))
 
     def delete(self, key: str) -> None:
+        """@relation(LLR-API-078, scope=function)"""
         try:
             os.unlink(self._path(key))
         except FileNotFoundError:
@@ -56,6 +61,7 @@ class LocalBlobStore:
 
 class S3BlobStore:
     def __init__(self, bucket: str, prefix: str = "", endpoint_url: str = "", region: str = ""):
+        """@relation(LLR-API-079, scope=function)"""
         try:
             import boto3
         except ImportError as e:
@@ -67,6 +73,7 @@ class S3BlobStore:
         self._s3 = boto3.client("s3", endpoint_url=endpoint_url or None, region_name=region or None)
 
     def _key(self, key: str) -> str:
+        """@relation(LLR-API-079, scope=function)"""
         return self.prefix + _check_key(key)
 
     def put(self, key: str, src_path: str) -> None:
@@ -74,6 +81,7 @@ class S3BlobStore:
         self._s3.upload_file(src_path, self.bucket, self._key(key))
 
     def exists(self, key: str) -> bool:
+        """@relation(LLR-API-079, scope=function)"""
         from botocore.exceptions import ClientError
         try:
             self._s3.head_object(Bucket=self.bucket, Key=self._key(key))
@@ -91,7 +99,9 @@ _s3: Optional[S3BlobStore] = None
 
 
 def get():
-    """S3 when a bucket is configured, else <data dir>/blobs."""
+    """S3 when a bucket is configured, else <data dir>/blobs.
+
+    @relation(LLR-API-080, scope=function)"""
     global _s3
     s = get_settings()
     if s.flightmd_s3_bucket:

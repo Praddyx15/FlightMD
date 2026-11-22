@@ -112,6 +112,7 @@ def _text(v) -> str:
 
 
 def _px4_nav_state(custom_mode: int) -> float:
+    """@relation(LLR-PRS-060, scope=function)"""
     main, sub = (custom_mode >> 16) & 0xFF, (custom_mode >> 24) & 0xFF
     if main == 4:
         return PX4_AUTO_SUB_MODE.get(sub, np.nan)
@@ -125,6 +126,8 @@ def _vehicle_clock(frames: list[pd.DataFrame]) -> tuple[bool, int]:
     Adds a 'timestamp' column (µs, still absolute) to every frame. Rows with a boot time
     get boot + the median receive-minus-boot offset of their boot segment; rows without
     one keep the receive time. Returns (had boot times, number of reboots).
+
+    @relation(LLR-PRS-053, scope=function)
     """
     refs = [f.loc[f["boot"].notna(), ["arrival", "boot"]] for f in frames]
     ref = pd.concat(refs).sort_values("arrival", kind="stable") if refs else pd.DataFrame()
@@ -154,7 +157,9 @@ class MavlinkTelemetryParser:
         tlog_path: str,
         progress: Optional[Callable[[float], None]] = None,
     ) -> tuple[dict[str, pd.DataFrame], dict[str, float], FlightMetadata]:
-        """progress, if given, is called now and then with the fraction done (0-1)."""
+        """progress, if given, is called now and then with the fraction done (0-1).
+
+        @relation(LLR-PRS-050, LLR-PRS-051, LLR-PRS-063, scope=function)"""
         if not os.path.exists(tlog_path):
             raise FileNotFoundError(f"MAVLink telemetry log not found: {tlog_path}")
 
@@ -400,6 +405,7 @@ class MavlinkTelemetryParser:
         return topics, params, metadata
 
     def _topics(self, frames, autopilot, vehicle_kind) -> dict[str, pd.DataFrame]:
+        """@relation(LLR-PRS-054, LLR-PRS-055, LLR-PRS-056, LLR-PRS-058, LLR-PRS-059, LLR-PRS-060, scope=function)"""
         topics: dict[str, pd.DataFrame] = {}
 
         def cols(df, names):
@@ -522,7 +528,9 @@ class MavlinkTelemetryParser:
 
 
 def _cells(bat: pd.DataFrame) -> pd.DataFrame:
-    """cell0..13 -> voltage_cell_v[k] for the cells that report, plus cell_count."""
+    """cell0..13 -> voltage_cell_v[k] for the cells that report, plus cell_count.
+
+    @relation(LLR-PRS-055, scope=function)"""
     raw = [f"cell{k}" for k in range(CELLS)]
     live = [c for c in raw if bat[c].notna().any()]
     out = bat.drop(columns=raw)
@@ -538,6 +546,8 @@ def _esc_status(frames) -> Optional[pd.DataFrame]:
 
     Both always carry 4 slots. ESC_INFO.count says how many ESCs are real; without it,
     an ESC that never reports anything but zeros is an empty slot.
+
+    @relation(LLR-PRS-057, scope=function)
     """
     per_esc = {}
     for key in sorted(k for k in frames if isinstance(k, tuple) and k[0] == "esc"):
@@ -575,7 +585,9 @@ def _esc_status(frames) -> Optional[pd.DataFrame]:
 
 def _firmware(texts, autopilot):
     """(firmware string, px4 version, board, ArduPilot "Frame:" text) from
-    AUTOPILOT_VERSION and the startup STATUSTEXTs."""
+    AUTOPILOT_VERSION and the startup STATUSTEXTs.
+
+    @relation(LLR-PRS-062, scope=function)"""
     from flightmd_core.services.ulog_parser import _px4_release
 
     banner = board = frame_text = release = None
@@ -601,7 +613,9 @@ def _firmware(texts, autopilot):
 
 
 def _pick_vehicle(hb: Optional[pd.DataFrame]):
-    """(sys, comp), autopilot and MAV_TYPE of whoever sends the most autopilot heartbeats."""
+    """(sys, comp), autopilot and MAV_TYPE of whoever sends the most autopilot heartbeats.
+
+    @relation(LLR-PRS-052, scope=function)"""
     if hb is None:
         return None, None, None
     cand = hb[(hb["autopilot"] != MAV_AUTOPILOT_INVALID) & (hb["type"] != MAV_TYPE_GCS)]
@@ -623,6 +637,7 @@ def _ardupilot_names(custom: pd.Series, mav_type: pd.Series) -> list[Optional[st
 
 
 def _mode_names(hb: Optional[pd.DataFrame], autopilot, mav_type) -> list[str]:
+    """@relation(LLR-PRS-062, scope=function)"""
     if hb is None or hb.empty:
         return []
     hb = hb[(hb["base_mode"].astype("int64") & MAV_MODE_FLAG_CUSTOM_MODE_ENABLED) != 0]
@@ -638,6 +653,7 @@ def _mode_names(hb: Optional[pd.DataFrame], autopilot, mav_type) -> list[str]:
 
 
 def _decode_params(raw, vehicle, autopilot) -> dict[str, float]:
+    """@relation(LLR-PRS-061, scope=function)"""
     params: dict[str, float] = {}
     for sys_id, comp, pid, value, ptype in raw:
         if vehicle is not None and (sys_id, comp) != vehicle:

@@ -17,6 +17,8 @@ class ColumnBuffer:
 
     size is the expected row count; DFReader knows it exactly from its index, so the
     block usually never grows. When it's a guess the block doubles as needed.
+
+    @relation(LLR-INT-023, LLR-INT-024, LLR-INT-025, scope=class)
     """
 
     def __init__(self, columns, size: int = 0):

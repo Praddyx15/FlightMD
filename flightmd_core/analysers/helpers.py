@@ -10,6 +10,7 @@ MAX_CHART_POINTS = 500
 
 
 def find_col(df: pd.DataFrame, candidates: list[str]) -> Optional[str]:
+    """@relation(LLR-ANL-012, scope=function)"""
     for c in candidates:
         if c in df.columns:
             return c
@@ -29,7 +30,9 @@ def find_runs(mask) -> list[tuple[int, int]]:
 
 def run_seconds(ts_us: np.ndarray, start: int, end: int) -> float:
     """Duration of samples [start, end) in seconds. The run is taken to last
-    until the next sample arrives, so a single sample still has a length."""
+    until the next sample arrives, so a single sample still has a length.
+
+    @relation(LLR-ANL-013, scope=function)"""
     if end < len(ts_us):
         return float(ts_us[end] - ts_us[start]) / 1e6
     if len(ts_us) > 1:
@@ -47,7 +50,9 @@ def sample_rate_hz(ts_us, default: float) -> float:
 
 
 def to_list(arr) -> list:
-    """numpy array -> JSON-safe list, NaN/inf -> None."""
+    """numpy array -> JSON-safe list, NaN/inf -> None.
+
+    @relation(LLR-ANL-014, scope=function)"""
     a = np.asarray(arr, dtype=float)
     return [float(v) if math.isfinite(v) else None for v in a.tolist()]
 
@@ -64,7 +69,9 @@ def downsample(ts_us, *series, n: int = MAX_CHART_POINTS) -> list[list]:
 
 
 def clean(obj):
-    """Recursively make a value JSON-safe: numpy -> python, NaN/inf -> None."""
+    """Recursively make a value JSON-safe: numpy -> python, NaN/inf -> None.
+
+    @relation(LLR-ANL-017, scope=function)"""
     if isinstance(obj, dict):
         return {str(k): clean(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
@@ -82,7 +89,9 @@ def clean(obj):
 
 
 def when(start_us=None, end_us=None) -> dict:
-    """Finding kwargs for a log-relative time window given in µs."""
+    """Finding kwargs for a log-relative time window given in µs.
+
+    @relation(LLR-ANL-015, scope=function)"""
     out = {}
     if start_us is not None and math.isfinite(start_us):
         out["timestamp_start_ms"] = int(start_us / 1e3)
@@ -100,6 +109,8 @@ def confidence(margin: float, duration_s: Optional[float] = None, quality: float
 
     Just over the line, briefly, on patchy data -> low; well over, for
     seconds, on clean data -> high.
+
+    @relation(LLR-ANL-016, scope=function)
     """
     m = 0.5 + 0.5 * min(1.0, max(0.0, margin))
     d = 1.0 if duration_s is None else 0.4 + 0.6 * min(1.0, max(0.0, duration_s) / 2.0)

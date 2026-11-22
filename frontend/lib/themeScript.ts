@@ -1,3 +1,4 @@
+// @relation(LLR-WEB-033, scope=file)
 // No "use client": the root layout (a server component) inlines this.
 
 export const THEME_KEY = "flightmd.theme";

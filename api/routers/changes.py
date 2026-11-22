@@ -2,6 +2,8 @@
 Tune, fly, verify: record a parameter change applied after a flight, then see
 whether the airframe's next flight shows it working. Both routes need the
 airframe's X-Airframe-Token.
+
+@relation(LLR-API-045, LLR-API-046, LLR-API-047, scope=file)
 """
 
 import re
@@ -46,6 +48,7 @@ class ChangeBody(BaseModel):
 
 
 def _label_or_400(label: str) -> str:
+    """@relation(LLR-API-046, scope=function)"""
     normalised = normalise_airframe_label(label)
     if not normalised:
         raise HTTPException(status_code=400, detail="Invalid airframe label.")

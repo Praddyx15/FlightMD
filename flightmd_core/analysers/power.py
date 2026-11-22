@@ -28,6 +28,7 @@ PERIPH_HIPOWER_OVERCURRENT = 16
 
 
 class PowerAnalyser(BaseAnalyser):
+    """@relation(LLR-ANL-065, scope=class)"""
     name            = "power"
     display_name    = "Board Power"
     weight          = 0.0
@@ -35,6 +36,7 @@ class PowerAnalyser(BaseAnalyser):
     required_columns = {"system_power": ["timestamp"]}
 
     def analyse(self, topics, params):
+        """@relation(LLR-ANL-066, LLR-ANL-067, LLR-ANL-068, LLR-ANL-069, scope=function)"""
         df = topics["system_power"].dropna(subset=["timestamp"]).sort_values("timestamp")
         phases = flight_phases(topics)
         d = df[phases.mask(df["timestamp"].to_numpy(float), "armed")]

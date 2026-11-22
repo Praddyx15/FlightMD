@@ -9,7 +9,9 @@ from flightmd_core.services.ardupilot_parser import INDEX_SHARE, ArduPilotBinPar
 
 
 class ArduPilotTextParser(ArduPilotBinParser):
-    """Same interface as ULogParser: .parse(path) -> (topics, params, metadata)."""
+    """Same interface as ULogParser: .parse(path) -> (topics, params, metadata).
+
+    @relation(LLR-PRS-049, scope=class)"""
 
     def _open_reader(self, path):
         from pymavlink import DFReader

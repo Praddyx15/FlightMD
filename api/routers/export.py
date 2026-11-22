@@ -1,3 +1,9 @@
+"""
+Export routes: report PDF, JSON, GPX, KML and the airframe record PDF.
+
+@relation(LLR-API-012, LLR-API-030, LLR-API-031, LLR-API-032, LLR-API-033, scope=file)
+"""
+
 import logging
 from datetime import datetime, timezone
 from typing import Optional
@@ -23,6 +29,7 @@ PDF_LIMIT = f"{settings.pdf_rate_limit_per_hour}/hour"
 
 
 def _attachment(data: bytes, media_type: str, filename: str, ascii_name: Optional[str] = None) -> Response:
+    """@relation(LLR-API-030, LLR-API-033, scope=function)"""
     # header values must be latin-1, so an ascii fallback + the real name per RFC 5987
     disposition = f'attachment; filename="{ascii_name or filename}"'
     if ascii_name:
@@ -31,6 +38,7 @@ def _attachment(data: bytes, media_type: str, filename: str, ascii_name: Optiona
 
 
 def _report_json(report) -> bytes:
+    """@relation(LLR-API-032, scope=function)"""
     # passed through as-is, schema_version included, so consumers can check the contract
     return report.model_dump_json(indent=2).encode("utf-8")
 

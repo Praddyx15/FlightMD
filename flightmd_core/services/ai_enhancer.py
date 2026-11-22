@@ -11,6 +11,8 @@ enhancer is a no-op, and any API error falls back to the deterministic text.
 Everything that came out of a log (finding titles, field names, file names)
 is untrusted. It goes into prompts only through clean_text() and inside
 <report> tags that the system prompt marks as data.
+
+@relation(LLR-RPT-035, LLR-RPT-044, scope=file)
 """
 
 import logging
@@ -48,7 +50,9 @@ _NUMBER = re.compile(r"\d+(?:\.\d+)?")
 
 def clean_text(text, limit: int = 300) -> str:
     """Make a log-derived string safe to embed in a prompt: no control or
-    bidi characters, no tag/markup characters, one line, bounded length."""
+    bidi characters, no tag/markup characters, one line, bounded length.
+
+    @relation(LLR-RPT-040, scope=function)"""
     s = _CONTROL.sub(" ", str(text))
     s = re.sub(r"[<>`{}\[\]]", "", s)
     s = " ".join(s.split())
@@ -58,7 +62,9 @@ def clean_text(text, limit: int = 300) -> str:
 
 
 def numbers_kept(original: str, rewritten: str) -> bool:
-    """True when every number in the original survives the rewrite."""
+    """True when every number in the original survives the rewrite.
+
+    @relation(LLR-RPT-041, scope=function)"""
     have = set(_NUMBER.findall(rewritten))
     return all(n in have for n in _NUMBER.findall(original))
 
@@ -73,6 +79,7 @@ class AIEnhancer:
         # old Anthropic-only signature
         api_key: Optional[str] = None,
     ):
+        """@relation(LLR-RPT-036, scope=function)"""
         # AIEnhancer(api_key=...) with no provider predates groq and meant Anthropic
         if api_key and not anthropic_api_key:
             anthropic_api_key = api_key
@@ -96,6 +103,7 @@ class AIEnhancer:
             self.model = model or ""
 
     def _init_groq(self, key: str) -> None:
+        """@relation(LLR-RPT-037, scope=function)"""
         try:
             import openai
             self._client = openai.AsyncOpenAI(
@@ -108,6 +116,7 @@ class AIEnhancer:
             self._client = None
 
     def _init_anthropic(self, key: str) -> None:
+        """@relation(LLR-RPT-037, scope=function)"""
         try:
             import anthropic
             self._client = anthropic.AsyncAnthropic(
@@ -120,9 +129,11 @@ class AIEnhancer:
 
     @property
     def is_configured(self) -> bool:
+        """@relation(LLR-RPT-038, scope=function)"""
         return self._client is not None
 
     async def _call_anthropic(self, prompt: str, max_tokens: int, system: str = SYSTEM_PROMPT) -> str:
+        """@relation(LLR-RPT-039, scope=function)"""
         resp = await self._client.messages.create(
             model=self.model,
             max_tokens=max_tokens,
@@ -132,6 +143,7 @@ class AIEnhancer:
         return "".join(b.text for b in resp.content if hasattr(b, "text")).strip()
 
     async def _call_openai_compatible(self, prompt: str, max_tokens: int, system: str = SYSTEM_PROMPT) -> str:
+        """@relation(LLR-RPT-039, scope=function)"""
         resp = await self._client.chat.completions.create(
             model=self.model,
             max_tokens=max_tokens,
@@ -147,7 +159,9 @@ class AIEnhancer:
         instructions system prompt. Raises RuntimeError when not configured;
         provider errors propagate so the caller picks its own fallback.
         Callers must put log-derived text through clean_text() and inside
-        <report> tags themselves."""
+        <report> tags themselves.
+
+        @relation(LLR-RPT-038, scope=function)"""
         if not self.is_configured:
             raise RuntimeError("AI enhancer is not configured")
         return await self._call_fn(prompt, max_tokens, system)
@@ -159,7 +173,9 @@ class AIEnhancer:
         metadata: "FlightMetadata",
     ) -> str:
         """Reword the deterministic summary. Returns base_summary unchanged when
-        disabled, on any API error, or when the rewrite drops a number."""
+        disabled, on any API error, or when the rewrite drops a number.
+
+        @relation(LLR-RPT-042, LLR-RPT-043, scope=function)"""
         if not self.is_configured:
             return base_summary
 

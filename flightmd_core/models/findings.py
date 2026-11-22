@@ -5,6 +5,9 @@ The web app and UAOP (as a package import) both consume these. Don't rename
 fields; add new ones as optional, and bump schema_version when you do.
 The published JSON Schema is docs/schema/flightmd-report-<version>.json
 (scripts/export_schema.py), with the history in docs/schema/CHANGELOG.md.
+
+@relation(LLR-RPT-001, LLR-RPT-002, LLR-RPT-003, LLR-RPT-004, LLR-RPT-005, scope=file)
+@relation(LLR-RPT-006, LLR-RPT-007, LLR-RPT-008, LLR-RPT-009, LLR-RPT-010, scope=file)
 """
 
 import math

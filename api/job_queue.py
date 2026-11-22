@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 class LocalQueue:
     def __init__(self, workers: int):
+        """@relation(LLR-API-053, scope=function)"""
         self.workers = max(1, workers)
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._queue: Optional[asyncio.Queue] = None
@@ -28,6 +29,7 @@ class LocalQueue:
         self._tasks: set[asyncio.Task] = set()
 
     def _ensure_started(self) -> None:
+        """@relation(LLR-API-053, scope=function)"""
         loop = asyncio.get_running_loop()
         if self._loop is loop:
             return
@@ -38,10 +40,12 @@ class LocalQueue:
         self._tasks = {loop.create_task(self._worker(i)) for i in range(self.workers)}
 
     async def submit(self, job: AnalysisJob) -> None:
+        """@relation(LLR-API-053, scope=function)"""
         self._ensure_started()
         self._queue.put_nowait(job)
 
     async def _worker(self, n: int) -> None:
+        """@relation(LLR-API-053, scope=function)"""
         while True:
             job = await self._queue.get()
             try:
@@ -54,9 +58,11 @@ class LocalQueue:
 
     @property
     def depth(self) -> int:
+        """@relation(LLR-API-053, scope=function)"""
         return self._queue.qsize() if self._queue is not None else 0
 
     async def stop(self) -> None:
+        """@relation(LLR-API-053, scope=function)"""
         for t in self._tasks:
             t.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
@@ -70,6 +76,7 @@ class RedisQueue:
         self._pool = None
 
     async def submit(self, job: AnalysisJob) -> None:
+        """@relation(LLR-API-054, LLR-API-055, scope=function)"""
         if self._pool is None:
             try:
                 from arq import create_pool
@@ -96,6 +103,7 @@ _queue = None
 
 
 def get_queue():
+    """@relation(LLR-API-056, scope=function)"""
     global _queue
     if _queue is None:
         s = get_settings()
@@ -104,4 +112,5 @@ def get_queue():
 
 
 def uses_redis() -> bool:
+    """@relation(LLR-API-056, scope=function)"""
     return bool(get_settings().flightmd_redis_url)

@@ -1,3 +1,9 @@
+"""
+Settings from the environment and the repository .env file.
+
+@relation(LLR-API-009, LLR-API-010, scope=file)
+"""
+
 import os
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version
@@ -10,6 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def _package_version() -> str:
+    """@relation(LLR-API-010, scope=function)"""
     try:
         return version("flightmd-core")
     except PackageNotFoundError:
@@ -86,4 +93,5 @@ class Settings(BaseSettings):
 
 @lru_cache()
 def get_settings() -> Settings:
+    """@relation(LLR-API-009, scope=function)"""
     return Settings()

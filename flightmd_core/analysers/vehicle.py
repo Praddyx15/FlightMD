@@ -31,6 +31,7 @@ _PX4_MARKERS = ("MAV_TYPE", "SYS_AUTOSTART", "EKF2_", "MPC_", "MC_", "COM_", "NA
 
 
 def _px4_frame(params: dict) -> str:
+    """@relation(LLR-ANL-026, scope=function)"""
     mav_type = params.get("MAV_TYPE")
     if mav_type is not None and int(mav_type) in _PX4_MAV_TYPE:
         return _PX4_MAV_TYPE[int(mav_type)]
@@ -58,6 +59,7 @@ def _px4_frame(params: dict) -> str:
 
 
 def _ardupilot_frame(params: dict) -> str:
+    """@relation(LLR-ANL-027, scope=function)"""
     if "ATC_STR_RAT_P" in params or "CRUISE_THROTTLE" in params:
         return "rover"
     if params.get("Q_ENABLE", 0) >= 1:
@@ -70,6 +72,7 @@ def _ardupilot_frame(params: dict) -> str:
 
 
 def vehicle_from_params(params: dict) -> Vehicle:
+    """@relation(LLR-ANL-025, scope=function)"""
     keys = list(params)
     if any(k.startswith(_ARDU_MARKERS) for k in keys):
         return Vehicle("ardupilot", _ardupilot_frame(params))
@@ -106,5 +109,7 @@ RATE_GAINS = {
 
 def rate_gain_names(vehicle: Vehicle, axis: str) -> tuple:
     """(P name, D name) for this vehicle and axis; (None, None) when there's
-    no gain we'd recommend touching (VTOL, rover, unknown)."""
+    no gain we'd recommend touching (VTOL, rover, unknown).
+
+    @relation(LLR-ANL-028, scope=function)"""
     return RATE_GAINS.get((vehicle.autopilot, vehicle.frame), {}).get(axis, (None, None))

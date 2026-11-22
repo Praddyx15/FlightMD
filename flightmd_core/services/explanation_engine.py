@@ -246,15 +246,18 @@ DEFAULT_RECOMMENDATION = "Consult the log details or the autopilot's documentati
 
 class ExplanationEngine:
     def __init__(self, *args, **kwargs):
+        """@relation(LLR-RPT-031, scope=function)"""
         # takes and ignores the old API-key arguments
         self.token_usage = {"input_tokens": 0, "output_tokens": 0}
 
     async def explain_findings(self, findings: list[Finding]) -> list[Finding]:
+        """@relation(LLR-RPT-031, scope=function)"""
         for f in findings:
             self._explain(f)
         return findings
 
     def _explain(self, f: Finding) -> None:
+        """@relation(LLR-RPT-028, LLR-RPT-029, LLR-RPT-030, scope=function)"""
         plain, rec = TEMPLATES.get(f.kind or "", (None, None))
         f.plain_english = plain or f.technical_summary
         if not f.recommendation or f.recommendation == f.technical_summary:
@@ -269,7 +272,9 @@ class ExplanationEngine:
         results: Optional[list[AnalyserResult]] = None,
     ) -> str:
         """2-3 sentence summary. Pass results to have it name the modules
-        that couldn't be assessed."""
+        that couldn't be assessed.
+
+        @relation(LLR-RPT-032, LLR-RPT-033, LLR-RPT-034, scope=function)"""
         unassessed = [r.display_name for r in results or [] if not r.assessed]
 
         if score_label == NOT_ASSESSED_LABEL:

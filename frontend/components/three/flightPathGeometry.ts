@@ -1,3 +1,4 @@
+// @relation(LLR-WEB-058, LLR-WEB-059, LLR-WEB-060, scope=file)
 // GPS path ([lat, lon, alt_m][]) -> local scene coordinates, plus the colour ramps the
 // map and the 3D view share. Flat-earth projection is fine at single-flight scale;
 // altitude is exaggerated 3x so climbs stay visible next to long horizontal legs.

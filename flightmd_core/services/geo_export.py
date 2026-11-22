@@ -15,12 +15,14 @@ KML_NS = "http://www.opengis.net/kml/2.2"
 
 
 def _alt(point) -> float | None:
+    """@relation(LLR-RPT-045, scope=function)"""
     if len(point) > 2 and point[2] is not None and math.isfinite(point[2]):
         return point[2]
     return None
 
 
 def _at(values, i):
+    """@relation(LLR-RPT-045, scope=function)"""
     if values is None or i >= len(values):
         return None
     v = values[i]
@@ -28,7 +30,9 @@ def _at(values, i):
 
 
 def _point_times(report: FlightMDReport) -> list[Optional[datetime]]:
-    """UTC time of each path point; all None when the log has no absolute time."""
+    """UTC time of each path point; all None when the log has no absolute time.
+
+    @relation(LLR-RPT-046, scope=function)"""
     md = report.metadata
     path = md.gps_path or []
     t_s = md.gps_path_t_s
@@ -39,13 +43,16 @@ def _point_times(report: FlightMDReport) -> list[Optional[datetime]]:
 
 
 def _iso(t: datetime) -> str:
+    """@relation(LLR-RPT-046, scope=function)"""
     # GPX and KML both take xsd:dateTime; ms is plenty
     return t.strftime("%Y-%m-%dT%H:%M:%S.") + f"{t.microsecond // 1000:03d}Z"
 
 
 def generate_gpx(report: FlightMDReport) -> bytes:
     """GPX 1.1 with the flight path as one track; <time> per point when the log
-    has an absolute start time."""
+    has an absolute start time.
+
+    @relation(LLR-RPT-047, scope=function)"""
     path = report.metadata.gps_path or []
     times = _point_times(report)
 
@@ -69,7 +76,9 @@ def generate_gpx(report: FlightMDReport) -> bytes:
 
 def generate_kml(report: FlightMDReport) -> bytes:
     """KML with the flight path as a LineString, plus a hidden folder of the path
-    points carrying HDOP and wind as ExtendedData."""
+    points carrying HDOP and wind as ExtendedData.
+
+    @relation(LLR-RPT-048, LLR-RPT-049, scope=function)"""
     md = report.metadata
     path = md.gps_path or []
     times = _point_times(report)

@@ -1,4 +1,5 @@
 "use client";
+// @relation(LLR-WEB-034, LLR-WEB-035, scope=file)
 
 import { useEffect, useState } from "react";
 import { THEME_EVENT, THEME_KEY } from "./themeScript";

@@ -21,17 +21,20 @@ logger = logging.getLogger(__name__)
 
 
 def _dir(report_id: str) -> str:
+    """@relation(LLR-API-081, scope=function)"""
     if not REPORT_ID_RE.match(report_id):
         raise ValueError(f"bad report id {report_id!r}")
     return os.path.join(db.get().data_dir, "exports", report_id)
 
 
 def _name(kind: str, schema_version: str) -> str:
+    """@relation(LLR-API-081, scope=function)"""
     tag = re.sub(r"[^A-Za-z0-9.]+", "_", f"{schema_version}-{get_settings().app_version}")
     return f"{kind}-{tag}"
 
 
 def get_or_build(report, kind: str, build: Callable[[Any], bytes]) -> bytes:
+    """@relation(LLR-API-082, scope=function)"""
     path = os.path.join(_dir(report.report_id), _name(kind, report.schema_version))
     try:
         with open(path, "rb") as f:
@@ -50,4 +53,5 @@ def get_or_build(report, kind: str, build: Callable[[Any], bytes]) -> bytes:
 
 
 def drop(report_id: str) -> None:
+    """@relation(LLR-API-083, scope=function)"""
     shutil.rmtree(_dir(report_id), ignore_errors=True)

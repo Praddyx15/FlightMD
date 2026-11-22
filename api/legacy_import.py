@@ -30,7 +30,9 @@ _HASHED_NAME = re.compile(r"-[0-9a-f]{16}\.json$")
 
 
 def import_legacy(roots: list[str]) -> dict:
-    """Import every legacy store found under the given roots. Returns counts per kind."""
+    """Import every legacy store found under the given roots. Returns counts per kind.
+
+    @relation(LLR-API-108, scope=function)"""
     counts = {"reports": 0, "airframes": 0, "contributions": 0}
     seen = set()
     for root in roots:
@@ -51,6 +53,7 @@ def import_legacy(roots: list[str]) -> dict:
 
 
 def _retire(path: str) -> None:
+    """@relation(LLR-API-108, scope=function)"""
     dest = path + ".imported"
     if os.path.exists(dest):
         dest = f"{path}.imported-{int(time.time())}"
@@ -67,6 +70,7 @@ def _read(path: str) -> dict:
 
 
 def _import_reports(path: str) -> int:
+    """@relation(LLR-API-109, scope=function)"""
     database = db.get()
     n = 0
     for name in _json_files(path):
@@ -102,6 +106,7 @@ def _import_reports(path: str) -> int:
 
 
 def _import_airframes(path: str) -> int:
+    """@relation(LLR-API-110, scope=function)"""
     database = db.get()
     # hashed names first: when both files exist for a label the hashed one is current
     names = sorted(_json_files(path), key=lambda f: 0 if _HASHED_NAME.search(f) else 1)
@@ -123,6 +128,7 @@ def _import_airframes(path: str) -> int:
 
 
 def _import_contributions(path: str) -> int:
+    """@relation(LLR-API-111, scope=function)"""
     database = db.get()
     store = blobs.get()
     n = 0

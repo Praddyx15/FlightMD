@@ -73,6 +73,7 @@ MIN_QUALIFYING_APOGEE_M = 300.0
 
 
 class AscentProfileAnalyser(BaseAnalyser):
+    """@relation(LLR-DYN-055, scope=class)"""
     name            = "ascent_profile"
     display_name    = "Ascent & Recovery Analysis"
     required_topics = ["vehicle_gps_position"]
@@ -83,6 +84,7 @@ class AscentProfileAnalyser(BaseAnalyser):
         topics: dict[str, pd.DataFrame],
         params: dict[str, float],
     ) -> AnalyserResult:
+        """@relation(LLR-DYN-056, LLR-DYN-058, LLR-DYN-059, scope=function)"""
         gps_df = topics["vehicle_gps_position"]
         if "alt" not in gps_df.columns or "timestamp" not in gps_df.columns:
             return self._skip("GPS topic missing altitude or timestamp data.")
@@ -167,6 +169,7 @@ class AscentProfileAnalyser(BaseAnalyser):
         )
 
     def _find_apogee(self, alt_m: np.ndarray) -> Optional[int]:
+        """@relation(LLR-DYN-057, scope=function)"""
         alt_range = float(alt_m.max() - alt_m.min())
         if alt_range < MIN_PROMINENCE_M:
             return None
@@ -183,6 +186,7 @@ class AscentProfileAnalyser(BaseAnalyser):
         start_s: float,
         apogee_s: float,
     ) -> tuple[list[Finding], dict[str, float]]:
+        """@relation(LLR-DYN-060, scope=function)"""
         x_col = find_col(accel_df, ["x", "xyz[0]"])
         y_col = find_col(accel_df, ["y", "xyz[1]"])
         z_col = find_col(accel_df, ["z", "xyz[2]"])
@@ -239,6 +243,7 @@ class AscentProfileAnalyser(BaseAnalyser):
         boost_end_s: float,
         key_metrics: dict[str, float],
     ) -> list[Finding]:
+        """@relation(LLR-DYN-061, scope=function)"""
         roll_col  = find_col(gyro_df, ["rollspeed", "xyz[0]", "x"])
         pitch_col = find_col(gyro_df, ["pitchspeed", "xyz[1]", "y"])
         yaw_col   = find_col(gyro_df, ["yawspeed", "xyz[2]", "z"])
@@ -291,6 +296,7 @@ class AscentProfileAnalyser(BaseAnalyser):
         apogee_agl_m: float,
         final_agl_m: float,
     ) -> tuple[list[Finding], dict[str, float]]:
+        """@relation(LLR-DYN-062, LLR-DYN-063, scope=function)"""
         if len(descent_ts_s) < 5 or apogee_agl_m <= 0:
             return [], {}
 
@@ -382,6 +388,7 @@ class AscentProfileAnalyser(BaseAnalyser):
         return [], {}
 
     def _find_deployment_index(self, speed: np.ndarray, speed_ts: np.ndarray) -> Optional[int]:
+        """@relation(LLR-DYN-064, LLR-DYN-065, scope=function)"""
         for i in range(len(speed)):
             window_mask = (speed_ts >= speed_ts[i]) & (speed_ts <= speed_ts[i] + DEPLOYMENT_WINDOW_S)
             if window_mask.sum() < 3:

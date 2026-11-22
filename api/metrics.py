@@ -5,6 +5,8 @@ HTTP metrics come from prometheus-fastapi-instrumentator (route templates
 only, never raw paths). On top of that, analyses by format and outcome and
 how long they took. Labels are bounded sets: no ids, filenames or positions.
 With the Redis queue the analysis counters live in the worker process, not here.
+
+@relation(LLR-API-101, LLR-API-102, scope=file)
 """
 
 import hmac
@@ -39,18 +41,22 @@ router = APIRouter()
 
 
 def _fmt(log_format: Optional[str]) -> str:
+    """@relation(LLR-API-100, scope=function)"""
     return log_format if log_format in KNOWN_FORMATS else "other"
 
 
 def count_analysis(log_format: Optional[str], outcome: str) -> None:
+    """@relation(LLR-API-100, scope=function)"""
     ANALYSES.labels(format=_fmt(log_format), outcome=outcome if outcome in OUTCOMES else "error").inc()
 
 
 def observe_duration(log_format: Optional[str], seconds: float) -> None:
+    """@relation(LLR-API-100, scope=function)"""
     DURATION.labels(format=_fmt(log_format)).observe(seconds)
 
 
 def instrument(app) -> None:
+    """@relation(LLR-API-102, scope=function)"""
     Instrumentator(
         should_group_status_codes=True,
         should_ignore_untemplated=True,
@@ -59,6 +65,7 @@ def instrument(app) -> None:
 
 
 def _check_token(authorization: Optional[str]) -> None:
+    """@relation(LLR-API-101, scope=function)"""
     expected = get_settings().metrics_token
     if not expected:
         return

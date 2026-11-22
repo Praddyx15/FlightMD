@@ -77,7 +77,9 @@ class _Truncated(Exception):
 
 
 def read_uvb(buf, pos):
-    """Unsigned variable byte: 7 bits per byte, low bits first, top bit = more follows."""
+    """Unsigned variable byte: 7 bits per byte, low bits first, top bit = more follows.
+
+    @relation(LLR-PRS-066, scope=function)"""
     result = shift = 0
     for _ in range(5):
         if pos >= len(buf):
@@ -92,10 +94,12 @@ def read_uvb(buf, pos):
 
 
 def zigzag_decode(u: int) -> int:
+    """@relation(LLR-PRS-066, scope=function)"""
     return (u >> 1) ^ -(u & 1)
 
 
 def read_svb(buf, pos):
+    """@relation(LLR-PRS-066, scope=function)"""
     u, pos = read_uvb(buf, pos)
     return zigzag_decode(u), pos
 
@@ -112,6 +116,7 @@ def _byte(buf, pos):
 
 
 def read_neg_14bit(buf, pos):
+    """@relation(LLR-PRS-066, scope=function)"""
     u, pos = read_uvb(buf, pos)
     return -sign_extend(u, 14), pos
 
@@ -129,6 +134,7 @@ def _read_sized3(buf, pos, lead):
 
 
 def read_tag2_3s32(buf, pos):
+    """@relation(LLR-PRS-066, scope=function)"""
     lead = _byte(buf, pos)
     pos += 1
     sel = lead >> 6
@@ -144,6 +150,7 @@ def read_tag2_3s32(buf, pos):
 
 
 def read_tag2_3svariable(buf, pos):
+    """@relation(LLR-PRS-066, scope=function)"""
     lead = _byte(buf, pos)
     pos += 1
     sel = lead >> 6
@@ -163,7 +170,9 @@ def read_tag2_3svariable(buf, pos):
 
 def read_tag8_4s16(buf, pos, version: int = 2):
     """Header byte with a 2-bit size per field (0, 4, 8 or 16 bits). Data version 2 packs
-    the fields as one big-endian nibble stream; version 1 used whole little-endian bytes."""
+    the fields as one big-endian nibble stream; version 1 used whole little-endian bytes.
+
+    @relation(LLR-PRS-066, scope=function)"""
     head = _byte(buf, pos)
     pos += 1
     sizes = [(0, 4, 8, 16)[(head >> (2 * i)) & 3] for i in range(4)]
@@ -205,6 +214,7 @@ def read_tag8_4s16(buf, pos, version: int = 2):
 
 
 def read_tag8_8svb(buf, pos, count: int):
+    """@relation(LLR-PRS-066, scope=function)"""
     if count == 1:
         v, pos = read_svb(buf, pos)
         return [v], pos
@@ -237,6 +247,7 @@ def _ints(text: str) -> list[int]:
 
 
 def parse_header(data: bytes, pos: int) -> tuple[dict[str, str], int]:
+    """@relation(LLR-PRS-065, scope=function)"""
     headers = {}
     while data.startswith(b"H ", pos):
         end = data.find(b"\n", pos)
@@ -249,6 +260,7 @@ def parse_header(data: bytes, pos: int) -> tuple[dict[str, str], int]:
 
 
 def frame_defs(headers: dict[str, str]) -> dict[str, FrameDef]:
+    """@relation(LLR-PRS-065, scope=function)"""
     if "Field I name" not in headers:
         raise BlackboxError("blackbox header has no 'Field I name' line")
     defs = {}
@@ -269,6 +281,7 @@ def frame_defs(headers: dict[str, str]) -> dict[str, FrameDef]:
 
 
 def split_logs(data: bytes) -> list[tuple[int, int]]:
+    """@relation(LLR-PRS-064, scope=function)"""
     starts = []
     pos = data.find(LOG_START)
     while pos >= 0:
@@ -278,6 +291,7 @@ def split_logs(data: bytes) -> list[tuple[int, int]]:
 
 
 def _float_header(value: Optional[str], default: float) -> float:
+    """@relation(LLR-PRS-069, scope=function)"""
     if not value:
         return default
     try:
@@ -289,7 +303,9 @@ def _float_header(value: Optional[str], default: float) -> float:
 
 
 def _firmware(headers) -> tuple[str, tuple[int, int, int]]:
-    """("betaflight" | "inav" | "cleanflight" | "baseflight" | "unknown", version)"""
+    """("betaflight" | "inav" | "cleanflight" | "baseflight" | "unknown", version)
+
+    @relation(LLR-PRS-075, scope=function)"""
     rev = headers.get("Firmware revision", "")
     m = re.search(r"(Betaflight|INAV|Cleanflight|Emuflight|Butterflight)\D*(\d+)\.(\d+)(?:\.(\d+))?", rev, re.I)
     if m:
@@ -302,7 +318,9 @@ def _firmware(headers) -> tuple[str, tuple[int, int, int]]:
 
 
 class _Decoder:
-    """Walks one log session and collects the decoded frames."""
+    """Walks one log session and collects the decoded frames.
+
+    @relation(LLR-PRS-065, scope=class)"""
 
     def __init__(self, data: bytes, headers: dict[str, str], wanted: list[str]):
         self.data = data
@@ -338,6 +356,7 @@ class _Decoder:
         self.corrupt = 0
 
     def run(self, pos: int):
+        """@relation(LLR-PRS-067, scope=function)"""
         data = self.data
         n = len(data)
         prev = prev2 = None
@@ -443,6 +462,7 @@ class _Decoder:
         return self
 
     def _skipped(self, last_it: int) -> int:
+        """@relation(LLR-PRS-067, scope=function)"""
         if last_it < 0:
             return 0
         n = 0
@@ -591,6 +611,7 @@ class BetaflightParser:
     """Same interface as ULogParser: .parse(path) -> (topics, params, metadata)."""
 
     def parse(self, path: str) -> tuple[dict[str, pd.DataFrame], dict[str, float], FlightMetadata]:
+        """@relation(LLR-PRS-064, LLR-PRS-068, scope=function)"""
         if not os.path.exists(path):
             raise FileNotFoundError(f"Blackbox log file not found: {path}")
 
@@ -654,6 +675,7 @@ class BetaflightParser:
         return topics, params, metadata
 
     def _topics(self, dec: _Decoder, headers, firmware, version, warnings):
+        """@relation(LLR-PRS-068, LLR-PRS-069, LLR-PRS-070, scope=function)"""
         cols = dec.wanted
         rows = np.frombuffer(dec.rows, dtype=np.int64).reshape(-1, len(cols)) if cols else np.empty((len(dec.times), 0))
         t_abs = np.asarray(dec.times, dtype=np.int64)
@@ -723,6 +745,7 @@ class BetaflightParser:
 
 
 def _esc_status(col, ts, headers, n_motors, firmware, version):
+    """@relation(LLR-PRS-071, scope=function)"""
     rpm = [col[f"eRPM[{i}]"] for i in range(8) if f"eRPM[{i}]" in col]
     if not rpm:
         name = headers.get("debug_mode_name", "")
@@ -744,6 +767,7 @@ def _esc_status(col, ts, headers, n_motors, firmware, version):
 
 
 def _battery(col, ts, firmware, version):
+    """@relation(LLR-PRS-072, scope=function)"""
     v = col.get("vbatLatest", col.get("vbat"))
     if v is None:
         return None
@@ -763,6 +787,7 @@ def _battery(col, ts, firmware, version):
 
 
 def _gps(frames, t0, firmware, version):
+    """@relation(LLR-PRS-073, scope=function)"""
     if not frames:
         return None
     rows = []
@@ -804,6 +829,7 @@ _MODE_NAMES = {10: "Acro", 15: "Angle / Horizon"}
 
 
 def _vehicle_status(dec: _Decoder, t0: int, firmware, version):
+    """@relation(LLR-PRS-074, scope=function)"""
     if firmware != "betaflight" or version < (3, 5, 0):
         # INAV and older Betaflight log the real flight-mode flags there, not the switches
         return None
@@ -830,6 +856,7 @@ def _vehicle_status(dec: _Decoder, t0: int, firmware, version):
 
 
 def _params(headers: dict[str, str]) -> dict[str, float]:
+    """@relation(LLR-PRS-075, scope=function)"""
     params: dict[str, float] = {}
     for name, value in headers.items():
         # "Data version", "I interval", "Field I name"... describe the log, not the craft
@@ -852,7 +879,9 @@ def _params(headers: dict[str, str]) -> dict[str, float]:
 
 
 def _start_utc(value: Optional[str]) -> Optional[str]:
-    """'Log start datetime' is 0000-01-01... when the board has no clock."""
+    """'Log start datetime' is 0000-01-01... when the board has no clock.
+
+    @relation(LLR-PRS-075, scope=function)"""
     if not value:
         return None
     try:
@@ -866,4 +895,5 @@ def _start_utc(value: Optional[str]) -> Optional[str]:
 
 
 def looks_like_blackbox(header: bytes) -> bool:
+    """@relation(LLR-PRS-090, scope=function)"""
     return LOG_START in header

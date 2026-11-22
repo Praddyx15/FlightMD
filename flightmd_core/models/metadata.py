@@ -1,3 +1,4 @@
+"""@relation(LLR-RPT-011, scope=file)"""
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -8,6 +9,7 @@ MIN_EPOCH_US = 1_262_304_000_000_000
 
 
 def utc_iso(epoch_us: float) -> str:
+    """@relation(LLR-RPT-012, scope=function)"""
     return datetime.fromtimestamp(epoch_us / 1e6, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 

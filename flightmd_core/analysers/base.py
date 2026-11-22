@@ -8,6 +8,7 @@ from flightmd_core.models.findings import AnalyserResult
 
 
 class BaseAnalyser(ABC):
+    """@relation(LLR-ANL-001, scope=class)"""
     name: str               # snake_case identifier
     display_name: str       # human-readable
     required_topics: list[str] = []   # must all exist in log to run
@@ -34,13 +35,16 @@ class BaseAnalyser(ABC):
         clean result, so the report says "not assessed" instead of 100."""
 
     def is_applicable(self, available_topics: set[str]) -> bool:
+        """@relation(LLR-ANL-002, scope=function)"""
         if not all(t in available_topics for t in self.required_topics):
             return False
         return not self.required_any or any(t in available_topics for t in self.required_any)
 
     def missing_inputs(self, topics) -> Optional[str]:
         """Why this module can't run on these topics (a dict of DataFrames or
-        just the names), or None when it can."""
+        just the names), or None when it can.
+
+        @relation(LLR-ANL-003, scope=function)"""
         missing = [t for t in self.required_topics if t not in topics]
         if missing:
             return f"Required topics not available: {', '.join(missing)}"
@@ -60,9 +64,11 @@ class BaseAnalyser(ABC):
         return None
 
     def skip_result(self, topics) -> AnalyserResult:
+        """@relation(LLR-ANL-004, scope=function)"""
         return self._skip(self.missing_inputs(topics) or "Not applicable to this log.")
 
     def _skip(self, reason: str) -> AnalyserResult:
+        """@relation(LLR-ANL-004, scope=function)"""
         return AnalyserResult(
             analyser=self.name,
             display_name=self.display_name,
@@ -77,7 +83,9 @@ class BaseAnalyser(ABC):
         params: dict[str, float],
     ) -> AnalyserResult:
         """analyse() with timing; any exception becomes a skipped result so
-        one broken module never takes the report down."""
+        one broken module never takes the report down.
+
+        @relation(LLR-ANL-005, LLR-ANL-006, scope=function)"""
         start = time.time()
         reason = self.missing_inputs(topics)
         if reason:

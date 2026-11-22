@@ -1,4 +1,6 @@
-"""Client IP for rate limiting, the shared limiter, and airframe token checks."""
+"""Client IP for rate limiting, the shared limiter, and airframe token checks.
+
+@relation(LLR-API-012, scope=file)"""
 
 import ipaddress
 from functools import lru_cache
@@ -15,6 +17,7 @@ AIRFRAME_TOKEN_HEADER = "X-Airframe-Token"
 
 @lru_cache(maxsize=8)
 def trusted_networks(spec: str) -> tuple:
+    """@relation(LLR-API-005, LLR-API-011, scope=function)"""
     nets = []
     for part in spec.split(","):
         part = part.strip()
@@ -24,6 +27,7 @@ def trusted_networks(spec: str) -> tuple:
 
 
 def _trusted(addr: str, nets: tuple) -> bool:
+    """@relation(LLR-API-011, scope=function)"""
     try:
         ip = ipaddress.ip_address(addr)
     except ValueError:
@@ -37,6 +41,8 @@ def client_ip(request: Request) -> str:
     X-Forwarded-For is only read when the direct peer is a trusted proxy, and
     then from the right: the first hop that isn't one of our proxies is the
     client. Anything left of it was written by the client and can be faked.
+
+    @relation(LLR-API-011, scope=function)
     """
     peer = request.client.host if request.client else "unknown"
     nets = trusted_networks(get_settings().trusted_proxies)
@@ -56,6 +62,7 @@ limiter = Limiter(key_func=client_ip)
 
 
 def token_error(e: "afs.TokenError") -> HTTPException:
+    """@relation(LLR-API-013, scope=function)"""
     if e.reason == "invalid":
         return HTTPException(status_code=403, detail="Wrong airframe token.")
     if e.reason == "missing":
@@ -72,6 +79,8 @@ def check_airframe_token(label: str, token: Optional[str], claim: bool = False) 
 
     claim=True lets an unclaimed airframe be claimed by this request; the new
     token is returned and must go back to the caller in the response.
+
+    @relation(LLR-API-013, LLR-API-014, scope=function)
     """
     try:
         return afs.airframe_store.authorise(label, token, claim=claim)
@@ -86,6 +95,8 @@ def precheck_airframe_token(label: str, token: Optional[str]) -> bool:
     before the caller does anything expensive. The claim itself happens later
     via check_airframe_token(claim=True), once the request is known to be good,
     so a rejected request never burns the one-time token.
+
+    @relation(LLR-API-014, scope=function)
     """
     try:
         afs.airframe_store.authorise(label, token)
